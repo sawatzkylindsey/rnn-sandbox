@@ -35,8 +35,8 @@ class ServerHandler(BaseHTTPRequestHandler):
 
             self._set_headers("application/json")
 
-            if hasattr(out, "as_dict"):
-                out = out.as_dict()
+            if hasattr(out, "as_json"):
+                out = out.as_json()
 
             self._write_content(json.dumps(out))
         else:
