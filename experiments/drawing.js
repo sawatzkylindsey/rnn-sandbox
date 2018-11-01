@@ -6,11 +6,11 @@ $(document).ready(function () {
     var heigth = 200;
     var min = -1;
     var max = 1;
-    var vector = [0.5, 0.25, -0.5, -0.1, 1];
+    var vector = [-1, 0.25, -0.5, -0.1, 1];
 
     drawWeightsForVector(top, left, width, heigth, min, max, vector);
 
-    drawWeightsForVector(top+30, left+400, width, heigth, min, max, vector);
+    drawWeightsForVector(top+30, left+400, width/2.0, heigth, min, max, vector);
 
 });
 
@@ -22,6 +22,7 @@ function drawWeightsForVector(top, left, width, height, min, max, vector) {
         data[i] = { value: vector[i], label: i };
 
     data = data.reverse();
+    var strokeWidth = 2;
 
     // Add svg to
     var svg = d3.select('body').append('svg')
@@ -30,22 +31,25 @@ function drawWeightsForVector(top, left, width, height, min, max, vector) {
         .style('left', left)
         .style('width', width)
         .style('height', height)
-        .style('border', '1px solid black')
         .append('g');
 
     var y = d3.scaleBand()
-        .range([height, 0])
-        .padding(0.1);
+        .domain(data.map(function (d) { return d.label; }))
+        .range([height - (strokeWidth / 2.0), strokeWidth / 2.0]);
 
     var x = d3.scaleLinear()
-        .range([0, width]);
+        .domain([min, max])
+        .range([strokeWidth / 2.0, width - (strokeWidth / 2.0)]);
 
-    // Scale the range of the data in the domains
-    x.domain([min, max]);
-    y.domain(data.map(function (d) {
-        return d.label;
-    }));
-
+    // boundary box
+    svg.append("rect")
+        .attr("x", 0.5)
+        .attr("y", 0.5)
+        .attr("width", width - 1)
+        .attr("height", height - 1)
+        .attr("stroke", "black")
+        .attr("stroke-width", 1)
+        .attr("fill", "none");
     // append the rectangles for the bar chart
     svg.selectAll(".bar")
         .data(data)
@@ -60,14 +64,7 @@ function drawWeightsForVector(top, left, width, height, min, max, vector) {
             return Math.abs(x(d.value) - x(0));
         })
         .attr("height", y.bandwidth())
-        .attr("fill", "dimgrey");
-
-    //y-axis
-
-    svg.append("rect")
-        .attr("x", width/2-1)
-        .attr("y", 0)
-        .attr("width", 2)
-        .attr("height", height)
-        .attr("fill", "black");
+        .attr("stroke", "black")
+        .attr("stroke-width", strokeWidth)
+        .attr("fill", "none");
 }
