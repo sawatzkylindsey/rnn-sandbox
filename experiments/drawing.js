@@ -10,6 +10,8 @@ $(document).ready(function () {
 
     drawWeightsForVector(top, left, width, heigth, min, max, vector);
 
+    drawWeightsForVector(top+30, left+400, width, heigth, min, max, vector);
+
 });
 
 function drawWeightsForVector(top, left, width, height, min, max, vector) {
@@ -63,7 +65,7 @@ function drawWeightsForVector(top, left, width, height, min, max, vector) {
     //y-axis
 
     svg.append("rect")
-        .attr("x", top)
+        .attr("x", width/2-1)
         .attr("y", 0)
         .attr("width", 2)
         .attr("height", height)
