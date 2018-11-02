@@ -36,9 +36,6 @@ function drawWeightsForVector(top, left, width, height, min, max, vector, color)
     data = [];
 
     for (i = 0; i < vector.length; i++) {
-        // drawing zeros as very small values
-        if (vector[i].value === 0)
-            vector[i].value = 0.0001;
 
         data[i] = { value: vector[i].value, label: vector[i].position };
     }
@@ -83,7 +80,7 @@ function drawWeightsForVector(top, left, width, height, min, max, vector, color)
             return y(d.label);
         })
         .attr("width", function (d) {
-            return Math.abs(x(d.value) - x(0));
+            return d.value===0 ? 0.000001 : Math.abs(x(d.value) - x(0));
         })
         .attr("height", y.bandwidth())
         .attr("stroke", "black")
