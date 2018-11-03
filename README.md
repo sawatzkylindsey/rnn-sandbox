@@ -22,3 +22,9 @@ Running:
 
     python dev-server.py -v
 
+Running after system restart:
+    
+    python3 -m venv p3
+    source ./p3/bin/activate
+    python dev-server.py -v
+
