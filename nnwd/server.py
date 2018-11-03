@@ -17,6 +17,7 @@ import urllib
 from nnwd import errorhandler
 from nnwd import errors
 from nnwd import handlers
+from nnwd import nlp
 from pytils.log import setup_logging, user_log
 
 
@@ -87,7 +88,7 @@ class ServerHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
 
-def run(port):
+def run(port, words, xy_sequences):
     class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
         pass
 
@@ -97,7 +98,7 @@ def run(port):
     httpd.daemon_threads = True
     httpd.handlers = {
         "echo": handlers.Echo(),
-        "neural-network": handlers.NeuralNetwork(),
+        "neural-network": handlers.NeuralNetwork(words, xy_sequences),
     }
     user_log.info('Starting httpd %d...' % port)
     httpd.serve_forever()
@@ -110,10 +111,12 @@ def main(argv):
                     action="store_true",
                     help="Turn on verbose logging.")
     ap.add_argument("-p", "--port", default=8888, type=int)
+    ap.add_argument("--corpus", default="corpus.txt")
     args = ap.parse_args(argv)
     setup_logging(".%s.log" % os.path.splitext(os.path.basename(__file__))[0], args.verbose, False, True)
     logging.debug(args)
-    run(args.port)
+    words, xy_sequences = nlp.corpus_sequences(args.corpus)
+    run(args.port, words, xy_sequences)
 
 
 def patch_Thread_for_profiling():

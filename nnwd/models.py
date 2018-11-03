@@ -2,21 +2,21 @@
 from pytils import check
 
 
-class Row:
-    def __init__(self, embedding, layers, softmax):
-        self.embedding = embedding
-        self.layers = layers
-        self.softmax = softmax
+class Layer:
+    def __init__(self, embedding, units, softmax):
+        self.embedding = check.check_instance(embedding, Weight)
+        self.units = check.check_list(units)
+        self.softmax = check.check_instance(softmax, LabelWeight)
 
     def as_json(self):
         return {
             "embedding": self.embedding.as_json(),
-            "layers": [l.as_json() for l in self.layers],
-            "output": self.softmax.as_json(),
+            "units": [u.as_json() for u in self.units],
+            "softmax": self.softmax.as_json(),
         }
 
 
-class Layer:
+class Unit:
     def __init__(self, forget_gate, remember_gate, output_gate, c_previous, c_hat, c, input_hat, output):
         self.forget_gate = forget_gate
         self.remember_gate = remember_gate
@@ -42,14 +42,22 @@ class Layer:
 
 class Weight:
     def __init__(self, vector, colour="#000000"):
-        self.vector = check.check_pdist(vector)
+        self.vector = check.check_iterable(vector)
         self.colour = colour
 
     def as_json(self):
         return {
-            "vector": [{"value": value, "position": i} for i, value in enumerate(self.vector)],
+            "vector": [{"value": float(value), "position": i} for i, value in enumerate(self.vector)],
             "colour": self.colour,
         }
 
 
+class LabelWeight:
+    def __init__(self, label_weights):
+        self.label_weights = [item for item in sorted(label_weights.items(), key=lambda item: item[1], reverse=True)]
+
+    def as_json(self):
+        return {
+            "vector": [{"value": float(item[1]), "position": i, "label": str(item[0])} for i, item in enumerate(self.label_weights)],
+        }
 

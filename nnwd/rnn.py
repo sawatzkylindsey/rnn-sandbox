@@ -11,16 +11,16 @@ import string
 import tensorflow as tf
 tf.logging.set_verbosity(logging.WARN)
 
-import nlp
 from pytils import adjutant, base, check
 from pytils.log import user_log
 
 
 class Rnn:
-    def __init__(self, layers, width, word_labels):
+    def __init__(self, layers, width, word_labels, scope="rnn"):
         self.layers = layers
         self.width = width
         self.word_labels = word_labels
+        self.scope = scope
 
         # Notation:
         #   _p      placeholder
@@ -42,6 +42,8 @@ class Rnn:
         self.Y_bias = self.variable("Y_bias", [1, len(self.word_labels)], 0.)
 
         self.unrolled_embedded_inputs = tf.matmul(tf.reshape(self.unrolled_inputs_p, [-1, len(self.word_labels)]), self.E) + self.E_bias
+        assert_shape(self.unrolled_embedded_inputs, [None, self.width])
+        tf.identity(tf.reshape(self.unrolled_embedded_inputs, [self.width]), name="embedding")
 
         def step_plain(previous_state, current_input):
             h_previous = tf.unstack(previous_state)
@@ -60,9 +62,15 @@ class Rnn:
         self.unrolled_states = tf.scan(step_plain, tf.reshape(self.unrolled_embedded_inputs, [-1, 1, self.width]), self.initial_state_p)
         assert_shape(self.unrolled_states, [None, self.layers, 1, self.width])
 
-        # Grab the last state (multi-layered) out of the unrolled state layers.
+        # Grab the last timesteps' state layers out of the unrolled state layers ([x y z] in diagram).
+        #
+        # state layer L     z z  z
+        # ..                y y  y
+        # state layer 0     x x  x
+        # time              0 .. T
         self.state = self.unrolled_states[-1]
         assert_shape(self.state, [self.layers, 1, self.width])
+        tf.identity(tf.unstack(tf.reshape(self.state, [self.layers, self.width])), name="units")
 
         # Grab the last state layer across all timesteps from the unrolled state layers ([z z z] in diagram).
         #
@@ -99,9 +107,9 @@ class Rnn:
         return tf.placeholder(tf.float32, shape, name=name)
 
     def variable(self, name, shape, initial=None):
-        #with tf.variable_scope(self.scope):
-        return tf.get_variable(name, shape=shape,
-            initializer=tf.contrib.layers.xavier_initializer() if initial is None else tf.constant_initializer(initial))
+        with tf.variable_scope(self.scope):
+            return tf.get_variable(name, shape=shape,
+                initializer=tf.contrib.layers.xavier_initializer() if initial is None else tf.constant_initializer(initial))
 
     def train(self, xy_sequences, epochs=10, debug=False):
         shuffled_xy_sequences = xy_sequences.copy()
@@ -152,7 +160,7 @@ class Rnn:
             test_pass = True
 
             for xy in sequence:
-                result, state = self.evaluate(xy.x, state)
+                result, state, _ = self.evaluate(xy.x, state)
                 distributions.append(result.distribution)
                 predictions.append(result.prediction)
 
@@ -181,16 +189,18 @@ class Rnn:
 
         return correct / float(total)
 
-    def evaluate(self, x, state=None):
+    def evaluate(self, x, state=None, instrument_names=[]):
         parameters = {
             self.unrolled_inputs_p: np.array([np.array([self.word_labels.ook_encode(x, True)])]),
             self.initial_state_p: state if state is not None else self.initial_state_c
         }
-        distribution, next_state = self.session.run([self.output_distribution, self.state], feed_dict=parameters)
-        return Result(self.word_labels.ook_decode(distribution), self.word_labels.ook_decode_distribution(distribution)), next_state
+        instruments = [self.session.graph.get_tensor_by_name("%s:0" % name) for name in instrument_names]
+        distribution, next_state, *instrument_values = self.session.run([self.output_distribution, self.state] + instruments, feed_dict=parameters)
+        result = Result(self.word_labels.ook_decode(distribution), self.word_labels.ook_decode_distribution(distribution))
+        return result, next_state, {name: instrument_values[i] for i, name in enumerate(instrument_names)}
 
-    def stepwise(self, name):
-        return StepwiseEvaluation(self, name)
+    def stepwise(self, name=None):
+        return Stepwise(self, name)
 
 
 class Stepwise:
@@ -200,11 +210,11 @@ class Stepwise:
         self.name = name if name is not None else "".join(random.choices(string.ascii_lowercase, k=6))
         self.t = 0
 
-    def step(self, x):
-        result, self.state = self.rnn.evaluate(x, self.state)
+    def step(self, x, instrument_names=[]):
+        result, self.state, instruments = self.rnn.evaluate(x, self.state, instrument_names)
         logging.debug("%s @%3d: %s." % (self.name, self.t, result))
         self.t += 1
-        return result
+        return result, instruments
 
 
 class Xy:

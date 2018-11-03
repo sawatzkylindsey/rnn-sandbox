@@ -1,6 +1,7 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 
+import logging
 import math
 import numpy as np
 import pdb
@@ -177,6 +178,32 @@ def corpus_vocabulary(corpus_lines):
     return vocabulary(words)
 
 
+def corpus_sequences(corpus_file):
+    corpus_lines = None
+
+    with open(corpus_file, "r") as fh:
+        corpus_lines = fh.readlines()
+
+    words = set()
+    xy_sequences = []
+
+    for line in corpus_lines:
+        for sentence in split_sentences(line):
+            sequence = []
+
+            for i, word in enumerate(sentence):
+                words.add(word)
+
+                if i + 1 < len(sentence):
+                    sequence.append((word, sentence[i + 1]))
+
+            xy_sequences.append(sequence)
+
+    labels = Labels(words, unknown=UNKNOWN)
+    logging.info("words (%d): %s" % (len(labels), labels))
+    return labels, xy_sequences
+
+
 def vocabulary(words):
     return Labels(words.union(set([START, END])), unknown=UNKNOWN)
 
@@ -216,4 +243,5 @@ def ook_max(ooks):
     out = np.array([_max([ook[i] for ook in ooks]) for i in range(length)])
     assert len(out) == length, "%d != %d" % (len(out), length)
     return out
+
 
