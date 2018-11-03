@@ -4,9 +4,9 @@ from pytils import check
 
 class Layer:
     def __init__(self, embedding, units, softmax):
-        self.embedding = check.check_instance(embedding, Weight)
+        self.embedding = check.check_instance(embedding, WeightVector)
         self.units = check.check_list(units)
-        self.softmax = check.check_instance(softmax, LabelWeight)
+        self.softmax = check.check_instance(softmax, LabelWeightVector)
 
     def as_json(self):
         return {
@@ -40,24 +40,30 @@ class Unit:
         }
 
 
-class Weight:
-    def __init__(self, vector, colour="#000000"):
-        self.vector = check.check_iterable(vector)
+class WeightVector:
+    def __init__(self, vector, minimum=None, maximum=None, colour="none"):
+        self.vector = [float(value) for value in vector]
+        self.minimum = minimum if minimum is not None else min(self.vector)
+        self.maximum = maximum if maximum is not None else max(self.vector)
         self.colour = colour
 
     def as_json(self):
         return {
-            "vector": [{"value": float(value), "position": i} for i, value in enumerate(self.vector)],
+            "vector": [{"value": value, "position": i} for i, value in enumerate(self.vector)],
+            "minimum": self.minimum,
+            "maximum": self.maximum,
             "colour": self.colour,
         }
 
 
-class LabelWeight:
+class LabelWeightVector:
     def __init__(self, label_weights):
-        self.label_weights = [item for item in sorted(label_weights.items(), key=lambda item: item[1], reverse=True)]
+        self.label_weights = [(str(item[0]), float(item[1])) for item in sorted(label_weights.items(), key=lambda item: item[1], reverse=True)]
 
     def as_json(self):
         return {
-            "vector": [{"value": float(item[1]), "position": i, "label": str(item[0])} for i, item in enumerate(self.label_weights)],
+            "vector": [{"value": item[1], "position": i, "label": item[0]} for i, item in enumerate(self.label_weights)],
+            "minimum": 0,
+            "maximum": 1
         }
 

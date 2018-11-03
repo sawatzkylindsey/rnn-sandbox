@@ -8,27 +8,24 @@ $(document).ready(function() {
 function draw(json) {
     console.log(json);
 
-    var min = -1;
-    var max = 1;
     var w = 50;
     var h = 50;
 
     //draw embedding
-    drawWeightsForVector(30, 30, 100, 100, min, max, json.embedding.vector, json.embedding.colour);
+    drawWeightVector(30, 30, 100, 100, json.embedding);
 
     //draw first vector
-    
-    drawWeightsForVector(30, 140, w, h, min, max, json.layers[0].c.vector, json.layers[0].c.colour);
-    drawWeightsForVector(30, 200, w, h, min, max, json.layers[0].c_hat.vector, json.layers[0].c_hat.colour);
-    drawWeightsForVector(30, 260, w, h, min, max, json.layers[0].c_previous.vector, json.layers[0].c_previous.colour);
-    drawWeightsForVector(30, 320, w, h, min, max, json.layers[0].forget_gate.vector, json.layers[0].forget_gate.colour);
-    drawWeightsForVector(30, 380, w, h, min, max, json.layers[0].input_hat.vector, json.layers[0].input_hat.colour);
-    drawWeightsForVector(30, 440, w, h, min, max, json.layers[0].output.vector, json.layers[0].output.colour);
-    drawWeightsForVector(30, 500, w, h, min, max, json.layers[0].output_gate.vector, json.layers[0].output_gate.colour);
-    drawWeightsForVector(30, 560, w, h, min, max, json.layers[0].output.vector, json.layers[0].output.colour);
+    drawWeightVector(30, 140, w, h, json.units[0].c);
+    drawWeightVector(30, 200, w, h, json.units[0].c_hat);
+    drawWeightVector(30, 260, w, h, json.units[0].c_previous);
+    drawWeightVector(30, 320, w, h, json.units[0].forget_gate);
+    drawWeightVector(30, 380, w, h, json.units[0].input_hat);
+    drawWeightVector(30, 440, w, h, json.units[0].remember_gate);
+    drawWeightVector(30, 500, w, h, json.units[0].output_gate);
+    drawWeightVector(30, 560, w, h, json.units[0].output);
 
-    //draw output
-    drawWeightsForVector(30, 620, 100, 100, min, max, json.output.vector, json.output.colour);
+    //draw softmax
+    drawLabelWeightVector(30, 620, 100, 100, json.softmax);
 
     //draw signs
     drawOperationSign("dotProduct", 200, 250, 60, '#abc');
@@ -36,16 +33,15 @@ function draw(json) {
     drawOperationSign("equals", 200, 450, 60, '#abc');
 }
 
-function drawWeightsForVector(top, left, width, height, min, max, vector, color) {
+function drawWeightVector(top, left, width, height, weight) {
+    drawWeightWidget(top, left, width, height, weight.minimum, weight.maximum, weight.vector, weight.colour);
+}
 
-    data = [];
+function drawLabelWeightVector(top, left, width, height, labelWeight) {
+    drawWeightWidget(top, left, width, height, 0, 1, labelWeight.vector, "none");
+}
 
-    for (i = 0; i < vector.length; i++) {
-
-        data[i] = { value: vector[i].value, label: vector[i].position };
-    }
-
-    data = data.reverse();
+function drawWeightWidget(top, left, width, height, min, max, vector, colour) {
     var strokeWidth = 2;
 
     // Add svg to
@@ -58,12 +54,12 @@ function drawWeightsForVector(top, left, width, height, min, max, vector, color)
         .append('g');
 
     var y = d3.scaleBand()
-        .domain(data.map(function (d) { return d.label; }))
-        .range([height - strokeWidth / 2.0, strokeWidth / 2.0]);
+        .domain(vector.map(function (d) { return d.position; }))
+        .range([(strokeWidth / 2.0), height - (strokeWidth / 2.0)]);
 
     var x = d3.scaleLinear()
         .domain([min, max])
-        .range([strokeWidth / 2.0, width - strokeWidth / 2.0]);
+        .range([(strokeWidth / 2.0), width - (strokeWidth / 2.0)]);
 
     // boundary box
     svg.append("rect")
@@ -74,27 +70,33 @@ function drawWeightsForVector(top, left, width, height, min, max, vector, color)
         .attr("stroke", "black")
         .attr("stroke-width", 1)
         .attr("fill", "none");
+    svg.append("line")
+        .attr("x1", x(0))
+        .attr("y1", y.range()[0])
+        .attr("x2", x(0))
+        .attr("y2", y.range()[1])
+        .attr("stroke", "black")
+        .attr("stroke-width", strokeWidth);
     // append the rectangles for the bar chart
     svg.selectAll(".bar")
-        .data(data)
+        .data(vector)
         .enter().append("rect")
         .attr("x", function (d) {
             return x(Math.min(0, d.value));
         })
         .attr("y", function (d) {
-            return y(d.label);
+            return y(d.position);
         })
         .attr("width", function (d) {
-            return d.value===0 ? 0.000001 : Math.abs(x(d.value) - x(0));
+            return Math.abs(x(d.value) - x(0));
         })
         .attr("height", y.bandwidth())
         .attr("stroke", "black")
         .attr("stroke-width", strokeWidth)
-        .attr("fill", color);
+        .attr("fill", colour);
 }
 
-function drawOperationSign(operation, top, left, size, color) {
-
+function drawOperationSign(operation, top, left, size, colour) {
     var strokeWidth = 2;
 
     var operationData = [{
@@ -126,7 +128,7 @@ function drawOperationSign(operation, top, left, size, color) {
         .attr("cx", function (d) { return d.center; })
         .attr("cy", function (d) { return d.center; })
         .attr("r", function (d) { return d.elementRadius; })
-        .style("fill", function () { return color; })
+        .style("fill", function () { return colour; })
         .attr("stroke-width", strokeWidth)
         .attr("stroke", "black");
 
@@ -176,3 +178,4 @@ function drawOperationSign(operation, top, left, size, color) {
             break;
     }
 }
+

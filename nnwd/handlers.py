@@ -4,7 +4,7 @@ import pdb
 import threading
 
 from pytils.log import setup_logging, user_log
-from nnwd.models import Layer, Unit, Weight, LabelWeight
+from nnwd.models import Layer, Unit, WeightVector, LabelWeightVector
 from nnwd import rnn
 
 
@@ -24,11 +24,20 @@ class NeuralNetwork:
         self._background_training.join()
         stepwise_rnn = self.neural_network.stepwise()
         result, instruments = stepwise_rnn.step("the", ["embedding", "units"])
-        embedding = Weight(instruments["embedding"])
+        embedding = WeightVector(instruments["embedding"])
         units = [self._unit(u) for u in instruments["units"]]
-        softmax = LabelWeight(result.distribution)
+        softmax = LabelWeightVector(result.distribution)
         return Layer(embedding, units, softmax)
 
     def _unit(self, unit):
-        return Unit(Weight(unit), Weight(unit), Weight(unit), Weight(unit), Weight(unit), Weight(unit), Weight(unit), Weight(unit))
+        return Unit(
+            WeightVector(unit),
+            WeightVector([0,0,0,0,0], -1, 1),
+            WeightVector(unit),
+            WeightVector(unit),
+            WeightVector(unit),
+            WeightVector(unit),
+            WeightVector(unit),
+            WeightVector(unit),
+        )
 
