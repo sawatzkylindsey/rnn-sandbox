@@ -1,70 +1,134 @@
 
+var total_width = 1000;
+var layer_height = 200;
+var svg = null;
+
 $(document).ready(function() {
+    svg = d3.select('body').append('svg')
+        .style('position', 'absolute')
+        .style('top', 0)
+        .style('left', 0)
+        .style('width', total_width * 2)
+        .style('height', layer_height * 5);
 
     d3.json("neural-network")
-        .get(function(error, data) { draw(data); });
+        .get(function(error, data) { drawLayer(0, data); });
 });
 
-function draw(json) {
+function drawLayer(layer, json) {
     console.log(json);
 
-    var w = 50;
-    var h = 50;
+    var x_offset = 50;
+    var y_offset = 50 + (layer * layer_height)
+    var w = 30;
+    var h = layer_height / 3.0;
+    var operand_height = (h * 2.0 / 5.0);
+    var operator_height = (h - (operand_height * 2));
+
+    // gridlines
+    var x;
+    for (x = 0; x <= total_width; x += w) {
+        svg.append("line")
+            .attr("x1", x_offset + x - 0.05)
+            .attr("y1", y_offset)
+            .attr("x2", x_offset + x - 0.05)
+            .attr("y2", y_offset + layer_height)
+            .attr("stroke-dasharray", "5,5")
+            .attr("stroke", "black")
+            .attr("stroke-width", 0.1);
+    }
+    var y;
+    for (y = 0; y <= layer_height; y += (h / 2.0)) {
+        svg.append("line")
+            .attr("x1", x_offset)
+            .attr("y1", y_offset + y - 0.05)
+            .attr("x2", x_offset + total_width)
+            .attr("y2", y_offset + y - 0.05)
+            .attr("stroke-dasharray", "5,5")
+            .attr("stroke", "black")
+            .attr("stroke-width", 0.1);
+    }
 
     //draw embedding
-    drawWeightVector(30, 30, 100, 100, json.embedding);
+    drawWeightVector(json.embedding, "embedding",
+        x_offset + (w), y_offset,
+        w, h);
 
     //draw first vector
-    drawWeightVector(30, 140, w, h, json.units[0].c);
-    drawWeightVector(30, 200, w, h, json.units[0].c_hat);
-    drawWeightVector(30, 260, w, h, json.units[0].c_previous);
-    drawWeightVector(30, 320, w, h, json.units[0].forget_gate);
-    drawWeightVector(30, 380, w, h, json.units[0].input_hat);
-    drawWeightVector(30, 440, w, h, json.units[0].remember_gate);
-    drawWeightVector(30, 500, w, h, json.units[0].output_gate);
-    drawWeightVector(30, 560, w, h, json.units[0].output);
+    drawWeightVector(json.units[0].c_previous, "c_previous",
+        x_offset + (w * 3) + (w / 2), y_offset + (h * 1 / 2),
+        w, operand_height);
+    drawWeightVector(json.units[0].forget_gate, "forget_gate",
+        x_offset + (w * 3) + (w / 2), y_offset + (h * 2 / 2) + (operator_height / 2),
+        w, operand_height);
+    drawWeightVector(json.units[0].c_hat, "todo1",
+        x_offset + (w * 5), y_offset + (h * 1 / 2),
+        w, h);
+    drawWeightVector(json.units[0].input_hat, "input_hat",
+        x_offset + (w * 7) + (w / 2), y_offset + (h * 3 / 2),
+        w, operand_height);
+    drawWeightVector(json.units[0].remember_gate, "remember_gate",
+        x_offset + (w * 7) + (w / 2), y_offset + (h * 4 / 2) + (operator_height / 2),
+        w, operand_height);
+    drawWeightVector(json.units[0].c_hat, "todo2",
+        x_offset + (w * 9), y_offset + (h * 3 / 2),
+        w, h);
+    drawWeightVector(json.units[0].c_hat, "todo1'",
+        x_offset + (w * 11) + (w / 2), y_offset + (h * 1 / 2),
+        w, operand_height);
+    drawWeightVector(json.units[0].c_hat, "todo2'",
+        x_offset + (w * 11) + (w / 2), y_offset + (h * 2 / 2) + (operator_height / 2),
+        w, operand_height);
+    drawWeightVector(json.units[0].c, "c",
+        x_offset + (w * 13), y_offset + (h * 1 / 2),
+        w, h);
+    drawWeightVector(json.units[0].c_hat, "c_hat",
+        x_offset + (w * 15) + (w / 2), y_offset + (h * 1 / 2) + (operator_height / 2),
+        w, operand_height);
+    drawWeightVector(json.units[0].output_gate, "output_gate",
+        x_offset + (w * 15) + (w / 2), y_offset,
+        w, operand_height);
+    drawWeightVector(json.units[0].output, "output",
+        x_offset + (w * 17), y_offset,
+        w, h);
 
     //draw softmax
-    drawLabelWeightVector(30, 620, 100, 100, json.softmax);
+    drawLabelWeightVector(json.softmax, "softmax", x_offset + (w * 20), y_offset, w, h);
 
     //draw signs
-    drawOperationSign("dotProduct", 200, 250, 60, '#abc');
-    drawOperationSign("addition", 200, 350, 60, '#abc');
-    drawOperationSign("equals", 200, 450, 60, '#abc');
+    drawOperationSign("dotProduct", 400, 250, 60, '#abc');
+    drawOperationSign("addition", 400, 350, 60, '#abc');
+    drawOperationSign("equals", 400, 450, 60, '#abc');
 }
 
-function drawWeightVector(top, left, width, height, weight) {
-    drawWeightWidget(top, left, width, height, weight.minimum, weight.maximum, weight.vector, weight.colour);
+function drawWeightVector(weight, name, x_offset, y_offset, width, height) {
+    drawWeightWidget(x_offset, y_offset, width, height, weight.minimum, weight.maximum, weight.vector, weight.colour, name);
 }
 
-function drawLabelWeightVector(top, left, width, height, labelWeight) {
-    drawWeightWidget(top, left, width, height, 0, 1, labelWeight.vector, "none");
+function drawLabelWeightVector(label_weight, name, x_offset, y_offset, width, height) {
+    drawWeightWidget(x_offset, y_offset, width, height, 0, 1, label_weight.vector, "none", name);
 }
 
-function drawWeightWidget(top, left, width, height, min, max, vector, colour) {
+function drawWeightWidget(x_offset, y_offset, width, height, min, max, vector, colour, name) {
     var strokeWidth = 2;
-
-    // Add svg to
-    var svg = d3.select('body').append('svg')
-        .style('position', 'absolute')
-        .style('top', top)
-        .style('left', left)
-        .style('width', width)
-        .style('height', height)
-        .append('g');
 
     var y = d3.scaleBand()
         .domain(vector.map(function (d) { return d.position; }))
-        .range([(strokeWidth / 2.0), height - (strokeWidth / 2.0)]);
+        .range([y_offset + (strokeWidth / 2.0), y_offset + height - (strokeWidth / 2.0)]);
 
     var x = d3.scaleLinear()
         .domain([min, max])
-        .range([(strokeWidth / 2.0), width - (strokeWidth / 2.0)]);
+        .range([(x_offset + strokeWidth / 2.0), x_offset + width - (strokeWidth / 2.0)]);
 
+    svg.append("text")
+        .attr("x", x_offset)
+        .attr("y", y_offset - 2)
+        .style("font-size", "12px")
+        .text(name);
     // boundary box
     svg.append("rect")
-        .attr("x", 0.5)
-        .attr("y", 0.5)
+        .attr("x", x_offset + 0.5)
+        .attr("y", y_offset + 0.5)
         .attr("width", width - 1)
         .attr("height", height - 1)
         .attr("stroke", "black")
@@ -96,7 +160,7 @@ function drawWeightWidget(top, left, width, height, min, max, vector, colour) {
         .attr("fill", colour);
 }
 
-function drawOperationSign(operation, top, left, size, colour) {
+function drawOperationSign(operation, x_offset, y_offset, size, colour) {
     var strokeWidth = 2;
 
     var operationData = [{
@@ -114,8 +178,8 @@ function drawOperationSign(operation, top, left, size, colour) {
 
     var svgContainer = d3.select("body").append("svg")
         .style('position', 'absolute')
-        .style('top', top)
-        .style('left', left)
+        .style('top', x_offset)
+        .style('left', y_offset)
         .style('width', size)
         .style('height', size);
 
