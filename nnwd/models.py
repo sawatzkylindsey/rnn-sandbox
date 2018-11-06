@@ -59,11 +59,12 @@ class WeightVector:
 class LabelWeightVector:
     def __init__(self, label_weights):
         self.label_weights = [(str(item[0]), float(item[1])) for item in sorted(label_weights.items(), key=lambda item: item[1], reverse=True)]
+        self.maximum = max(self.label_weights, key=lambda item: item[1])[1] * 1.5
 
     def as_json(self):
         return {
             "vector": [{"value": item[1], "position": i, "label": item[0]} for i, item in enumerate(self.label_weights)],
             "minimum": 0,
-            "maximum": 1
+            "maximum": self.maximum
         }
 

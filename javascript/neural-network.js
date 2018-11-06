@@ -106,7 +106,7 @@ function drawWeightVector(weight, name, x_offset, y_offset, width, height) {
 }
 
 function drawLabelWeightVector(label_weight, name, x_offset, y_offset, width, height) {
-    drawWeightWidget(x_offset, y_offset, width, height, 0, 1, label_weight.vector, "none", name);
+    drawWeightWidget(x_offset, y_offset, width, height, label_weight.minimum, label_weight.maximum, label_weight.vector, "none", name);
 }
 
 function drawWeightWidget(x_offset, y_offset, width, height, min, max, vector, colour, name) {
