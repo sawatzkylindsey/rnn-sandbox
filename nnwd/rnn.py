@@ -16,6 +16,10 @@ from pytils.log import user_log
 
 
 class Rnn:
+    # There are really only 2 states we care about capturing from the scan for the computation graph, however
+    # we track all the other intermediate gates/states for the weight instrumentation.
+    SCAN_STATES = 10
+
     def __init__(self, layers, width, word_labels, scope="rnn"):
         self.layers = layers
         self.width = width
@@ -29,56 +33,106 @@ class Rnn:
         self.unrolled_inputs_p = self.placeholder("unrolled_inputs_p", [None, 1, len(self.word_labels)])
         self.output_label_p = self.placeholder("output_label_p", [None, 1, len(self.word_labels)])
 
-        self.initial_state_p = self.placeholder("initial_state_p", [self.layers, 1, self.width])
-        self.initial_state_c = np.zeros([self.layers, 1, self.width], dtype="float32")
+        self.initial_state_p = self.placeholder("initial_state_p", [Rnn.SCAN_STATES, self.layers, 1, self.width])
+        self.initial_state_c = np.zeros([Rnn.SCAN_STATES, self.layers, 1, self.width], dtype="float32")
 
         self.E = self.variable("E", [len(self.word_labels), self.width])
-        self.E_bias = self.variable("E_bias", [1, self.width], 0.)
+        self.E_bias = self.variable("E_bias", [1, self.width], 0.0)
+
+        self.R = self.variable("R", [self.layers, self.width * 2, self.width], 0.1)
+        self.R_bias = self.variable("R_bias", [self.layers, 1, self.width], 0.0)
+        self.F = self.variable("F", [self.layers, self.width * 2, self.width], 1.0)
+        self.F_bias = self.variable("F_bias", [self.layers, 1, self.width], 0.0)
+        self.O = self.variable("O", [self.layers, self.width * 2, self.width], 0.1)
+        self.O_bias = self.variable("O_bias", [self.layers, 1, self.width], 0.0)
 
         self.H = self.variable("H", [self.layers, self.width * 2, self.width])
-        self.H_bias = self.variable("H_bias", [self.layers, 1, self.width], 0.)
+        self.H_bias = self.variable("H_bias", [self.layers, 1, self.width], 0.0)
 
         self.Y = self.variable("Y", [self.width, len(self.word_labels)])
-        self.Y_bias = self.variable("Y_bias", [1, len(self.word_labels)], 0.)
+        self.Y_bias = self.variable("Y_bias", [1, len(self.word_labels)], 0.0)
 
         self.unrolled_embedded_inputs = tf.matmul(tf.reshape(self.unrolled_inputs_p, [-1, len(self.word_labels)]), self.E) + self.E_bias
         assert_shape(self.unrolled_embedded_inputs, [None, self.width])
         tf.identity(tf.reshape(self.unrolled_embedded_inputs, [self.width]), name="embedding")
 
-        def step_plain(previous_state, current_input):
-            h_previous = tf.unstack(previous_state)
+        def step_lstm(previous_state, current_input):
+            # This is all the other stacks, which we don't actually need for the looping (just there for instrumentation).
+            #                                v
+            output_previous, cell_previous, *_ = tf.unstack(previous_state)
             x = current_input
-            assert_shape(x, [1, self.width])
-            h_stack = []
+            remember_gate_stack = []
+            forget_gate_stack = []
+            output_gate_stack = []
+            input_hat_stack = []
+            remember_stack = []
+            cell_previous_stack = []
+            forget_stack = []
+            cell_stack = []
+            cell_hat_stack = []
+            output_stack = []
 
             for l in range(self.layers):
-                assert_shape(h_previous[l], [1, self.width])
-                h = tf.tanh(tf.matmul(tf.concat([h_previous[l], x], axis=-1), self.H[l]) + self.H_bias[l])
-                h_stack.append(h)
-                x = h
+                assert_shape(output_previous[l], [1, self.width])
+                assert_shape(cell_previous[l], [1, self.width])
+                assert_shape(x, [1, self.width])
+                remember_gate = tf.sigmoid(tf.matmul(tf.concat([output_previous[l], x], axis=-1), self.R[l]) + self.R_bias[l])
+                remember_gate_stack.append(remember_gate)
+                forget_gate = tf.sigmoid(tf.matmul(tf.concat([output_previous[l], x], axis=-1), self.F[l]) + self.F_bias[l])
+                forget_gate_stack.append(forget_gate)
+                output_gate = tf.sigmoid(tf.matmul(tf.concat([output_previous[l], x], axis=-1), self.O[l]) + self.O_bias[l])
+                output_gate_stack.append(output_gate)
+                input_hat = tf.tanh(tf.matmul(tf.concat([output_previous[l], x], axis=-1), self.H[l]) + self.H_bias[l])
+                input_hat_stack.append(input_hat)
+                remember = input_hat * remember_gate
+                remember_stack.append(remember)
+                cell_previous_stack.append(cell_previous[l])
+                forget = cell_previous[l] * forget_gate
+                forget_stack.append(forget)
+                cell = forget + remember
+                assert_shape(cell, [1, self.width])
+                cell_stack.append(cell)
+                cell_hat = tf.tanh(cell)
+                cell_hat_stack.append(cell_hat)
+                output = cell_hat * output_gate
+                assert_shape(output, [1, self.width])
+                output_stack.append(output)
+                x = output
 
-            return tf.stack(h_stack)
+            return tf.stack([output_stack, cell_stack, remember_gate_stack, forget_gate_stack, output_gate_stack, input_hat_stack, remember_stack, cell_previous_stack, forget_stack, cell_hat_stack])
 
-        self.unrolled_states = tf.scan(step_plain, tf.reshape(self.unrolled_embedded_inputs, [-1, 1, self.width]), self.initial_state_p)
-        assert_shape(self.unrolled_states, [None, self.layers, 1, self.width])
+        self.unrolled_states = tf.scan(step_lstm, tf.reshape(self.unrolled_embedded_inputs, [-1, 1, self.width]), self.initial_state_p)
+        assert_shape(self.unrolled_states, [None, Rnn.SCAN_STATES, self.layers, 1, self.width])
 
         # Grab the last timesteps' state layers out of the unrolled state layers ([x y z] in diagram).
+        # Notice, each cell in the diagram represents 2 (+all the extra instrumentation) states (hidden, cell, ..instrumentation..).
         #
         # state layer L     z z  z
         # ..                y y  y
         # state layer 0     x x  x
         # time              0 .. T
         self.state = self.unrolled_states[-1]
-        assert_shape(self.state, [self.layers, 1, self.width])
-        tf.identity(tf.unstack(tf.reshape(self.state, [self.layers, self.width])), name="units")
+        assert_shape(self.state, [Rnn.SCAN_STATES, self.layers, 1, self.width])
+        output_states, cell_states, remember_gates, forget_gates, output_gates, input_hats, remembers, cell_previouses, forgets, cell_hats = tf.unstack(self.state)
+        tf.identity(tf.reshape(output_states, [self.layers, self.width]), name="outputs")
+        tf.identity(tf.reshape(cell_states, [self.layers, self.width]), name="cells")
+        tf.identity(tf.reshape(remember_gates, [self.layers, self.width]), name="remember_gates")
+        tf.identity(tf.reshape(forget_gates, [self.layers, self.width]), name="forget_gates")
+        tf.identity(tf.reshape(output_gates, [self.layers, self.width]), name="output_gates")
+        tf.identity(tf.reshape(input_hats, [self.layers, self.width]), name="input_hats")
+        tf.identity(tf.reshape(remembers, [self.layers, self.width]), name="remembers")
+        tf.identity(tf.reshape(cell_previouses, [self.layers, self.width]), name="cell_previouses")
+        tf.identity(tf.reshape(forgets, [self.layers, self.width]), name="forgets")
+        tf.identity(tf.reshape(cell_hats, [self.layers, self.width]), name="cell_hats")
 
         # Grab the last state layer across all timesteps from the unrolled state layers ([z z z] in diagram).
+        # Notice, each cell in the diagram represents 2 (+all the extra instrumentation) states (hidden, cell, ..instrumentation..).
         #
         # state layer L     z z  z
         # ..                y y  y
         # state layer 0     x x  x
         # time              0 .. T
-        self.final_state = self.unrolled_states[:, -1]
+        self.final_state = self.unrolled_states[:, 0, -1]
         assert_shape(self.final_state, [None, 1, self.width])
 
         final_state_for_matmul = tf.reshape(self.final_state, [-1, self.width])

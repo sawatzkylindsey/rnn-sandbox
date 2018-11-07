@@ -55,13 +55,13 @@ function drawLayer(layer, json) {
         w, h);
 
     //draw first vector
-    drawWeightVector(json.units[0].c_previous, "c_previous",
+    drawWeightVector(json.units[0].cell_previous, "cell_previous",
         x_offset + (w * 3) + (w / 2), y_offset + (h * 1 / 2),
         w, operand_height);
     drawWeightVector(json.units[0].forget_gate, "forget_gate",
         x_offset + (w * 3) + (w / 2), y_offset + (h * 2 / 2) + (operator_height / 2),
         w, operand_height);
-    drawWeightVector(json.units[0].c_hat, "todo1",
+    drawWeightVector(json.units[0].forget, "forget",
         x_offset + (w * 5), y_offset + (h * 1 / 2),
         w, h);
     drawWeightVector(json.units[0].input_hat, "input_hat",
@@ -70,19 +70,19 @@ function drawLayer(layer, json) {
     drawWeightVector(json.units[0].remember_gate, "remember_gate",
         x_offset + (w * 7) + (w / 2), y_offset + (h * 4 / 2) + (operator_height / 2),
         w, operand_height);
-    drawWeightVector(json.units[0].c_hat, "todo2",
+    drawWeightVector(json.units[0].remember, "remember",
         x_offset + (w * 9), y_offset + (h * 3 / 2),
         w, h);
-    drawWeightVector(json.units[0].c_hat, "todo1'",
+    drawWeightVector(json.units[0].forget, "forget",
         x_offset + (w * 11) + (w / 2), y_offset + (h * 1 / 2),
         w, operand_height);
-    drawWeightVector(json.units[0].c_hat, "todo2'",
+    drawWeightVector(json.units[0].remember, "remember",
         x_offset + (w * 11) + (w / 2), y_offset + (h * 2 / 2) + (operator_height / 2),
         w, operand_height);
-    drawWeightVector(json.units[0].c, "c",
+    drawWeightVector(json.units[0].cell, "cell",
         x_offset + (w * 13), y_offset + (h * 1 / 2),
         w, h);
-    drawWeightVector(json.units[0].c_hat, "c_hat",
+    drawWeightVector(json.units[0].cell_hat, "cell_hat",
         x_offset + (w * 15) + (w / 2), y_offset + (h * 1 / 2) + (operator_height / 2),
         w, operand_height);
     drawWeightVector(json.units[0].output_gate, "output_gate",
