@@ -1,5 +1,5 @@
 
-var total_width = 1000;
+var total_width = 1200;
 var layer_height = 200;
 var svg = null;
 
@@ -24,11 +24,11 @@ $(document).ready(function () {
     
 });
 
-function drawLayer(layer, json) {
+function drawLayer(timestep, json) {
     console.log(json);
 
     var x_offset = 50;
-    var y_offset = 50 + (layer * layer_height)
+    var y_offset = 50 + (timestep * layer_height)
     var w = 30;
     var h = layer_height / 3.0;
     var operand_height = (h * 2.0 / 5.0);
@@ -63,46 +63,50 @@ function drawLayer(layer, json) {
         x_offset + (w), y_offset,
         w, h);
 
-    //draw first vector
-    drawWeightVector(json.units[0].cell_previous, "cell_previous",
-        x_offset + (w * 3) + (w / 2), y_offset + (h * 1 / 2),
-        w, operand_height);
-    drawWeightVector(json.units[0].forget_gate, "forget_gate",
-        x_offset + (w * 3) + (w / 2), y_offset + (h * 2 / 2) + (operator_height / 2),
-        w, operand_height);
-    drawWeightVector(json.units[0].forget, "forget",
-        x_offset + (w * 5), y_offset + (h * 1 / 2),
-        w, h);
-    drawWeightVector(json.units[0].input_hat, "input_hat",
-        x_offset + (w * 7) + (w / 2), y_offset + (h * 3 / 2),
-        w, operand_height);
-    drawWeightVector(json.units[0].remember_gate, "remember_gate",
-        x_offset + (w * 7) + (w / 2), y_offset + (h * 4 / 2) + (operator_height / 2),
-        w, operand_height);
-    drawWeightVector(json.units[0].remember, "remember",
-        x_offset + (w * 9), y_offset + (h * 3 / 2),
-        w, h);
-    drawWeightVector(json.units[0].forget, "forget",
-        x_offset + (w * 11) + (w / 2), y_offset + (h * 1 / 2),
-        w, operand_height);
-    drawWeightVector(json.units[0].remember, "remember",
-        x_offset + (w * 11) + (w / 2), y_offset + (h * 2 / 2) + (operator_height / 2),
-        w, operand_height);
-    drawWeightVector(json.units[0].cell, "cell",
-        x_offset + (w * 13), y_offset + (h * 1 / 2),
-        w, h);
-    drawWeightVector(json.units[0].cell_hat, "cell_hat",
-        x_offset + (w * 15) + (w / 2), y_offset + (h * 1 / 2) + (operator_height / 2),
-        w, operand_height);
-    drawWeightVector(json.units[0].output_gate, "output_gate",
-        x_offset + (w * 15) + (w / 2), y_offset,
-        w, operand_height);
-    drawWeightVector(json.units[0].output, "output",
-        x_offset + (w * 17), y_offset,
-        w, h);
+    // Draw units
+    var u;
+    for (u = 0; u < json.units.length; u++) {
+        var unit_offset = u * w * 16;
+        drawWeightVector(json.units[u].cell_previous, "cell_previous-" + u,
+            x_offset + (w * 3) + (w / 2) + unit_offset, y_offset + (h * 1 / 2),
+            w, operand_height);
+        drawWeightVector(json.units[u].forget_gate, "forget_gate-" + u,
+            x_offset + (w * 3) + (w / 2) + unit_offset, y_offset + (h * 2 / 2) + (operator_height / 2),
+            w, operand_height);
+        drawWeightVector(json.units[u].forget, "forget-" + u,
+            x_offset + (w * 5) + unit_offset, y_offset + (h * 1 / 2),
+            w, h);
+        drawWeightVector(json.units[u].input_hat, "input_hat-" + u,
+            x_offset + (w * 7) + (w / 2) + unit_offset, y_offset + (h * 3 / 2),
+            w, operand_height);
+        drawWeightVector(json.units[u].remember_gate, "remember_gate-" + u,
+            x_offset + (w * 7) + (w / 2) + unit_offset, y_offset + (h * 4 / 2) + (operator_height / 2),
+            w, operand_height);
+        drawWeightVector(json.units[u].remember, "remember-" + u,
+            x_offset + (w * 9) + unit_offset, y_offset + (h * 3 / 2),
+            w, h);
+        drawWeightVector(json.units[u].forget, "forget-" + u,
+            x_offset + (w * 11) + (w / 2) + unit_offset, y_offset + (h * 1 / 2),
+            w, operand_height);
+        drawWeightVector(json.units[u].remember, "remember-" + u,
+            x_offset + (w * 11) + (w / 2) + unit_offset, y_offset + (h * 2 / 2) + (operator_height / 2),
+            w, operand_height);
+        drawWeightVector(json.units[u].cell, "cell-" + u,
+            x_offset + (w * 13) + unit_offset, y_offset + (h * 1 / 2),
+            w, h);
+        drawWeightVector(json.units[u].cell_hat, "cell_hat-" + u,
+            x_offset + (w * 15) + (w / 2) + unit_offset, y_offset,
+            w, operand_height);
+        drawWeightVector(json.units[u].output_gate, "output_gate-" + u,
+            x_offset + (w * 15) + (w / 2) + unit_offset, y_offset + (h * 1 / 2) + (operator_height / 2),
+            w, operand_height);
+        drawWeightVector(json.units[u].output, "output-" + u,
+            x_offset + (w * 17) + unit_offset, y_offset,
+            w, h);
+    }
 
-    //draw softmax
-    drawLabelWeightVector(json.softmax, "softmax", x_offset + (w * 20), y_offset, w, h);
+    // Draw softmax
+    drawLabelWeightVector(json.softmax, "softmax", x_offset + (json.units.length * w * 17) + (w * 3 / 2), y_offset, w, h);
 
     //draw signs
     drawOperationSign("dotProduct", 400, 250, 60, '#abc');
