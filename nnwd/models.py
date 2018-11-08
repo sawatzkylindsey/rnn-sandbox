@@ -7,7 +7,7 @@ from pytils import check
 class Layer:
     def __init__(self, embedding, units, softmax):
         self.embedding = check.check_instance(embedding, WeightVector)
-        self.units = check.check_list(units)
+        self.units = (units)
         self.softmax = check.check_instance(softmax, LabelWeightVector)
 
     def as_json(self):

@@ -99,6 +99,7 @@ def run(port, words, xy_sequences):
     httpd.handlers = {
         "echo": handlers.Echo(),
         "neural-network": handlers.NeuralNetwork(words, xy_sequences),
+        "words": handlers.Words()
     }
     user_log.info('Starting httpd %d...' % port)
     httpd.serve_forever()
