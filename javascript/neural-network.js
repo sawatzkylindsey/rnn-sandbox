@@ -1,36 +1,30 @@
 
 var total_width = 1200;
 var layer_height = 200;
+var input_width = 100;
+var margin = 25;
+var w = 30;
+var h = layer_height / 3.0;
 var svg = null;
 
 $(document).ready(function () {
-
-    /*initiate the autocomplete function on the "textField" element, and pass along the words array as possible autocomplete values:*/
-
-    d3.json("words")
-        .get(function (error, data) {
-            autocomplete(document.getElementById("textField"), data);
-        });
-
     svg = d3.select('body').append('svg')
         .style('position', 'absolute')
         .style('top', 0)
-        .style('left', 200)
+        .style('left', 0)
         .style('width', total_width * 2)
         .style('height', layer_height * 5);
 
-    d3.json("neural-network")
-        .get(function (error, data) { drawLayer(0, data); });
-    
+    d3.json("words")
+        .get(function (error, data) { drawAutocomplete(0, data); });
 });
 
 function drawLayer(timestep, json) {
     console.log(json);
+    $(".timestep-" + timestep).remove();
 
-    var x_offset = 50;
-    var y_offset = 50 + (timestep * layer_height)
-    var w = 30;
-    var h = layer_height / 3.0;
+    var x_offset = (margin * 2) + input_width;
+    var y_offset = margin + (timestep * layer_height)
     var operand_height = (h * 2.0 / 5.0);
     var operator_height = (h - (operand_height * 2));
 
@@ -38,6 +32,7 @@ function drawLayer(timestep, json) {
     var x;
     for (x = 0; x <= total_width; x += w) {
         svg.append("line")
+            .attr("class", "timestep-" + timestep)
             .attr("x1", x_offset + x - 0.05)
             .attr("y1", y_offset)
             .attr("x2", x_offset + x - 0.05)
@@ -49,6 +44,7 @@ function drawLayer(timestep, json) {
     var y;
     for (y = 0; y <= layer_height; y += (h / 2.0)) {
         svg.append("line")
+            .attr("class", "timestep-" + timestep)
             .attr("x1", x_offset)
             .attr("y1", y_offset + y - 0.05)
             .attr("x2", x_offset + total_width)
@@ -59,54 +55,54 @@ function drawLayer(timestep, json) {
     }
 
     //draw embedding
-    drawWeightVector(json.embedding, "embedding",
-        x_offset + (w), y_offset,
+    drawWeightVector(timestep, json.embedding, "embedding",
+        x_offset + (w), y_offset + (h / 2),
         w, h);
 
     // Draw units
     var u;
     for (u = 0; u < json.units.length; u++) {
         var unit_offset = u * w * 16;
-        drawWeightVector(json.units[u].cell_previous, "cell_previous-" + u,
-            x_offset + (w * 3) + (w / 2) + unit_offset, y_offset + (h * 1 / 2),
+        drawWeightVector(timestep, json.units[u].cell_previous, "cell_previous-" + u,
+            x_offset + (w * 3) + (w / 2) + unit_offset, y_offset,
             w, operand_height);
-        drawWeightVector(json.units[u].forget_gate, "forget_gate-" + u,
-            x_offset + (w * 3) + (w / 2) + unit_offset, y_offset + (h * 2 / 2) + (operator_height / 2),
+        drawWeightVector(timestep, json.units[u].forget_gate, "forget_gate-" + u,
+            x_offset + (w * 3) + (w / 2) + unit_offset, y_offset + (h * 1 / 2) + (operator_height / 2),
             w, operand_height);
-        drawWeightVector(json.units[u].forget, "forget-" + u,
-            x_offset + (w * 5) + unit_offset, y_offset + (h * 1 / 2),
+        drawWeightVector(timestep, json.units[u].forget, "forget-" + u,
+            x_offset + (w * 5) + unit_offset, y_offset,
             w, h);
-        drawWeightVector(json.units[u].input_hat, "input_hat-" + u,
-            x_offset + (w * 7) + (w / 2) + unit_offset, y_offset + (h * 3 / 2),
+        drawWeightVector(timestep, json.units[u].input_hat, "input_hat-" + u,
+            x_offset + (w * 7) + (w / 2) + unit_offset, y_offset + h,
             w, operand_height);
-        drawWeightVector(json.units[u].remember_gate, "remember_gate-" + u,
-            x_offset + (w * 7) + (w / 2) + unit_offset, y_offset + (h * 4 / 2) + (operator_height / 2),
+        drawWeightVector(timestep, json.units[u].remember_gate, "remember_gate-" + u,
+            x_offset + (w * 7) + (w / 2) + unit_offset, y_offset + (h * 3 / 2) + (operator_height / 2),
             w, operand_height);
-        drawWeightVector(json.units[u].remember, "remember-" + u,
-            x_offset + (w * 9) + unit_offset, y_offset + (h * 3 / 2),
+        drawWeightVector(timestep, json.units[u].remember, "remember-" + u,
+            x_offset + (w * 9) + unit_offset, y_offset + h,
             w, h);
-        drawWeightVector(json.units[u].forget, "forget-" + u,
+        drawWeightVector(timestep, json.units[u].forget, "forget-" + u,
             x_offset + (w * 11) + (w / 2) + unit_offset, y_offset + (h * 1 / 2),
             w, operand_height);
-        drawWeightVector(json.units[u].remember, "remember-" + u,
+        drawWeightVector(timestep, json.units[u].remember, "remember-" + u,
             x_offset + (w * 11) + (w / 2) + unit_offset, y_offset + (h * 2 / 2) + (operator_height / 2),
             w, operand_height);
-        drawWeightVector(json.units[u].cell, "cell-" + u,
+        drawWeightVector(timestep, json.units[u].cell, "cell-" + u,
             x_offset + (w * 13) + unit_offset, y_offset + (h * 1 / 2),
             w, h);
-        drawWeightVector(json.units[u].cell_hat, "cell_hat-" + u,
-            x_offset + (w * 15) + (w / 2) + unit_offset, y_offset,
+        drawWeightVector(timestep, json.units[u].cell_hat, "cell_hat-" + u,
+            x_offset + (w * 15) + (w / 2) + unit_offset, y_offset + (h / 2),
             w, operand_height);
-        drawWeightVector(json.units[u].output_gate, "output_gate-" + u,
-            x_offset + (w * 15) + (w / 2) + unit_offset, y_offset + (h * 1 / 2) + (operator_height / 2),
+        drawWeightVector(timestep, json.units[u].output_gate, "output_gate-" + u,
+            x_offset + (w * 15) + (w / 2) + unit_offset, y_offset + h + (operator_height / 2),
             w, operand_height);
-        drawWeightVector(json.units[u].output, "output-" + u,
-            x_offset + (w * 17) + unit_offset, y_offset,
+        drawWeightVector(timestep, json.units[u].output, "output-" + u,
+            x_offset + (w * 17) + unit_offset, y_offset + (h / 2),
             w, h);
     }
 
     // Draw softmax
-    drawLabelWeightVector(json.softmax, "softmax", x_offset + (json.units.length * w * 17) + (w * 3 / 2), y_offset, w, h);
+    drawLabelWeightVector(timestep, json.softmax, "softmax", x_offset + (json.units.length * w * 17) + (w * 3 / 2), y_offset + (h / 2), w, h);
 
     //draw signs
     drawOperationSign("dotProduct", 400, 250, 60, '#abc');
@@ -114,15 +110,15 @@ function drawLayer(timestep, json) {
     drawOperationSign("equals", 400, 450, 60, '#abc');
 }
 
-function drawWeightVector(weight, name, x_offset, y_offset, width, height) {
-    drawWeightWidget(x_offset, y_offset, width, height, weight.minimum, weight.maximum, weight.vector, weight.colour, name);
+function drawWeightVector(timestep, weight, name, x_offset, y_offset, width, height) {
+    drawWeightWidget(x_offset, y_offset, width, height, weight.minimum, weight.maximum, weight.vector, weight.colour, name, timestep);
 }
 
-function drawLabelWeightVector(label_weight, name, x_offset, y_offset, width, height) {
-    drawWeightWidget(x_offset, y_offset, width, height, label_weight.minimum, label_weight.maximum, label_weight.vector, "none", name);
+function drawLabelWeightVector(timestep, label_weight, name, x_offset, y_offset, width, height) {
+    drawWeightWidget(x_offset, y_offset, width, height, label_weight.minimum, label_weight.maximum, label_weight.vector, "none", name, timestep);
 }
 
-function drawWeightWidget(x_offset, y_offset, width, height, min, max, vector, colour, name) {
+function drawWeightWidget(x_offset, y_offset, width, height, min, max, vector, colour, name, timestep) {
     var strokeWidth = 2;
 
     var y = d3.scaleBand()
@@ -134,12 +130,14 @@ function drawWeightWidget(x_offset, y_offset, width, height, min, max, vector, c
         .range([(x_offset + strokeWidth / 2.0), x_offset + width - (strokeWidth / 2.0)]);
 
     svg.append("text")
+        .attr("class", "timestep-" + timestep)
         .attr("x", x_offset)
         .attr("y", y_offset - 2)
         .style("font-size", "12px")
         .text(name);
     // boundary box
     svg.append("rect")
+        .attr("class", "timestep-" + timestep)
         .attr("x", x_offset + 0.5)
         .attr("y", y_offset + 0.5)
         .attr("width", width - 1)
@@ -148,6 +146,7 @@ function drawWeightWidget(x_offset, y_offset, width, height, min, max, vector, c
         .attr("stroke-width", 1)
         .attr("fill", "none");
     svg.append("line")
+        .attr("class", "timestep-" + timestep)
         .attr("x1", x(0))
         .attr("y1", y.range()[0])
         .attr("x2", x(0))
@@ -158,6 +157,7 @@ function drawWeightWidget(x_offset, y_offset, width, height, min, max, vector, c
     svg.selectAll(".bar")
         .data(vector)
         .enter().append("rect")
+        .attr("class", "timestep-" + timestep)
         .attr("x", function (d) {
             return x(Math.min(0, d.value));
         })
@@ -255,103 +255,70 @@ function drawOperationSign(operation, x_offset, y_offset, size, colour) {
             break;
     }
 }
+function drawAutocomplete(timestep, words) {
+    var x_offset = 25;
+    var y_offset = 25 + (timestep * layer_height)
+    var height = 20;
+    var focus = null;
 
-function autocomplete(inp, arr) {
-    /*the autocomplete function takes two arguments,
-    the text field element and an array of possible autocompleted values:*/
-    var currentFocus;
-    /*execute a function when someone writes in the text field:*/
-    inp.addEventListener("input", function (e) {
-        var a, b, i, val = this.value;
-        /*close any already open lists of autocompleted values*/
-        closeAllLists();
-        if (!val) { return false; }
-        currentFocus = -1;
-        /*create a DIV element that will contain the items (values):*/
-        a = document.createElement("DIV");
-        a.setAttribute("id", this.id + "autocomplete-list");
-        a.setAttribute("class", "autocomplete-items");
-        /*append the DIV element as a child of the autocomplete container:*/
-        this.parentNode.appendChild(a);
-        /*for each item in the array...*/
-        for (i = 0; i < arr.length; i++) {
-            /*check if the item starts with the same letters as the text field value:*/
-            if (arr[i].substr(0, val.length).toUpperCase() === val.toUpperCase()) {
-                /*create a DIV element for each matching element:*/
-                b = document.createElement("DIV");
-                /*make the matching letters bold:*/
-                b.innerHTML = "<strong>" + arr[i].substr(0, val.length) + "</strong>";
-                b.innerHTML += arr[i].substr(val.length);
-                /*insert a input field that will hold the current array item's value:*/
-                b.innerHTML += "<input type='hidden' value='" + arr[i] + "'>";
-                /*execute a function when someone clicks on the item value (DIV element):*/
-                b.addEventListener("click", function (e) {
-                    /*insert the value for the autocomplete text field:*/
-                    inp.value = this.getElementsByTagName("input")[0].value;
-                    /*close the list of autocompleted values,
-                    (or any other open lists of autocompleted values:*/
-                    closeAllLists();
-                });
-                a.appendChild(b);
+    svg.append("foreignObject")
+        .attr("transform", "translate(" + x_offset + "," + (y_offset + h - (height / 2) - 1) + ")")
+        .attr("width", input_width)
+        .attr("height", height)
+        .append("xhtml:div")
+        .attr("id", "autocomplete-" + timestep);
+    var autocomplete = $("#autocomplete-" + timestep);
+    autocomplete.append("<input/>");
+    autocomplete.on("input", function() {
+        autocomplete.find(".autocomplete-option").remove();
+        focus = -1;
+        var value = autocomplete.find("input").val();
+
+        if (value === "") {
+            return false;
+        }
+
+        var i;
+        for (i = 0; i < words.length; i++) {
+            if (words[i].substr(0, value.length).toUpperCase() === value.toUpperCase()) {
+                autocomplete.append("<div class='autocomplete-option'>" + words[i] + "</div>");
             }
         }
-    });
-    /*execute a function presses a key on the keyboard:*/
-    inp.addEventListener("keydown", function (e) {
-        var x = document.getElementById(this.id + "autocomplete-list");
-        if (x) x = x.getElementsByTagName("div");
+
+        $(".autocomplete-option").on("click", function(e) {
+            autocomplete.find(".autocomplete-option").remove();
+            autocomplete.find("input").val(e.target.textContent);
+            console.log("neural-network?sequence=" + encodeURI(e.target.textContent));
+            d3.json("neural-network?sequence=" + encodeURI(e.target.textContent))
+                .get(function (error, data) { drawLayer(timestep, data); });
+        });
+    })
+    .on("keydown", function(e) {
+        var options = autocomplete.find(".autocomplete-option").length;
+
+        // Down key
         if (e.keyCode === 40) {
-            /*If the arrow DOWN key is pressed,
-            increase the currentFocus variable:*/
-            currentFocus++;
-            /*and and make the current item more visible:*/
-            addActive(x);
-        } else if (e.keyCode === 38) { //up
-            /*If the arrow UP key is pressed,
-            decrease the currentFocus variable:*/
-            currentFocus--;
-            /*and and make the current item more visible:*/
-            addActive(x);
-        } else if (e.keyCode === 13) {
-            /*If the ENTER key is pressed, prevent the form from being submitted,*/
-            e.preventDefault();
-            if (currentFocus > -1) {
-                /*and simulate a click on the "active" item:*/
-                if (x) x[currentFocus].click();
+            if (focus == options - 1) {
+                focus = 0;
+            } else {
+                focus += 1;
             }
         }
-    });
-    function addActive(x) {
-        /*a function to classify an item as "active":*/
-        if (!x) return false;
-        /*start by removing the "active" class on all items:*/
-        removeActive(x);
-        if (currentFocus >= x.length) currentFocus = 0;
-        if (currentFocus < 0) currentFocus = (x.length - 1);
-        /*add class "autocomplete-active":*/
-        x[currentFocus].classList.add("autocomplete-active");
-    }
-    function removeActive(x) {
-        /*a function to remove the "active" class from all autocomplete items:*/
-        for (var i = 0; i < x.length; i++) {
-            x[i].classList.remove("autocomplete-active");
-        }
-    }
-    function closeAllLists(elmnt) {
-        /*close all autocomplete lists in the document,
-        except the one passed as an argument:*/
-        var x = document.getElementsByClassName("autocomplete-items");
-        for (var i = 0; i < x.length; i++) {
-            if (elmnt !== x[i] && elmnt !== inp) {
-                x[i].parentNode.removeChild(x[i]);
+        // Up key
+        else if (e.keyCode === 38) {
+            if (focus == 0) {
+                focus = options - 1;
+            } else {
+                focus -= 1;
             }
         }
-    }
-    /*execute a function when someone clicks in the document:*/
-    document.addEventListener("click", function (e) {
-        closeAllLists(e.target);
+        // Enter key
+        else if (e.keyCode == 13) {
+            autocomplete.find(".autocomplete-active").click();
+        }
+
+        autocomplete.find(".autocomplete-active").removeClass("autocomplete-active");
+        autocomplete.find(".autocomplete-option:eq(" + focus + ")").addClass("autocomplete-active");
     });
 }
-
-
 
