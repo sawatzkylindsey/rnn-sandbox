@@ -6,6 +6,7 @@ var margin = 25;
 var w = 30;
 var h = layer_height / 3.0;
 var svg = null;
+var sequence = [];
 
 $(document).ready(function () {
     svg = d3.select('body').append('svg')
@@ -19,18 +20,19 @@ $(document).ready(function () {
         .get(function (error, data) { drawAutocomplete(0, data); });
 });
 
-function drawLayer(timestep, json) {
+function drawTimestep(fake_timestep, json) {
+    console.log("Timestep (fake, actual): (" + fake_timestep + ", " + json.timestep + ")");
     console.log(json);
+    var timestep = json.timestep;
     $(".timestep-" + timestep).remove();
 
     var x_offset = (margin * 2) + input_width;
-    var y_offset = margin + (timestep * layer_height)
+    var y_offset = margin + (timestep * layer_height);
     var operand_height = (h * 2.0 / 5.0);
     var operator_height = (h - (operand_height * 2));
 
     // gridlines
-    var x;
-    for (x = 0; x <= total_width; x += w) {
+    for (var x = 0; x <= total_width; x += w) {
         svg.append("line")
             .attr("class", "timestep-" + timestep)
             .attr("x1", x_offset + x - 0.05)
@@ -41,8 +43,7 @@ function drawLayer(timestep, json) {
             .attr("stroke", "black")
             .attr("stroke-width", 0.1);
     }
-    var y;
-    for (y = 0; y <= layer_height; y += (h / 2.0)) {
+    for (var y = 0; y <= layer_height; y += (h / 2.0)) {
         svg.append("line")
             .attr("class", "timestep-" + timestep)
             .attr("x1", x_offset)
@@ -60,54 +61,83 @@ function drawLayer(timestep, json) {
         w, h);
 
     // Draw units
-    var u;
-    for (u = 0; u < json.units.length; u++) {
+    for (var u = 0; u < json.units.length; u++) {
         var unit_offset = u * w * 16;
+
+        if (timestep > 0) {
+            drawVline(timestep, x_offset + (w * 13) + (w / 2) + unit_offset, margin + ((timestep - 1) * layer_height) + (h * 3 / 2),
+                x_offset + (w * 4) + unit_offset, y_offset);
+        }
+
         drawWeightVector(timestep, json.units[u].cell_previous, "cell_previous-" + u,
             x_offset + (w * 3) + (w / 2) + unit_offset, y_offset,
             w, operand_height);
+        drawOperationSign(timestep, "dotProduct", x_offset + (w * 3) + (w) - (operator_height / 2) + unit_offset, y_offset + (h * 1 / 2) - (operator_height / 2), operator_height, '#abc');
         drawWeightVector(timestep, json.units[u].forget_gate, "forget_gate-" + u,
             x_offset + (w * 3) + (w / 2) + unit_offset, y_offset + (h * 1 / 2) + (operator_height / 2),
             w, operand_height);
+        drawHline(timestep, x_offset + (w * 4) + (operator_height / 2) + unit_offset - 1, y_offset + (h / 2),
+            x_offset + (w * 5) + unit_offset, y_offset + (h / 2));
         drawWeightVector(timestep, json.units[u].forget, "forget-" + u,
             x_offset + (w * 5) + unit_offset, y_offset,
             w, h);
+        drawHline(timestep, x_offset + (w * 2) + unit_offset, y_offset + h,
+            x_offset + (w * 7) + (w / 2) + unit_offset, y_offset + h + (operand_height / 2),
+            x_offset + (w * 2) + unit_offset + ((w * 3 / 2) / 2), y_offset + h + (operand_height / 4));
+
+        if (timestep > 0) {
+            drawVline(timestep, x_offset + (w * 17) + (w / 2) + unit_offset, margin + ((timestep - 1) * layer_height) + (h * 3 / 2),
+                x_offset + (w * 8) + unit_offset, y_offset + (h ));
+        }
+
         drawWeightVector(timestep, json.units[u].input_hat, "input_hat-" + u,
             x_offset + (w * 7) + (w / 2) + unit_offset, y_offset + h,
             w, operand_height);
+        drawOperationSign(timestep, "dotProduct", x_offset + (w * 7) + (w) - (operator_height / 2) + unit_offset, y_offset + (h * 3 / 2) - (operator_height / 2), operator_height, '#abc');
         drawWeightVector(timestep, json.units[u].remember_gate, "remember_gate-" + u,
             x_offset + (w * 7) + (w / 2) + unit_offset, y_offset + (h * 3 / 2) + (operator_height / 2),
             w, operand_height);
+        drawHline(timestep, x_offset + (w * 8) + (operator_height / 2) + unit_offset - 1, y_offset + (h * 3 / 2),
+            x_offset + (w * 9) + unit_offset, y_offset + (h * 3 / 2));
         drawWeightVector(timestep, json.units[u].remember, "remember-" + u,
             x_offset + (w * 9) + unit_offset, y_offset + h,
             w, h);
+        drawHline(timestep, x_offset + (w * 6) + unit_offset, y_offset + (h / 2),
+            x_offset + (w * 11) + (w / 2) + unit_offset, y_offset + (h / 2) + (operand_height / 2));
         drawWeightVector(timestep, json.units[u].forget, "forget-" + u,
             x_offset + (w * 11) + (w / 2) + unit_offset, y_offset + (h * 1 / 2),
             w, operand_height);
+        drawHline(timestep, x_offset + (w * 10) + unit_offset, y_offset + (h * 3 / 2),
+            x_offset + (w * 11) + (w / 2) + unit_offset, y_offset + h + (operand_height / 2) + (operator_height / 2));
+        drawOperationSign(timestep, "addition", x_offset + (w * 11) + (w) - (operator_height / 2) + unit_offset, y_offset + (h) - (operator_height / 2), operator_height, '#abc');
         drawWeightVector(timestep, json.units[u].remember, "remember-" + u,
             x_offset + (w * 11) + (w / 2) + unit_offset, y_offset + (h * 2 / 2) + (operator_height / 2),
             w, operand_height);
+        drawHline(timestep, x_offset + (w * 12) + (operator_height / 2) + unit_offset - 1, y_offset + (h * 2 / 2),
+            x_offset + (w * 13) + unit_offset, y_offset + (h * 2 / 2));
         drawWeightVector(timestep, json.units[u].cell, "cell-" + u,
             x_offset + (w * 13) + unit_offset, y_offset + (h * 1 / 2),
             w, h);
+        drawHline(timestep, x_offset + (w * 14) + unit_offset, y_offset + h,
+            x_offset + (w * 15) + (w / 2) + unit_offset, y_offset + (h / 2) + (operand_height / 2));
         drawWeightVector(timestep, json.units[u].cell_hat, "cell_hat-" + u,
             x_offset + (w * 15) + (w / 2) + unit_offset, y_offset + (h / 2),
             w, operand_height);
+        drawOperationSign(timestep, "dotProduct", x_offset + (w * 15) + (w) - (operator_height / 2) + unit_offset, y_offset + (h) - (operator_height / 2), operator_height, '#abc');
         drawWeightVector(timestep, json.units[u].output_gate, "output_gate-" + u,
             x_offset + (w * 15) + (w / 2) + unit_offset, y_offset + h + (operator_height / 2),
             w, operand_height);
+        drawHline(timestep, x_offset + (w * 16) + (operator_height / 2) + unit_offset - 1, y_offset + (h * 2 / 2),
+            x_offset + (w * 17) + unit_offset, y_offset + (h * 2 / 2));
         drawWeightVector(timestep, json.units[u].output, "output-" + u,
             x_offset + (w * 17) + unit_offset, y_offset + (h / 2),
             w, h);
     }
 
     // Draw softmax
+    drawHline(timestep, x_offset + (json.units.length * w * 17), y_offset + (h * 2 / 2),
+        x_offset + (json.units.length * w * 17) + (w * 3 / 2), y_offset + (h * 2 / 2));
     drawLabelWeightVector(timestep, json.softmax, "softmax", x_offset + (json.units.length * w * 17) + (w * 3 / 2), y_offset + (h / 2), w, h);
-
-    //draw signs
-    drawOperationSign("dotProduct", 400, 250, 60, '#abc');
-    drawOperationSign("addition", 400, 350, 60, '#abc');
-    drawOperationSign("equals", 400, 450, 60, '#abc');
 }
 
 function drawWeightVector(timestep, weight, name, x_offset, y_offset, width, height) {
@@ -147,9 +177,9 @@ function drawWeightWidget(x_offset, y_offset, width, height, min, max, vector, c
         .attr("fill", "none");
     svg.append("line")
         .attr("class", "timestep-" + timestep)
-        .attr("x1", x(0))
+        .attr("x1", x(min))
         .attr("y1", y.range()[0])
-        .attr("x2", x(0))
+        .attr("x2", x(min))
         .attr("y2", y.range()[1])
         .attr("stroke", "black")
         .attr("stroke-width", strokeWidth);
@@ -159,13 +189,13 @@ function drawWeightWidget(x_offset, y_offset, width, height, min, max, vector, c
         .enter().append("rect")
         .attr("class", "timestep-" + timestep)
         .attr("x", function (d) {
-            return x(Math.min(0, d.value));
+            return x(Math.min(min, d.value));
         })
         .attr("y", function (d) {
             return y(d.position);
         })
         .attr("width", function (d) {
-            return Math.abs(x(d.value) - x(0));
+            return Math.abs(x(d.value) - x(min));
         })
         .attr("height", y.bandwidth())
         .attr("stroke", "black")
@@ -173,7 +203,121 @@ function drawWeightWidget(x_offset, y_offset, width, height, min, max, vector, c
         .attr("fill", colour);
 }
 
-function drawOperationSign(operation, x_offset, y_offset, size, colour) {
+function drawHline(timestep, x1, y1, x2, y2) {
+    drawHline(timestep, x1, y1, x2, y2, null);
+}
+
+function drawHline(timestep, x1, y1, x2, y2, x_midpoint) {
+    var line_data = [{x: x1, y: y1}];
+    var delta_x = Math.abs(x1 - x2);
+    var delta_y = Math.abs(y1 - y2);
+    var sharpness = 10;
+
+    if (x_midpoint == null && delta_y != 0) {
+        if ((delta_x / 2) < sharpness) {
+            throw "bad line";
+        }
+        line_data.push({x: x1 + (delta_x / 2) - sharpness - 1, y: y1});
+        line_data.push({x: x1 + (delta_x / 2) - sharpness, y: y1});
+        line_data.push({x: x1 + (delta_x / 2), y: y1 + ((y2 > y1 ? 1 : -1) * (delta_y / 2))});
+        line_data.push({x: x1 + (delta_x / 2) + sharpness, y: y2});
+        line_data.push({x: x1 + (delta_x / 2) + sharpness + 1, y: y2});
+    } else if (x_midpoint != null) {
+        if ((x_midpoint - x1) < sharpness) {
+            throw "bad line";
+        }
+        line_data.push({x: x_midpoint - sharpness - 1, y: y1});
+        line_data.push({x: x_midpoint - sharpness, y: y1});
+        line_data.push({x: x_midpoint, y: y1 + ((y2 > y1 ? 1 : -1) * (delta_y / 2))});
+        line_data.push({x: x_midpoint + sharpness, y: y2});
+        line_data.push({x: x_midpoint + sharpness + 1, y: y2});
+    }
+
+    line_data.push({x: x2, y: y2});
+
+    /*for (var i = 0; i < line_data.length; i++) {
+        svg.append("circle")
+            .attr("class", "timestep-" + timestep)
+            .attr("r", 2)
+            .attr("cx", line_data[i]["x"])
+            .attr("cy", line_data[i]["y"])
+            .style("fill", "red");
+    }*/
+
+    //console.log(line_data);
+    var pather = d3.line()
+        .x(function(d) { return d["x"]; })
+        .y(function(d) { return d["y"]; })
+        .curve(d3.curveBasis);
+        //.curve(d3.curveBundle.beta(.9));
+    svg.selectAll(".bar")
+        .data([line_data])
+        .enter().append("path")
+            .attr("class", "timestep-" + timestep)
+            .attr("d", pather)
+            .attr("stroke", "black")
+            .attr("stroke-width", .75)
+            .style("fill", "none");
+}
+
+function drawVline(timestep, x1, y1, x2, y2) {
+    drawVline(timestep, x1, y1, x2, y2, null);
+}
+
+function drawVline(timestep, x1, y1, x2, y2, y_midpoint) {
+    var line_data = [{x: x1, y: y1}];
+    var delta_x = Math.abs(x1 - x2);
+    var delta_y = Math.abs(y1 - y2);
+    var sharpness = 10;
+
+    if (y_midpoint == null && delta_x != 0) {
+        if ((delta_y / 2) < sharpness) {
+            throw "bad line";
+        }
+        line_data.push({x: x1, y: y1 + (delta_y / 2) - sharpness - 1});
+        line_data.push({x: x1, y: y1 + (delta_y / 2) - sharpness});
+        line_data.push({x: x1 + ((x2 > x1 ? 1 : -1) * (delta_x / 2)), y: y1 + (delta_y / 2)});
+        line_data.push({x: x2, y: y1 + (delta_y / 2) + sharpness});
+        line_data.push({x: x2, y: y1 + (delta_y / 2) + sharpness + 1});
+    } else if (y_midpoint != null) {
+        if ((y_midpoint - y1) < sharpness) {
+            throw "bad line";
+        }
+        line_data.push({x: x1, y: y_midpoint - sharpness - 1});
+        line_data.push({x: x1, y: y_midpiont - sharpness});
+        line_data.push({x: x1 + ((x2 > x1 ? 1 : -1) * (delta_x / 2)), y: y_midpoint});
+        line_data.push({x: x2, y: y_midpoint + sharpness});
+        line_data.push({x: x2, y: y_midpoint + sharpness + 1});
+    }
+
+    line_data.push({x: x2, y: y2});
+
+    /*for (var i = 0; i < line_data.length; i++) {
+        svg.append("circle")
+            .attr("class", "timestep-" + timestep)
+            .attr("r", 2)
+            .attr("cx", line_data[i]["x"])
+            .attr("cy", line_data[i]["y"])
+            .style("fill", "red");
+    }*/
+
+    //console.log(line_data);
+    var pather = d3.line()
+        .x(function(d) { return d["x"]; })
+        .y(function(d) { return d["y"]; })
+        .curve(d3.curveBasis);
+        //.curve(d3.curveBundle.beta(.9));
+    svg.selectAll(".bar")
+        .data([line_data])
+        .enter().append("path")
+            .attr("class", "timestep-" + timestep)
+            .attr("d", pather)
+            .attr("stroke", "black")
+            .attr("stroke-width", .75)
+            .style("fill", "none");
+}
+
+function drawOperationSign(timestep, operation, x_offset, y_offset, size, colour) {
     var strokeWidth = 2;
 
     var operationData = [{
@@ -190,9 +334,10 @@ function drawOperationSign(operation, x_offset, y_offset, size, colour) {
     }];
 
     var svgContainer = d3.select("body").append("svg")
+        .attr("class", "timestep-" + timestep)
         .style('position', 'absolute')
-        .style('top', x_offset)
-        .style('left', y_offset)
+        .style('left', x_offset)
+        .style('top', y_offset)
         .style('width', size)
         .style('height', size);
 
@@ -278,8 +423,7 @@ function drawAutocomplete(timestep, words) {
             return false;
         }
 
-        var i;
-        for (i = 0; i < words.length; i++) {
+        for (var i = 0; i < words.length; i++) {
             if (words[i].substr(0, value.length).toUpperCase() === value.toUpperCase()) {
                 autocomplete.append("<div class='autocomplete-option'>" + words[i] + "</div>");
             }
@@ -288,9 +432,23 @@ function drawAutocomplete(timestep, words) {
         $(".autocomplete-option").on("click", function(e) {
             autocomplete.find(".autocomplete-option").remove();
             autocomplete.find("input").val(e.target.textContent);
-            console.log("neural-network?sequence=" + encodeURI(e.target.textContent));
-            d3.json("neural-network?sequence=" + encodeURI(e.target.textContent))
-                .get(function (error, data) { drawLayer(timestep, data); });
+
+            if (timestep >= sequence.length) {
+                sequence.push(e.target.textContent);
+                d3.json("words")
+                    .get(function (error, data) { drawAutocomplete(timestep + 1, data); });
+            } else {
+                sequence[timestep] = e.target.textContent;
+            }
+
+            console.log("Full sequence: " + sequence);
+
+            for (var s = timestep; s < sequence.length; s++) {
+                var slice = sequence.slice(0, s + 1);
+                console.log("Drawing sequence for " + (slice.length - 1) + ": " + slice);
+                d3.json("neural-network?" + slice.map(s => "sequence=" + encodeURI(s)).join("&"))
+                    .get(function (error, data) { drawTimestep(slice.length - 1, data); });
+            }
         });
     })
     .on("keydown", function(e) {

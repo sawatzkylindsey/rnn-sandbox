@@ -197,7 +197,8 @@ def corpus_sequences(corpus_file):
                 if i + 1 < len(sentence):
                     sequence.append((word, sentence[i + 1]))
 
-            xy_sequences.append(sequence)
+            if len(sequence) > 0:
+                xy_sequences.append(sequence)
 
     labels = Labels(words, unknown=UNKNOWN)
     logging.info("words (%d): %s" % (len(labels), labels))

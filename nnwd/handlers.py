@@ -43,7 +43,6 @@ class NeuralNetwork:
         self._background_training.start()
 
     def get(self, data):
-        self._background_training.join()
         stepwise_rnn = self.neural_network.stepwise()
 
         for x in data["sequence"]:
@@ -66,5 +65,5 @@ class NeuralNetwork:
             units += [Unit(remember_gate, forget_gate, output_gate, input_hat, remember, cell_previous, forget, cell, cell_hat, output)]
 
         softmax = LabelWeightVector(result.distribution)
-        return Layer(embedding, units, softmax)
+        return Layer(embedding, units, softmax, len(data["sequence"]) - 1)
 
