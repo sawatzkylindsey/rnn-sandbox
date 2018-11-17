@@ -88,7 +88,7 @@ class ServerHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
 
-def run(port, words, xy_sequences):
+def run(port, words, xy_sequences, epochs):
     class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
         pass
 
@@ -98,7 +98,7 @@ def run(port, words, xy_sequences):
     httpd.daemon_threads = True
     httpd.handlers = {
         "echo": handlers.Echo(),
-        "neural-network": handlers.NeuralNetwork(words, xy_sequences),
+        "neural-network": handlers.NeuralNetwork(words, xy_sequences, epochs),
         "words": handlers.Words(words.labels())
     }
     user_log.info('Starting httpd %d...' % port)
@@ -113,11 +113,17 @@ def main(argv):
                     help="Turn on verbose logging.")
     ap.add_argument("-p", "--port", default=8888, type=int)
     ap.add_argument("--corpus", default="corpus.txt")
+    ap.add_argument("--epochs", default=100, type=int)
     args = ap.parse_args(argv)
     setup_logging(".%s.log" % os.path.splitext(os.path.basename(__file__))[0], args.verbose, False, True)
     logging.debug(args)
     words, xy_sequences = nlp.corpus_sequences(args.corpus)
-    run(args.port, words, xy_sequences)
+
+    if args.verbose:
+        for sequence in xy_sequences:
+            logging.debug(sequence)
+
+    run(args.port, words, xy_sequences, args.epochs)
 
 
 def patch_Thread_for_profiling():

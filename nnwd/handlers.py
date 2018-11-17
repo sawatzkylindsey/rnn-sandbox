@@ -35,12 +35,21 @@ class NeuralNetwork:
         "cell_hats",
         "outputs",
     ]
+    LAYERS = 2
+    WIDTH = 5
 
-    def __init__(self, words, xy_sequences):
-        self.neural_network = rnn.Rnn(2, 5, words)
-        self._background_training = threading.Thread(target=self.neural_network.train, args=([[rnn.Xy(t[0], t[1]) for t in sequence] for sequence in xy_sequences], 100, True))
+    def __init__(self, words, xy_sequences, epochs):
+        self.neural_network = rnn.Rnn(NeuralNetwork.LAYERS, NeuralNetwork.WIDTH, words)
+        self.xy_sequences = [[rnn.Xy(t[0], t[1]) for t in sequence] for sequence in xy_sequences]
+        self.epochs = epochs
+        self._background_training = threading.Thread(target=self._train_test)
         self._background_training.daemon = True
         self._background_training.start()
+
+    def _train_test(self):
+        self.neural_network.train(self.xy_sequences, self.epochs, True)
+        r = self.neural_network.test(self.xy_sequences, True)
+        logging.debug("test %s" % r)
 
     def get(self, data):
         stepwise_rnn = self.neural_network.stepwise()
@@ -64,6 +73,6 @@ class NeuralNetwork:
             output = WeightVector(instruments["outputs"][layer])
             units += [Unit(remember_gate, forget_gate, output_gate, input_hat, remember, cell_previous, forget, cell, cell_hat, output)]
 
-        softmax = LabelWeightVector(result.distribution)
+        softmax = LabelWeightVector(result.distribution, NeuralNetwork.WIDTH)
         return Layer(embedding, units, softmax, len(data["sequence"]) - 1)
 

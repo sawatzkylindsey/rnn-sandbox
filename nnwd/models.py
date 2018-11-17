@@ -84,8 +84,8 @@ class WeightVector:
 
 
 class LabelWeightVector:
-    def __init__(self, label_weights):
-        self.label_weights = [(str(item[0]), float(item[1])) for item in sorted(label_weights.items(), key=lambda item: item[1], reverse=True)]
+    def __init__(self, label_weights, top_k=None):
+        self.label_weights = [(str(item[0]), float(item[1])) for item in sorted(label_weights.items(), key=lambda item: item[1], reverse=True)[:len(label_weights) if top_k is None else top_k]]
         self.minimum = 0
         self.maximum = max(self.label_weights, key=lambda item: item[1])[1] * 1.25
         assert self.minimum < self.maximum, "the minimum (%s) must be less than the maximum (%s)" % (self.minimum, self.maximum)
