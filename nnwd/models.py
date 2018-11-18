@@ -54,7 +54,7 @@ class WeightVector:
         self.minimum = minimum if minimum is not None else min(self.vector)
         self.maximum = maximum if maximum is not None else max(self.vector)
 
-        if self.minimum >= 0 and self.minimum <= 1:
+        if self.minimum > 0:
             logging.debug("pushing minimum from (%s) to (0)" % self.minimum)
             self.minimum = 0
         elif self.minimum >= -1 and self.minimum <= 0:
@@ -64,7 +64,10 @@ class WeightVector:
             logging.debug("giving minimum 25%% leeway (%s) to (%s)" % (self.minimum, self.minimum - abs(self.minimum * .25)))
             self.minimum = self.minimum - abs(self.minimum * .25)
 
-        if self.maximum >= 0 and self.maximum <= 1:
+        if self.maximum < 0:
+            logging.debug("pushing maximum from (%s) to (0)" % self.maximum)
+            self.maximum = 0
+        elif self.maximum >= 0 and self.maximum <= 1:
             logging.debug("pushing maximum from (%s) to (1)" % self.maximum)
             self.maximum = 1
         else:

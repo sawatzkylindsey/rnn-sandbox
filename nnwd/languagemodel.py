@@ -3,28 +3,32 @@
 
 from argparse import ArgumentParser
 import logging
-import nlp
 import os
-import rnn
 import sys
 
+from nnwd import domain
+from nnwd import nlp
+from nnwd import rnn
 from pytils.log import setup_logging, user_log
 
 
-def main():
+def main(argv):
     ap = ArgumentParser(prog="language-model")
     ap.add_argument("--verbose", "-v",
                     default=False,
                     action="store_true",
                     help="Turn on verbose logging.")
-    ap.add_argument("training_corpus")
-    args = ap.parse_args()
+    ap.add_argument("--corpus", default="corpus.txt")
+    ap.add_argument("--epochs", default=100, type=int)
+    args = ap.parse_args(argv)
     setup_logging(".%s.log" % os.path.splitext(os.path.basename(__file__))[0], args.verbose, False, True)
-    words, xy_sequences = nlp.corpus_sequences(args.training_corpus)
-    xy_sequences = [[rnn.Xy(x, y) for x, y in sequence] for sequence in xy_sequences]
-    neural_network = rnn.Rnn(1, 5, words)
-    neural_network.train(xy_sequences, 100, True)
-    accuracy = neural_network.test(xy_sequences, True)
+    words, xy_sequences, neural_network = domain.create(args.corpus, args.epochs, args.verbose)
+
+    #while neural_network.is_training():
+    #    pass
+
+    neural_network._background_training.join()
+    accuracy = neural_network.lstm.test([[rnn.Xy(t[0], t[1]) for t in sequence] for sequence in xy_sequences], True)
     user_log.info("accuracy: %s" % accuracy)
 
 

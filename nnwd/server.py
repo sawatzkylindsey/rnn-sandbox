@@ -14,6 +14,7 @@ import sys
 from threading import Thread
 import urllib
 
+from nnwd import domain
 from nnwd import errorhandler
 from nnwd import errors
 from nnwd import handlers
@@ -88,7 +89,7 @@ class ServerHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
 
-def run(port, words, xy_sequences, epochs):
+def run(port, words, neural_network):
     class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
         pass
 
@@ -98,8 +99,9 @@ def run(port, words, xy_sequences, epochs):
     httpd.daemon_threads = True
     httpd.handlers = {
         "echo": handlers.Echo(),
-        "neural-network": handlers.NeuralNetwork(words, xy_sequences, epochs),
-        "words": handlers.Words(words.labels())
+        "weight-explain": handlers.WeightExplain(neural_network),
+        "weights": handlers.Weights(neural_network),
+        "words": handlers.Words(words.labels()),
     }
     user_log.info('Starting httpd %d...' % port)
     httpd.serve_forever()
@@ -117,13 +119,8 @@ def main(argv):
     args = ap.parse_args(argv)
     setup_logging(".%s.log" % os.path.splitext(os.path.basename(__file__))[0], args.verbose, False, True)
     logging.debug(args)
-    words, xy_sequences = nlp.corpus_sequences(args.corpus)
-
-    if args.verbose:
-        for sequence in xy_sequences:
-            logging.debug(sequence)
-
-    run(args.port, words, xy_sequences, args.epochs)
+    words, _, neural_network = domain.create(args.corpus, args.epochs, args.verbose)
+    run(args.port, words, neural_network)
 
 
 def patch_Thread_for_profiling():

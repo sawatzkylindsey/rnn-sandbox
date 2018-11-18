@@ -10,6 +10,7 @@ import re
 import string
 import tensorflow as tf
 tf.logging.set_verbosity(logging.WARN)
+from tensorflow.python import debug as tf_debug
 
 from pytils import adjutant, base, check
 from pytils.log import user_log
@@ -50,7 +51,9 @@ class Rnn:
         self.H_bias = self.variable("H_bias", [self.layers, 1, self.width], 0.0)
 
         self.Y = self.variable("Y", [self.width, len(self.word_labels)])
+        tf.identity(self.Y, name="Y")
         self.Y_bias = self.variable("Y_bias", [1, len(self.word_labels)], 0.0)
+        tf.identity(tf.reshape(self.Y_bias, [len(self.word_labels)]), name="Y_bias")
 
         self.unrolled_embedded_inputs = tf.matmul(tf.reshape(self.unrolled_inputs_p, [-1, len(self.word_labels)]), self.E) + self.E_bias
         assert_shape(self.unrolled_embedded_inputs, [None, self.width])
@@ -155,6 +158,7 @@ class Rnn:
         self.updates = tf.train.AdagradOptimizer(learning_rate=0.1).minimize(self.cost)
 
         self.session = tf.Session()
+        #self.session = tf_debug.LocalCLIDebugWrapperSession(tf.Session())
         self.session.run(tf.global_variables_initializer())
 
     def placeholder(self, name, shape):
@@ -252,6 +256,9 @@ class Rnn:
         distribution, next_state, *instrument_values = self.session.run([self.output_distribution, self.state] + instruments, feed_dict=parameters)
         result = Result(self.word_labels.ook_decode(distribution), self.word_labels.ook_decode_distribution(distribution))
         return result, next_state, {name: instrument_values[i] for i, name in enumerate(instrument_names)}
+
+    def probe(self, name, instance=0):
+        return self.session.run(self.session.graph.get_tensor_by_name("%s/%s:%d" % (self.scope, name, instance)))
 
     def stepwise(self, name=None):
         return Stepwise(self, name)
