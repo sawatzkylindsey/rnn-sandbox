@@ -42,16 +42,19 @@ class Rnn:
 
         self.R = self.variable("R", [self.layers, self.width * 2, self.width], 0.1)
         self.R_bias = self.variable("R_bias", [self.layers, 1, self.width], 0.0)
+        tf.identity(tf.reshape(self.R_bias, [-1, self.width]), name="R_bias")
         self.F = self.variable("F", [self.layers, self.width * 2, self.width], 1.0)
         self.F_bias = self.variable("F_bias", [self.layers, 1, self.width], 0.0)
+        tf.identity(tf.reshape(self.F_bias, [-1, self.width]), name="F_bias")
         self.O = self.variable("O", [self.layers, self.width * 2, self.width], 0.1)
         self.O_bias = self.variable("O_bias", [self.layers, 1, self.width], 0.0)
+        tf.identity(tf.reshape(self.O_bias, [-1, self.width]), name="O_bias")
 
         self.H = self.variable("H", [self.layers, self.width * 2, self.width])
         self.H_bias = self.variable("H_bias", [self.layers, 1, self.width], 0.0)
+        tf.identity(tf.reshape(self.H_bias, [-1, self.width]), name="H_bias")
 
         self.Y = self.variable("Y", [self.width, len(self.word_labels)])
-        tf.identity(self.Y, name="Y")
         self.Y_bias = self.variable("Y_bias", [1, len(self.word_labels)], 0.0)
         tf.identity(tf.reshape(self.Y_bias, [len(self.word_labels)]), name="Y_bias")
 
@@ -254,11 +257,19 @@ class Rnn:
         }
         instruments = [self.session.graph.get_tensor_by_name("%s:0" % name) for name in instrument_names]
         distribution, next_state, *instrument_values = self.session.run([self.output_distribution, self.state] + instruments, feed_dict=parameters)
-        result = Result(self.word_labels.ook_decode(distribution), self.word_labels.ook_decode_distribution(distribution))
+        result = Result(self.word_labels.ook_decode(distribution), self.word_labels.ook_decode_distribution(distribution), self.word_labels.encoding())
         return result, next_state, {name: instrument_values[i] for i, name in enumerate(instrument_names)}
 
-    def probe(self, name, instance=0):
-        return self.session.run(self.session.graph.get_tensor_by_name("%s/%s:%d" % (self.scope, name, instance)))
+    def probe(self, name, layer):
+        try:
+            result = self.session.run(self.session.graph.get_tensor_by_name("%s:0" % (name)))
+        except KeyError as e:
+            result = self.session.run(self.session.graph.get_tensor_by_name("%s/%s:0" % (self.scope, name)))
+
+        if layer is None:
+            return result
+        else:
+            return result[layer]
 
     def stepwise(self, name=None):
         return Stepwise(self, name)
@@ -294,9 +305,10 @@ class Xy:
 
 
 class Result:
-    def __init__(self, prediction, distribution):
+    def __init__(self, prediction, distribution, encoding):
         self.prediction = prediction
         self.distribution = distribution
+        self.encoding = encoding
 
     def __repr__(self):
         return "(prediction=%s, distribution=%s)" % (self.prediction, sorted(self.distribution.items()))

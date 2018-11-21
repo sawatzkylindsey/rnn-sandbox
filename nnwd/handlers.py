@@ -25,7 +25,8 @@ class Weights:
         self.neural_network = neural_network
 
     def get(self, data):
-        return self.neural_network.weights(data["sequence"])
+        sequence = data["sequence"]
+        return self.neural_network.weights(sequence)
 
 
 class WeightExplain:
@@ -33,9 +34,9 @@ class WeightExplain:
         self.neural_network = neural_network
 
     def get(self, data):
+        sequence = data["sequence"]
         name = data["name"][0]
         column = int(data["column"][0])
-        #weights = json.loads(data["weights"][0])
-        return self.neural_network.weight_explain(name, column)
+        return self.neural_network.weight_explain(sequence, name, column)
 
 

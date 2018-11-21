@@ -55,6 +55,9 @@ class Labels:
             else:
                 raise e
 
+    def encoding(self):
+        return {k: v for k, v in self._encoding.items()}
+
     def ook_encode(self, value, handle_unknown=False):
         encoding = [0] * len(self)
 
