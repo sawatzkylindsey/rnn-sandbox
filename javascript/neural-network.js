@@ -23,6 +23,8 @@ $(document).ready(function () {
 
     d3.json("words")
         .get(function (error, data) { drawAutocomplete(0, data); });
+
+   drawGate(25,150,100);
 });
 
 function drawTimestep(fake_timestep, data) {
@@ -562,6 +564,101 @@ function drawEquals(timestep, x_offset, y_offset, size) {
         .attr("y2", y_offset + (size / 2) + (stroke_width * 1))
         .attr("stroke", black)
         .attr("stroke-width", stroke_width);
+}
+
+function drawGate(x_offset, y_offset, size) {
+	
+    var stroke_width = size/50;
+    
+    //left vertical bar
+    svg.append("rect")
+        .attr("x", x_offset)
+        .attr("y", y_offset+size/8)
+        .attr("width", size/10)
+        .attr("height", size-size/8)
+        .attr("stroke", black)
+        .attr("stroke-width", stroke_width)
+        .attr("fill", "#FFF");
+
+    //left circle
+    svg.append("circle")
+        .attr("cx", x_offset+size*2/39)
+        .attr("cy", y_offset+size/18)
+        .attr("r", size/16)
+        .attr("stroke", black)
+        .attr("stroke-width", stroke_width)
+        .attr("fill", "#FFF");
+
+
+    //right vertical bar
+    svg.append("rect")
+        .attr("x", x_offset+size*3/2-size/8)
+        .attr("y", y_offset+size/8)
+        .attr("width", size/10)
+        .attr("height", size-size/8)
+        .attr("stroke", black)
+        .attr("stroke-width", stroke_width)
+        .attr("fill", "#FFF");
+
+    //right circle
+    svg.append("circle")
+        .attr("cx", x_offset+size*3/2-size*2/27)
+        .attr("cy", y_offset+size/18)
+        .attr("r", size/16)
+        .attr("stroke", black)
+        .attr("stroke-width", stroke_width)
+        .attr("fill", "#FFF"); 
+
+    //left door
+    svg.append("line")
+	 .attr("x1", x_offset+size*13/20)
+        .attr("y1", y_offset)
+        .attr("x2", x_offset+size*13/20)
+        .attr("y2", y_offset+size-size/6)
+        .attr("stroke", black)
+        .attr("stroke-width", stroke_width);
+
+   svg.append("line")
+	 .attr("x1", x_offset+size*13/20)
+        .attr("y1", y_offset)
+        .attr("x2", x_offset+size/10)
+        .attr("y2", y_offset+size/6)
+        .attr("stroke", black)
+        .attr("stroke-width", stroke_width);
+
+   svg.append("line")
+	 .attr("x1", x_offset+size*13/20)
+        .attr("y1", y_offset+size-size/6)
+        .attr("x2", x_offset+size/10)
+        .attr("y2", y_offset+size-size/8)
+        .attr("stroke", black)
+        .attr("stroke-width", stroke_width);
+
+   //right door
+   svg.append("line")
+	 .attr("x1", x_offset+size*4/5)
+        .attr("y1", y_offset)
+        .attr("x2", x_offset+size*4/5)
+        .attr("y2", y_offset+size-size/6)
+        .attr("stroke", black)
+        .attr("stroke-width", stroke_width);
+
+   svg.append("line")
+	 .attr("x1", x_offset+size*4/5)
+        .attr("y1", y_offset)
+        .attr("x2", x_offset+size*3/2-size/8)
+        .attr("y2", y_offset+size/6)
+        .attr("stroke", black)
+        .attr("stroke-width", stroke_width);
+
+   svg.append("line")
+	 .attr("x1", x_offset+size*4/5)
+        .attr("y1", y_offset+size-size/6)
+        .attr("x2", x_offset+size*3/2-size/8)
+        .attr("y2", y_offset+size-size/8)
+        .attr("stroke", black)
+        .attr("stroke-width", stroke_width);
+
 }
 
 function drawAutocomplete(timestep, words) {
