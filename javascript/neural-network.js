@@ -25,7 +25,21 @@ $(document).ready(function () {
         .get(function (error, data) { drawAutocomplete(0, data); });
 
    drawGate(25,150,100);
+   
+   svg.append("rect")
+    .attr("width", 2400)
+    .attr("height", 1000)
+    .style("fill", "none")
+    .style("pointer-events", "all")
+    .call(d3.zoom()
+       .scaleExtent([1, 16])
+        .on("zoom", zoomed));
+
 });
+
+function zoomed() {
+  svg.attr("transform", d3.event.transform);
+}
 
 function drawTimestep(fake_timestep, data) {
     console.log("Timestep (fake, actual): (" + fake_timestep + ", " + data.timestep + ")");
