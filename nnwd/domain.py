@@ -46,6 +46,7 @@ class NeuralNetwork:
     }
 
     def __init__(self, words, xy_sequences, epochs):
+        self.words = words
         self.lstm = rnn.Rnn(NeuralNetwork.LAYERS, NeuralNetwork.WIDTH, words)
         self.xy_sequences = [[rnn.Xy(t[0], t[1]) for t in sequence] for sequence in xy_sequences]
         self.epochs = epochs
@@ -65,6 +66,7 @@ class NeuralNetwork:
         stepwise_lstm = self.lstm.stepwise()
 
         for x in sequence:
+            x_word = self.words.decode(self.words.encode(x, True))
             result, instruments = stepwise_lstm.step(x, NeuralNetwork.INSTRUMENTS)
 
         embedding = WeightVector(instruments["embedding"])
@@ -84,7 +86,7 @@ class NeuralNetwork:
             units += [Unit(remember_gate, forget_gate, output_gate, input_hat, remember, cell_previous_hat, forget, cell, cell_hat, output)]
 
         softmax = LabelWeightVector(result.distribution, result.encoding, NeuralNetwork.WIDTH)
-        return Layer(embedding, units, softmax, len(sequence) - 1)
+        return Layer(embedding, units, softmax, len(sequence) - 1, x_word, result.prediction)
 
     def weight_explain(self, sequence, name, column):
         weights = self.weights(sequence)

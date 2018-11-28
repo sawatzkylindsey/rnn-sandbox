@@ -5,11 +5,13 @@ from pytils import check
 
 
 class Layer:
-    def __init__(self, embedding, units, softmax, timestep):
+    def __init__(self, embedding, units, softmax, timestep, x_word, y_word):
         self.embedding = check.check_instance(embedding, WeightVector)
         self.units = check.check_list(units)
         self.softmax = check.check_instance(softmax, LabelWeightVector)
         self.timestep = timestep
+        self.x_word = x_word
+        self.y_word = y_word
 
     def as_json(self):
         return {
@@ -17,6 +19,8 @@ class Layer:
             "units": [u.as_json() for u in self.units],
             "softmax": self.softmax.as_json(),
             "timestep": self.timestep,
+            "x_word": self.x_word,
+            "y_word": self.y_word,
         }
 
 

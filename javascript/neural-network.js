@@ -2,7 +2,9 @@
 var total_width = 1200;
 var layer_height = 200;
 var input_width = 100;
-var margin = 25;
+var x_margin = 25;
+var y_margin = 50;
+var height = 20;
 var w = 30;
 var h = layer_height / 3.0;
 var operand_height = (h * 2.0 / 5.0);
@@ -18,8 +20,100 @@ $(document).ready(function () {
         .style('position', 'absolute')
         .style('top', 0)
         .style('left', 0)
-        .style('width', total_width * 2)
+        .style("width", total_width + (total_width / 5) - 10)
         .style('height', layer_height * 5);
+
+    svg.append("text")
+        .attr("x", x_margin + 28)
+        .attr("y", (y_margin / 2))
+        .style("font-size", "17px")
+        .style("font-weight", "bold")
+        .style("fill", black)
+        .text("Word In");
+    svg.append("text")
+        .attr("x", (x_margin * 2) + input_width + 5)
+        .attr("y", (y_margin / 2))
+        .style("font-size", "17px")
+        .style("font-weight", "bold")
+        .style("fill", black)
+        .text("Embedding");
+    svg.append("text")
+        .attr("x", (x_margin * 2) + input_width + (w * 3) + 15)
+        .attr("y", (y_margin / 2))
+        .style("font-size", "17px")
+        .style("font-weight", "bold")
+        .style("fill", black)
+        .text("Forget (1)");
+    svg.append("text")
+        .attr("x", (x_margin * 2) + input_width + (w * 7))
+        .attr("y", (y_margin / 2))
+        .style("font-size", "17px")
+        .style("font-weight", "bold")
+        .style("fill", black)
+        .text("Remember (1)");
+    svg.append("text")
+        .attr("x", (x_margin * 2) + input_width + (w * 11) + 22)
+        .attr("y", (y_margin / 2))
+        .style("font-size", "17px")
+        .style("font-weight", "bold")
+        .style("fill", black)
+        .text("Cell (1)");
+    svg.append("text")
+        .attr("x", (x_margin * 2) + input_width + (w * 15) + 15)
+        .attr("y", (y_margin / 2))
+        .style("font-size", "17px")
+        .style("font-weight", "bold")
+        .style("fill", black)
+        .text("Output (1)");
+    svg.append("text")
+        .attr("x", (x_margin * 2) + input_width + (w * 19) + 16)
+        .attr("y", (y_margin / 2))
+        .style("font-size", "17px")
+        .style("font-weight", "bold")
+        .style("fill", black)
+        .text("Forget (2)");
+    svg.append("text")
+        .attr("x", (x_margin * 2) + input_width + (w * 23) + 2)
+        .attr("y", (y_margin / 2))
+        .style("font-size", "17px")
+        .style("font-weight", "bold")
+        .style("fill", black)
+        .text("Remember (2)");
+    svg.append("text")
+        .attr("x", (x_margin * 2) + input_width + (w * 27) + 25)
+        .attr("y", (y_margin / 2))
+        .style("font-size", "17px")
+        .style("font-weight", "bold")
+        .style("fill", black)
+        .text("Cell (2)");
+    svg.append("text")
+        .attr("x", (x_margin * 2) + input_width + (w * 31) + 14)
+        .attr("y", (y_margin / 2))
+        .style("font-size", "17px")
+        .style("font-weight", "bold")
+        .style("fill", black)
+        .text("Output (2)");
+    svg.append("text")
+        .attr("x", (x_margin * 2) + input_width + (2 * w * 17) + w + 5)
+        .attr("y", (y_margin / 2))
+        .style("font-size", "17px")
+        .style("font-weight", "bold")
+        .style("fill", black)
+        .text("Softmax");
+    svg.append("text")
+        .attr("x", (x_margin * 2) + input_width + (2 * w * 19) + 28)
+        .attr("y", (y_margin / 2))
+        .style("font-size", "17px")
+        .style("font-weight", "bold")
+        .style("fill", black)
+        .text("Output");
+    svg.append("line")
+        .attr("x1", 0)
+        .attr("x2", total_width + (total_width / 5) - 10)
+        .attr("y1", (y_margin * 4 / 5) - 2)
+        .attr("y2", (y_margin * 4 / 5) - 2)
+        .attr("stroke", black)
+        .attr("stroke-width", 1);
 
     d3.json("words")
         .get(function (error, data) { drawAutocomplete(0, data); });
@@ -47,8 +141,18 @@ function drawTimestep(fake_timestep, data) {
     var timestep = data.timestep;
     $(".timestep-" + timestep).remove();
 
-    var x_offset = (margin * 2) + input_width;
-    var y_offset = margin + (timestep * layer_height);
+    if (data.x_word != sequence[timestep]) {
+        svg.append("text")
+            .attr("class", "timestep-" + timestep)
+            .attr("x", x_margin + (input_width * 2 / 3))
+            .attr("y", y_margin + (timestep * layer_height) + h + height + 5)
+            .style("font-size", "14px")
+            .style("fill", black)
+            .text(data.x_word);
+    }
+
+    var x_offset = (x_margin * 2) + input_width;
+    var y_offset = y_margin + (timestep * layer_height);
     var operand_height = (h * 2.0 / 5.0);
     var operator_height = (h - (operand_height * 2));
 
@@ -86,7 +190,7 @@ function drawTimestep(fake_timestep, data) {
         var unit_offset = u * w * 16;
 
         if (timestep > 0) {
-            drawVline(timestep, x_offset + (w * 13) + (w / 2) + unit_offset, margin + ((timestep - 1) * layer_height) + (h * 3 / 2),
+            drawVline(timestep, x_offset + (w * 13) + (w / 2) + unit_offset, x_margin + ((timestep - 1) * layer_height) + (h * 3 / 2),
                 x_offset + (w * 4) + unit_offset, y_offset);
         }
 
@@ -101,7 +205,7 @@ function drawTimestep(fake_timestep, data) {
             x_offset + (w * 2) + unit_offset + ((w * 3 / 2) / 2), y_offset + h + (operand_height / 4));
 
         if (timestep > 0) {
-            drawVline(timestep, x_offset + (w * 17) + (w / 2) + unit_offset, margin + ((timestep - 1) * layer_height) + (h * 3 / 2),
+            drawVline(timestep, x_offset + (w * 17) + (w / 2) + unit_offset, x_margin + ((timestep - 1) * layer_height) + (h * 3 / 2),
                 x_offset + (w * 8) + unit_offset, y_offset + (h ));
         }
 
@@ -135,6 +239,21 @@ function drawTimestep(fake_timestep, data) {
     drawHline(timestep, x_offset + (data.units.length * w * 17), y_offset + (h * 2 / 2),
         x_offset + (data.units.length * w * 17) + (w * 3 / 2), y_offset + (h * 2 / 2));
     drawLabelWeightVector(getGeometry(timestep, "softmax"), data.softmax);
+
+    svg.append("rect")
+        .attr("x", x_offset + (2 * w * 18) + (w * 3 / 2) + x_margin)
+        .attr("y", y_offset + h - (height / 2) - 1)
+        .attr("width", input_width)
+        .attr("height", height)
+        .style("fill", "#dee0e2");
+    svg.append("text")
+        .attr("class", "timestep-" + timestep)
+        .attr("x", x_offset + (2 * w * 18) + (w * 3 / 2) + x_margin + 5)
+        .attr("y", y_offset + h + 5)
+        .style("font-size", "17px")
+        .style("fill", black)
+        .style("background-color", "#dee0e2")
+        .text(data.y_word);
 }
 
 function drawWeightVector(geometry, wv) {
@@ -226,21 +345,18 @@ function drawWeightWidget(geometry, min, max, vector, colour) {
             .attr("stroke", black)
             .attr("stroke-width", stroke_width)
             .attr("fill", function(d) { return colour; });
-            // Using the colour 'none' results in the inner portion of the rectange not being clickable.
-            // So we fill with the background colour (white) to make it clickable.
-            //.attr("fill", function(d) { return colour == "none" ? "white" : colour; });
     svg.selectAll(".bar")
         .data(vector)
         .enter()
             .append("rect")
             .attr("id", function(d) { return "hoverbar-" + geometry.timestep + "-" + geometry.name + "-" + d.position; })
             .attr("class", "timestep-" + geometry.timestep)
-            .attr("x", geometry.x + 1)
+            .attr("x", geometry.x + 1.5)
             .attr("y", function(d) { return y(d.position) + 1; })
-            .attr("width", geometry.width - 2)
+            .attr("width", geometry.width - 3)
             .attr("height", y.bandwidth() - 2)
             .attr("stroke", black)
-            .attr("stroke-width", 2)
+            .attr("stroke-width", 1)
             .attr("fill", black)
             .style("opacity", 0)
             .on("mouseover", function(d) {
@@ -290,14 +406,14 @@ function drawExplain(timestep, source, we) {
     console.log(we);
     $(".explain").remove();
     svg.append("rect")
-        .attr("class", "explain")
-        .attr("x", source.x)
-        .attr("y", source.y)
-        .attr("width", source.width)
-        .attr("height", source.height)
-        .attr("stroke-width", 2)
+        .attr("class", "timestep-" + timestep + " explain")
+        .attr("x", source.x - 0.5)
+        .attr("y", source.y - 1)
+        .attr("width", source.width + 1)
+        .attr("height", source.height + 2)
+        .attr("stroke-width", 1)
         .attr("stroke", black)
-        .attr("fill", "none")
+        .attr("fill", black)
         .style("opacity", 0.5);
 
     for (var key in we.vectors) {
@@ -347,20 +463,20 @@ function drawExplainWidget(geometry, min, max, vector) {
     // boundary box
     svg.append("rect")
         .attr("class", "timestep-" + geometry.timestep + " explain")
-        .attr("x", geometry.x + 1)
-        .attr("y", geometry.y + 1)
-        .attr("width", geometry.width - 2)
-        .attr("height", geometry.height - 2)
+        .attr("x", geometry.x + 0.5)
+        .attr("y", geometry.y + 0.5)
+        .attr("width", geometry.width - 1)
+        .attr("height", geometry.height - 1)
         .style("opacity", 0.5)
         .attr("stroke", black)
-        .attr("stroke-width", 2)
+        .attr("stroke-width", 1)
         .attr("fill", "none");
     svg.append("line")
         .attr("class", "timestep-" + geometry.timestep + " explain")
         .attr("x1", x(0))
-        .attr("y1", y.range()[0] - 2)   // Make the center line stand out slightly by pushing it beyond the rectangle.
+        .attr("y1", y.range()[0])
         .attr("x2", x(0))
-        .attr("y2", y.range()[1] + 2)   // Make the center line stand out slightly by pushing it beyond the rectangle.
+        .attr("y2", y.range()[1])
         .style("opacity", 0.5)
         .attr("stroke", black)
         .attr("stroke-width", 1);
@@ -676,9 +792,8 @@ function drawGate(x_offset, y_offset, size) {
 }
 
 function drawAutocomplete(timestep, words) {
-    var x_offset = 25;
-    var y_offset = 25 + (timestep * layer_height)
-    var height = 20;
+    var x_offset = x_margin;
+    var y_offset = y_margin + (timestep * layer_height)
     var focus = null;
 
     svg.append("foreignObject")
@@ -716,14 +831,7 @@ function drawAutocomplete(timestep, words) {
                 sequence[timestep] = e.target.textContent;
             }
 
-            console.log("Full sequence: " + sequence);
-
-            for (var s = timestep; s < sequence.length; s++) {
-                var slice = sequence.slice(0, s + 1);
-                console.log("Drawing sequence for " + (slice.length - 1) + ": " + slice);
-                d3.json("weights?" + slice.map(s => "sequence=" + encodeURI(s)).join("&"))
-                    .get(function (error, data) { drawTimestep(slice.length - 1, data); });
-            }
+            drawWeightsFromSequence(timestep);
         });
     })
     .on("keydown", function(e) {
@@ -732,14 +840,14 @@ function drawAutocomplete(timestep, words) {
         // Down key
         if (e.keyCode === 40) {
             if (focus == options - 1) {
-                focus = 0;
+                focus = -1;
             } else {
                 focus += 1;
             }
         }
         // Up key
         else if (e.keyCode === 38) {
-            if (focus == 0) {
+            if (focus == -1) {
                 focus = options - 1;
             } else {
                 focus -= 1;
@@ -747,17 +855,48 @@ function drawAutocomplete(timestep, words) {
         }
         // Enter key
         else if (e.keyCode == 13) {
-            autocomplete.find(".autocomplete-active").click();
+            var selection = autocomplete.find(".autocomplete-active");//click
+
+            if (selection.length == 1) {
+                selection.click();
+            } else {
+                autocomplete.find(".autocomplete-option").remove();
+                var textContent = autocomplete.find("input").val();
+
+                if (timestep >= sequence.length) {
+                    sequence.push(textContent);
+                    d3.json("words")
+                        .get(function (error, data) { drawAutocomplete(timestep + 1, data); });
+                } else {
+                    sequence[timestep] = textContent;
+                }
+
+                drawWeightsFromSequence(timestep);
+            }
         }
 
         autocomplete.find(".autocomplete-active").removeClass("autocomplete-active");
-        autocomplete.find(".autocomplete-option:eq(" + focus + ")").addClass("autocomplete-active");
+
+        if (focus >= 0) {
+            autocomplete.find(".autocomplete-option:eq(" + focus + ")").addClass("autocomplete-active");
+        }
     });
 }
 
+function drawWeightsFromSequence(timestep) {
+    console.log("Full sequence: " + sequence);
+
+    for (var s = timestep; s < sequence.length; s++) {
+        var slice = sequence.slice(0, s + 1);
+        console.log("Drawing sequence for " + (slice.length - 1) + ": " + slice);
+        d3.json("weights?" + slice.map(s => "sequence=" + encodeURI(s)).join("&"))
+            .get(function (error, data) { drawTimestep(slice.length - 1, data); });
+    }
+}
+
 function getGeometry(timestep, name, layer) {
-    var x_offset = (margin * 2) + input_width;
-    var y_offset = margin + (timestep * layer_height);
+    var x_offset = (x_margin * 2) + input_width;
+    var y_offset = y_margin + (timestep * layer_height);
     var layer_offset = layer * w * 16;
     var a = {width: w, timestep: timestep, name: name + (layer == null ? "" : "-" + layer)};
     var b;
