@@ -118,8 +118,6 @@ $(document).ready(function () {
     d3.json("words")
         .get(function (error, data) { drawAutocomplete(0, data); });
 
-   drawGate(25,150,100);
-   
    svg.append("rect")
     .attr("width", 2400)
     .attr("height", 1000)
@@ -196,7 +194,9 @@ function drawTimestep(fake_timestep, data) {
 
         drawWeightVector(getGeometry(timestep, "cell_previous_hat", u), data.units[u].cell_previous_hat);
         drawMultiplication(timestep, x_offset + (w * 3) + (w) - (operator_height / 2) + unit_offset, y_offset + (h * 1 / 2) - (operator_height / 2), operator_height);
-        drawWeightVector(getGeometry(timestep, "forget_gate", u), data.units[u].forget_gate);
+        var forget_gate = getGeometry(timestep, "forget_gate", u);
+        drawWeightVector(forget_gate, data.units[u].forget_gate);
+        drawGate(forget_gate.x - w + 6, forget_gate.y + (operand_height / 4), w * 2 / 4);
         drawHline(timestep, x_offset + (w * 4) + (operator_height / 2) + unit_offset, y_offset + (h / 2),
             x_offset + (w * 5) + unit_offset, y_offset + (h / 2));
         drawWeightVector(getGeometry(timestep, "forget", u), data.units[u].forget);
@@ -211,7 +211,9 @@ function drawTimestep(fake_timestep, data) {
 
         drawWeightVector(getGeometry(timestep, "input_hat", u), data.units[u].input_hat);
         drawMultiplication(timestep, x_offset + (w * 7) + (w) - (operator_height / 2) + unit_offset, y_offset + (h * 3 / 2) - (operator_height / 2), operator_height);
-        drawWeightVector(getGeometry(timestep, "remember_gate", u), data.units[u].remember_gate);
+        var remember_gate = getGeometry(timestep, "remember_gate", u);
+        drawWeightVector(remember_gate, data.units[u].remember_gate);
+        drawGate(remember_gate.x - w + 6, remember_gate.y + (operand_height / 4), w * 2 / 4);
         drawHline(timestep, x_offset + (w * 8) + (operator_height / 2) + unit_offset, y_offset + (h * 3 / 2),
             x_offset + (w * 9) + unit_offset, y_offset + (h * 3 / 2));
         drawWeightVector(getGeometry(timestep, "remember", u), data.units[u].remember);
@@ -229,7 +231,9 @@ function drawTimestep(fake_timestep, data) {
             x_offset + (w * 15) + (w / 2) + unit_offset, y_offset + (h / 2) + (operand_height / 2));
         drawWeightVector(getGeometry(timestep, "cell_hat", u), data.units[u].cell_hat);
         drawMultiplication(timestep, x_offset + (w * 15) + (w) - (operator_height / 2) + unit_offset, y_offset + (h) - (operator_height / 2), operator_height);
-        drawWeightVector(getGeometry(timestep, "output_gate", u), data.units[u].output_gate);
+        var output_gate = getGeometry(timestep, "output_gate", u);
+        drawWeightVector(output_gate, data.units[u].output_gate);
+        drawGate(output_gate.x - w + 6, output_gate.y + (operand_height / 4), w * 2 / 4);
         drawHline(timestep, x_offset + (w * 16) + (operator_height / 2) + unit_offset, y_offset + (h * 2 / 2),
             x_offset + (w * 17) + unit_offset, y_offset + (h * 2 / 2));
         drawWeightVector(getGeometry(timestep, "output", u), data.units[u].output);
@@ -697,9 +701,8 @@ function drawEquals(timestep, x_offset, y_offset, size) {
 }
 
 function drawGate(x_offset, y_offset, size) {
-	
     var stroke_width = size/50;
-    
+
     //left vertical bar
     svg.append("rect")
         .attr("x", x_offset)
