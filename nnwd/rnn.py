@@ -274,6 +274,13 @@ class Rnn:
     def stepwise(self, name=None):
         return Stepwise(self, name)
 
+    def embed(self, x):
+        parameters = {
+            self.unrolled_inputs_p: np.array([np.array([self.word_labels.ook_encode(x, True)])]),
+            self.initial_state_p: self.initial_state_c
+        }
+        return self.session.run([self.session.graph.get_tensor_by_name("embedding:0")], feed_dict=parameters)[0]
+
 
 class Stepwise:
     def __init__(self, rnn, name=None):

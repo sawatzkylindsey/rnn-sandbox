@@ -24,7 +24,7 @@ def main(argv):
     setup_logging(".%s.log" % os.path.splitext(os.path.basename(__file__))[0], args.verbose, False, True)
     words, xy_sequences, neural_network = domain.create(args.corpus, args.epochs, args.verbose)
 
-    #while neural_network.is_training():
+    #while neural_network.is_setting_up():
     #    pass
 
     neural_network._background_training.join()

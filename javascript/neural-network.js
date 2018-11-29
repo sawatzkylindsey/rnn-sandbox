@@ -106,7 +106,7 @@ $(document).ready(function () {
         .style("font-size", "17px")
         .style("font-weight", "bold")
         .style("fill", black)
-        .text("Output");
+        .text("Word Out");
     svg.append("line")
         .attr("x1", 0)
         .attr("x2", total_width + (total_width / 5) - 10)
@@ -118,15 +118,16 @@ $(document).ready(function () {
     d3.json("words")
         .get(function (error, data) { drawAutocomplete(0, data); });
 
-   svg.append("rect")
-    .attr("width", 2400)
-    .attr("height", 1000)
-    .style("fill", "none")
-    .style("pointer-events", "all")
-    .call(d3.zoom()
-       .scaleExtent([1, 16])
-        .on("zoom", zoomed));
-
+    /*
+    svg.append("rect")
+        .attr("width", 2400)
+        .attr("height", 1000)
+        .style("fill", "none")
+        .style("pointer-events", "all")
+        .call(d3.zoom()
+           .scaleExtent([1, 16])
+            .on("zoom", zoomed));
+    */
 });
 
 function zoomed() {
@@ -188,7 +189,7 @@ function drawTimestep(fake_timestep, data) {
         var unit_offset = u * w * 16;
 
         if (timestep > 0) {
-            drawVline(timestep, x_offset + (w * 13) + (w / 2) + unit_offset, x_margin + ((timestep - 1) * layer_height) + (h * 3 / 2),
+            drawVline(timestep, x_offset + (w * 13) + (w / 2) + unit_offset, y_margin + ((timestep - 1) * layer_height) + (h * 3 / 2),
                 x_offset + (w * 4) + unit_offset, y_offset);
         }
 
@@ -196,7 +197,7 @@ function drawTimestep(fake_timestep, data) {
         drawMultiplication(timestep, x_offset + (w * 3) + (w) - (operator_height / 2) + unit_offset, y_offset + (h * 1 / 2) - (operator_height / 2), operator_height);
         var forget_gate = getGeometry(timestep, "forget_gate", u);
         drawWeightVector(forget_gate, data.units[u].forget_gate);
-        drawGate(forget_gate.x - w + 6, forget_gate.y + (operand_height / 4), w * 2 / 4);
+        drawGate(timestep, forget_gate.x - w + 6, forget_gate.y + (operand_height / 4), w * 2 / 4);
         drawHline(timestep, x_offset + (w * 4) + (operator_height / 2) + unit_offset, y_offset + (h / 2),
             x_offset + (w * 5) + unit_offset, y_offset + (h / 2));
         drawWeightVector(getGeometry(timestep, "forget", u), data.units[u].forget);
@@ -205,7 +206,7 @@ function drawTimestep(fake_timestep, data) {
             x_offset + (w * 2) + unit_offset + ((w * 3 / 2) / 2), y_offset + h + (operand_height / 4));
 
         if (timestep > 0) {
-            drawVline(timestep, x_offset + (w * 17) + (w / 2) + unit_offset, x_margin + ((timestep - 1) * layer_height) + (h * 3 / 2),
+            drawVline(timestep, x_offset + (w * 17) + (w / 2) + unit_offset, y_margin + ((timestep - 1) * layer_height) + (h * 3 / 2),
                 x_offset + (w * 8) + unit_offset, y_offset + (h ));
         }
 
@@ -213,7 +214,7 @@ function drawTimestep(fake_timestep, data) {
         drawMultiplication(timestep, x_offset + (w * 7) + (w) - (operator_height / 2) + unit_offset, y_offset + (h * 3 / 2) - (operator_height / 2), operator_height);
         var remember_gate = getGeometry(timestep, "remember_gate", u);
         drawWeightVector(remember_gate, data.units[u].remember_gate);
-        drawGate(remember_gate.x - w + 6, remember_gate.y + (operand_height / 4), w * 2 / 4);
+        drawGate(timestep, remember_gate.x - w + 6, remember_gate.y + (operand_height / 4), w * 2 / 4);
         drawHline(timestep, x_offset + (w * 8) + (operator_height / 2) + unit_offset, y_offset + (h * 3 / 2),
             x_offset + (w * 9) + unit_offset, y_offset + (h * 3 / 2));
         drawWeightVector(getGeometry(timestep, "remember", u), data.units[u].remember);
@@ -233,7 +234,7 @@ function drawTimestep(fake_timestep, data) {
         drawMultiplication(timestep, x_offset + (w * 15) + (w) - (operator_height / 2) + unit_offset, y_offset + (h) - (operator_height / 2), operator_height);
         var output_gate = getGeometry(timestep, "output_gate", u);
         drawWeightVector(output_gate, data.units[u].output_gate);
-        drawGate(output_gate.x - w + 6, output_gate.y + (operand_height / 4), w * 2 / 4);
+        drawGate(timestep, output_gate.x - w + 6, output_gate.y + (operand_height / 4), w * 2 / 4);
         drawHline(timestep, x_offset + (w * 16) + (operator_height / 2) + unit_offset, y_offset + (h * 2 / 2),
             x_offset + (w * 17) + unit_offset, y_offset + (h * 2 / 2));
         drawWeightVector(getGeometry(timestep, "output", u), data.units[u].output);
@@ -245,6 +246,7 @@ function drawTimestep(fake_timestep, data) {
     drawLabelWeightVector(getGeometry(timestep, "softmax"), data.softmax);
 
     svg.append("rect")
+        .attr("class", "timestep-" + timestep)
         .attr("x", x_offset + (2 * w * 18) + (w * 3 / 2) + x_margin)
         .attr("y", y_offset + h - (height / 2) - 1)
         .attr("width", input_width)
@@ -252,7 +254,7 @@ function drawTimestep(fake_timestep, data) {
         .style("fill", "#dee0e2");
     svg.append("text")
         .attr("class", "timestep-" + timestep)
-        .attr("x", x_offset + (2 * w * 18) + (w * 3 / 2) + x_margin + 5)
+        .attr("x", x_offset + (2 * w * 18) + (w * 3 / 2) + x_margin + 2)
         .attr("y", y_offset + h + 5)
         .style("font-size", "17px")
         .style("fill", black)
@@ -265,7 +267,7 @@ function drawWeightVector(geometry, wv) {
 }
 
 function drawLabelWeightVector(geometry, lwv) {
-    drawWeightWidget(geometry, lwv.minimum, lwv.maximum, lwv.vector, "none");
+    drawWeightWidget(geometry, lwv.minimum, lwv.maximum, lwv.vector, null);
 }
 
 function drawWeightWidget(geometry, min, max, vector, colour) {
@@ -348,7 +350,13 @@ function drawWeightWidget(geometry, min, max, vector, colour) {
             .attr("height", y.bandwidth())
             .attr("stroke", black)
             .attr("stroke-width", stroke_width)
-            .attr("fill", function(d) { return colour; });
+            .attr("fill", function(d) {
+                if ("colour" in d) {
+                    return d.colour;
+                }
+
+                return colour;
+            });
     svg.selectAll(".bar")
         .data(vector)
         .enter()
@@ -700,11 +708,12 @@ function drawEquals(timestep, x_offset, y_offset, size) {
         .attr("stroke-width", stroke_width);
 }
 
-function drawGate(x_offset, y_offset, size) {
+function drawGate(timestep, x_offset, y_offset, size) {
     var stroke_width = size/50;
 
     //left vertical bar
     svg.append("rect")
+        .attr("class", "timestep-" + timestep)
         .attr("x", x_offset)
         .attr("y", y_offset+size/8)
         .attr("width", size/10)
@@ -715,6 +724,7 @@ function drawGate(x_offset, y_offset, size) {
 
     //left circle
     svg.append("circle")
+        .attr("class", "timestep-" + timestep)
         .attr("cx", x_offset+size*2/39)
         .attr("cy", y_offset+size/18)
         .attr("r", size/16)
@@ -725,6 +735,7 @@ function drawGate(x_offset, y_offset, size) {
 
     //right vertical bar
     svg.append("rect")
+        .attr("class", "timestep-" + timestep)
         .attr("x", x_offset+size*3/2-size/8)
         .attr("y", y_offset+size/8)
         .attr("width", size/10)
@@ -735,6 +746,7 @@ function drawGate(x_offset, y_offset, size) {
 
     //right circle
     svg.append("circle")
+        .attr("class", "timestep-" + timestep)
         .attr("cx", x_offset+size*3/2-size*2/27)
         .attr("cy", y_offset+size/18)
         .attr("r", size/16)
@@ -744,7 +756,8 @@ function drawGate(x_offset, y_offset, size) {
 
     //left door
     svg.append("line")
-	 .attr("x1", x_offset+size*13/20)
+        .attr("class", "timestep-" + timestep)
+        .attr("x1", x_offset+size*13/20)
         .attr("y1", y_offset)
         .attr("x2", x_offset+size*13/20)
         .attr("y2", y_offset+size-size/6)
@@ -752,7 +765,8 @@ function drawGate(x_offset, y_offset, size) {
         .attr("stroke-width", stroke_width);
 
    svg.append("line")
-	 .attr("x1", x_offset+size*13/20)
+        .attr("class", "timestep-" + timestep)
+        .attr("x1", x_offset+size*13/20)
         .attr("y1", y_offset)
         .attr("x2", x_offset+size/10)
         .attr("y2", y_offset+size/6)
@@ -760,7 +774,8 @@ function drawGate(x_offset, y_offset, size) {
         .attr("stroke-width", stroke_width);
 
    svg.append("line")
-	 .attr("x1", x_offset+size*13/20)
+        .attr("class", "timestep-" + timestep)
+        .attr("x1", x_offset+size*13/20)
         .attr("y1", y_offset+size-size/6)
         .attr("x2", x_offset+size/10)
         .attr("y2", y_offset+size-size/8)
@@ -769,7 +784,8 @@ function drawGate(x_offset, y_offset, size) {
 
    //right door
    svg.append("line")
-	 .attr("x1", x_offset+size*4/5)
+        .attr("class", "timestep-" + timestep)
+        .attr("x1", x_offset+size*4/5)
         .attr("y1", y_offset)
         .attr("x2", x_offset+size*4/5)
         .attr("y2", y_offset+size-size/6)
@@ -777,7 +793,8 @@ function drawGate(x_offset, y_offset, size) {
         .attr("stroke-width", stroke_width);
 
    svg.append("line")
-	 .attr("x1", x_offset+size*4/5)
+        .attr("class", "timestep-" + timestep)
+        .attr("x1", x_offset+size*4/5)
         .attr("y1", y_offset)
         .attr("x2", x_offset+size*3/2-size/8)
         .attr("y2", y_offset+size/6)
@@ -785,13 +802,13 @@ function drawGate(x_offset, y_offset, size) {
         .attr("stroke-width", stroke_width);
 
    svg.append("line")
-	 .attr("x1", x_offset+size*4/5)
+        .attr("class", "timestep-" + timestep)
+        .attr("x1", x_offset+size*4/5)
         .attr("y1", y_offset+size-size/6)
         .attr("x2", x_offset+size*3/2-size/8)
         .attr("y2", y_offset+size-size/8)
         .attr("stroke", black)
         .attr("stroke-width", stroke_width);
-
 }
 
 function drawAutocomplete(timestep, words) {
@@ -817,21 +834,22 @@ function drawAutocomplete(timestep, words) {
         }
 
         for (var i = 0; i < words.length; i++) {
-            if (words[i].substr(0, value.length).toUpperCase() === value.toUpperCase()) {
+            if (words[i].substr(0, value.length).toLowerCase() === value.toLowerCase()) {
                 autocomplete.append("<div class='autocomplete-option'>" + words[i] + "</div>");
             }
         }
 
         $(".autocomplete-option").on("click", function(e) {
             autocomplete.find(".autocomplete-option").remove();
-            autocomplete.find("input").val(e.target.textContent);
+            var textContent = e.target.textContent.toLowerCase();
+            autocomplete.find("input").val(textContent);
 
             if (timestep >= sequence.length) {
-                sequence.push(e.target.textContent);
+                sequence.push(textContent);
                 d3.json("words")
                     .get(function (error, data) { drawAutocomplete(timestep + 1, data); });
             } else {
-                sequence[timestep] = e.target.textContent;
+                sequence[timestep] = textContent;
             }
 
             drawWeightsFromSequence(timestep);
@@ -858,23 +876,37 @@ function drawAutocomplete(timestep, words) {
         }
         // Enter key
         else if (e.keyCode == 13) {
-            var selection = autocomplete.find(".autocomplete-active");//click
+            var selection = autocomplete.find(".autocomplete-active");
 
             if (selection.length == 1) {
                 selection.click();
             } else {
                 autocomplete.find(".autocomplete-option").remove();
-                var textContent = autocomplete.find("input").val();
+                var textContent = autocomplete.find("input").val().toLowerCase();
+                autocomplete.find("input").val(textContent);
 
-                if (timestep >= sequence.length) {
-                    sequence.push(textContent);
-                    d3.json("words")
-                        .get(function (error, data) { drawAutocomplete(timestep + 1, data); });
+                if (textContent == "") {
+                    var tail = sequence.length;
+                    sequence = sequence.slice(0, timestep);
+
+                    for (var s = timestep; s < tail; s++) {
+                        if (s != timestep) {
+                            $("#autocomplete-" + s).remove();
+                        }
+
+                        $(".timestep-" + s).remove();
+                    }
                 } else {
-                    sequence[timestep] = textContent;
-                }
+                    if (timestep >= sequence.length) {
+                        sequence.push(textContent);
+                        d3.json("words")
+                            .get(function (error, data) { drawAutocomplete(timestep + 1, data); });
+                    } else {
+                        sequence[timestep] = textContent;
+                    }
 
-                drawWeightsFromSequence(timestep);
+                    drawWeightsFromSequence(timestep);
+                }
             }
         }
 

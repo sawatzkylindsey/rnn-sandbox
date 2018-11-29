@@ -1,8 +1,12 @@
 
+import json
 import logging
 import math
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
 import numpy as np
 import pdb
+from sklearn.manifold import TSNE
 import threading
 
 from nnwd.models import Layer, Unit, WeightExplain, WeightVector, LabelWeightVector
@@ -50,17 +54,62 @@ class NeuralNetwork:
         self.lstm = rnn.Rnn(NeuralNetwork.LAYERS, NeuralNetwork.WIDTH, words)
         self.xy_sequences = [[rnn.Xy(t[0], t[1]) for t in sequence] for sequence in xy_sequences]
         self.epochs = epochs
-        self._background_training = threading.Thread(target=self._train_test)
-        self._background_training.daemon = True
-        self._background_training.start()
+        self.colour_embeddings = None
+        self._background_setup = threading.Thread(target=self._setup)
+        self._background_setup.daemon = True
+        self._background_setup.start()
 
-    def _train_test(self):
-        self.lstm.train(self.xy_sequences, self.epochs, True)
-        r = self.lstm.test(self.xy_sequences, True)
-        logging.debug("test %s" % r)
+    def _setup(self):
+        loss = self.lstm.train(self.xy_sequences, self.epochs, True)
+        logging.debug("train %s" % loss)
+        accuracy = self.lstm.test(self.xy_sequences, True)
+        logging.debug("test %s" % accuracy)
+        self.word_embeddings = []
+        word_order = []
 
-    def is_training(self):
-        return self._background_training.is_alive()
+        for word in self.words.labels():
+            self.word_embeddings += [self.lstm.embed(word)]
+            word_order += [word]
+
+        tsne = TSNE(n_components=3)
+        embeddings_3d = tsne.fit_transform(self.word_embeddings)
+        minimum = [None, None, None]
+        maximum = [None, None, None]
+
+        for embedding in embeddings_3d:
+            for i, point in enumerate(embedding):
+                if minimum[i] is None or point < minimum[i]:
+                    minimum[i] = point
+                if maximum[i] is None or point > maximum[i]:
+                    maximum[i] = point
+
+        delta = [maximum[i] - minimum[i] for i in range(0, 3)]
+        slope = [255.0 / delta[i] for i in range(0, 3)]
+        m = lambda i, x: round((slope[i] * x) - (slope[i] * minimum[i]))
+        self.colour_embeddings = {word_order[j]: tuple([m(i, embedding[i]) for i in range(0, 3)]) for j, embedding in enumerate(embeddings_3d)}
+        figure = plt.figure()
+        axis = figure.add_subplot(111, projection="3d")
+
+        for word, colour_embedding in self.colour_embeddings.items():
+            x, y, z = colour_embedding
+            axis.scatter(x, y, z, c=[c / 255.0 for c in colour_embedding])
+            axis.text(x, y, z, word, zorder=1)
+
+        axis.set_xlabel("r")
+        axis.set_ylabel("g")
+        axis.set_zlabel("b")
+        figure.savefig("rgb.png")
+        user_log.info("Training complete")
+
+    def is_setting_up(self):
+        return self._background_setup.is_alive()
+
+    def word_colour(self, word):
+        if self.colour_embeddings is None:
+            return "none"
+
+        embedding = self.colour_embeddings[self.words.decode(self.words.encode(word, True))]
+        return "rgb(%d, %d, %d)" % embedding
 
     def weights(self, sequence):
         stepwise_lstm = self.lstm.stepwise()
@@ -69,7 +118,7 @@ class NeuralNetwork:
             x_word = self.words.decode(self.words.encode(x, True))
             result, instruments = stepwise_lstm.step(x, NeuralNetwork.INSTRUMENTS)
 
-        embedding = WeightVector(instruments["embedding"])
+        embedding = WeightVector(instruments["embedding"], colour=self.word_colour(x))
         units = []
 
         for layer in range(0, len(instruments["outputs"])):
@@ -85,7 +134,7 @@ class NeuralNetwork:
             output = WeightVector(instruments["outputs"][layer])
             units += [Unit(remember_gate, forget_gate, output_gate, input_hat, remember, cell_previous_hat, forget, cell, cell_hat, output)]
 
-        softmax = LabelWeightVector(result.distribution, result.encoding, NeuralNetwork.WIDTH)
+        softmax = LabelWeightVector(result.distribution, result.encoding, NeuralNetwork.WIDTH, lambda word: self.word_colour(word))
         return Layer(embedding, units, softmax, len(sequence) - 1, x_word, result.prediction)
 
     def weight_explain(self, sequence, name, column):

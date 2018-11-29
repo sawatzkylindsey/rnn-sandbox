@@ -148,9 +148,15 @@ class SpecialLabels:
     def ook_decode_distribution(self, array):
         raise TypeError()
 
-
-def split_words(text):
-    return re.findall(r"\w+", text.lower(), re.UNICODE)
+import random
+SENTENCE_BREAK = "SB%s" % random.randrange(1000)
+QUESTION_BREAK = "QB%s" % random.randrange(1000)
+EXCLAMATION_BREAK = "EB%s" % random.randrange(1000)
+PARAGRAPH_BREAK = "PB%s" % random.randrange(1000)
+SENTENCE_SEPARATORS = set([SENTENCE_BREAK, QUESTION_BREAK, EXCLAMATION_BREAK])
+def split_words(corpus):
+    return re.findall("[\w\.<=]+", re.sub("(\s*\n\s*){2,}", " %s " % PARAGRAPH_BREAK,
+        re.sub("!", " %s " % EXCLAMATION_BREAK, re.sub("\?", " %s " % QUESTION_BREAK, re.sub("\.(?!\w+)", " %s " % SENTENCE_BREAK, corpus)))))
 
 
 def split_sentences(text):
@@ -159,13 +165,14 @@ def split_sentences(text):
     sentence = []
 
     for word in words:
-        if word == END:
+        if word in SENTENCE_SEPARATORS:
             sentences += [sentence]
             sentence = []
         else:
-            sentence += [word]
+            if word not in SENTENCE_SEPARATORS and word != PARAGRAPH_BREAK:
+                sentence += [word.lower()]
 
-    if len(sentence) > 0:
+    if len(sentence) != 0:
         sentences += [sentence]
 
     return sentences
@@ -187,7 +194,7 @@ def corpus_sequences(corpus_file):
     with open(corpus_file, "r") as fh:
         corpus_lines = fh.readlines()
 
-    words = set()
+    words = set(["."])
     xy_sequences = []
 
     for line in corpus_lines:
@@ -199,12 +206,15 @@ def corpus_sequences(corpus_file):
 
                 if i + 1 < len(sentence):
                     sequence.append((word, sentence[i + 1]))
+                else:
+                    sequence.append((word, "."))
 
             if len(sequence) > 0:
                 xy_sequences.append(sequence)
 
     labels = Labels(words, unknown=UNKNOWN)
     logging.info("words (%d): %s" % (len(labels), labels))
+    logging.debug("sentences (%d): %s" % (len(xy_sequences), xy_sequences))
     return labels, xy_sequences
 
 
