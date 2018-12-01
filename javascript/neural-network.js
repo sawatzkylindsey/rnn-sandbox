@@ -115,6 +115,22 @@ $(document).ready(function () {
         .attr("stroke", black)
         .attr("stroke-width", 1);
 
+    // arrow head definition
+
+    svg.insert('defs', ':first-child')
+        .append('marker')
+        .attr('id', 'arrow')
+        .attr('markerUnits', 'strokeWidth')
+        .attr('markerWidth', 12)
+        .attr('markerHeight', 12)
+        .attr('viewBox', '0 0 12 12')
+        .attr('refX', 12)
+        .attr('refY', 6)
+        .attr('orient', 'auto')
+        .append('path')
+        .attr('d', 'M2,2 L10,6 L2,10 L6,6 L2,2')
+        .style('fill', light_grey);
+
     d3.json("words")
         .get(function (error, data) { drawAutocomplete(0, data); });
 
@@ -568,6 +584,7 @@ function drawHline(timestep, x1, y1, x2, y2, x_midpoint) {
             .attr("d", pather)
             .attr("stroke", light_grey)
             .attr("stroke-width", 1)
+            .attr("marker-end", "url(#arrow)")
             .style("fill", "none");
 }
 
@@ -627,6 +644,7 @@ function drawVline(timestep, x1, y1, x2, y2, y_midpoint) {
             .attr("d", pather)
             .attr("stroke", light_grey)
             .attr("stroke-width", 1)
+            .attr("marker-end", "url(#arrow)")
             .style("fill", "none");
 }
 
