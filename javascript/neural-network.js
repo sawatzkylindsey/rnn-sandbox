@@ -385,7 +385,7 @@ function drawWeightWidget(geometry, min, max, vector, colour) {
             .attr("height", y.bandwidth() - 2)
             .attr("stroke", black)
             .attr("stroke-width", 1)
-            .attr("fill", black)
+            .attr("fill", colour == "none" ? "white" : colour)
             .style("opacity", 0)
             .on("mouseover", function(d) {
                 if (geometry.name != "embedding" && (geometry.timestep > 0 || !geometry.name.startsWith("cell_previous_hat"))) {
@@ -411,7 +411,7 @@ function drawWeightWidget(geometry, min, max, vector, colour) {
                     console.log(geometry.name);
                     d3.json("weight-explain?" + slice.map(s => "sequence=" + encodeURI(s)).join("&") + "&name=" + geometry.name + "&column=" + d.column)
                         .get(function (error, we) {
-                            drawExplain(geometry.timestep, source, we);
+                            drawExplain(geometry.timestep, source, we, colour);
                         });
                 }
             });
@@ -430,7 +430,7 @@ function drawWeightWidget(geometry, min, max, vector, colour) {
             .text(function (d) { return d.label; });
 }
 
-function drawExplain(timestep, source, we) {
+function drawExplain(timestep, source, we, colour) {
     console.log(we);
     $(".explain").remove();
     svg.append("rect")
@@ -441,7 +441,7 @@ function drawExplain(timestep, source, we) {
         .attr("height", source.height + 2)
         .attr("stroke-width", 1)
         .attr("stroke", black)
-        .attr("fill", black)
+        .attr("fill", colour)
         .style("opacity", 0.5);
 
     for (var key in we.vectors) {

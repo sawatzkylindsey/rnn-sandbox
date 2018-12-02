@@ -40,7 +40,7 @@ class Tests(TestCase):
         target_distances = [2, 4]
         expected = [0, 0]
         point, t = fit_point(reference_points, target_distances)
-        self.assertTrue(math.isclose(distance(point, expected), 0, abs_tol=0.0001))
+        self.assertTrue(math.isclose(distance(point, expected), 0, abs_tol=0.0001), point)
         self.assertLess(t, SMALL_MAX_T)
 
     def test_fit_point2_hline(self):
@@ -55,8 +55,8 @@ class Tests(TestCase):
         reference_points = [[math.sqrt(8), math.sqrt(8)], [0, -4], [-4, 0]]
         target_distances = [4, 4, 4]
         expected = [0, 0]
-        point, t = fit_point(reference_points, target_distances)
-        self.assertTrue(math.isclose(distance(point, expected), 0, abs_tol=0.0001))
+        point, t = fit_point(reference_points, target_distances, visualize=True)
+        self.assertTrue(math.isclose(distance(point, expected), 0, abs_tol=0.0001), point)
         self.assertLess(t, BIG_MAX_T)
 
     def test_fit_point(self):

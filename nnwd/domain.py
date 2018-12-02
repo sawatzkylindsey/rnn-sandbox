@@ -6,13 +6,18 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 import numpy as np
 import pdb
+from random import randint
 from sklearn.manifold import TSNE
 import threading
 
+from nnwd import geometry
 from nnwd.models import Layer, Unit, WeightExplain, WeightVector, LabelWeightVector
 from nnwd import nlp
 from nnwd import rnn
 from pytils.log import setup_logging, user_log
+
+
+REFERENCES = 16
 
 
 def create(corpus, epochs, verbose):
@@ -64,15 +69,18 @@ class NeuralNetwork:
         logging.debug("train %s" % loss)
         accuracy = self.lstm.test(self.xy_sequences, True)
         logging.debug("test %s" % accuracy)
-        self.word_embeddings = []
-        word_order = []
+        weights = []
+        order = []
+        self.word_embeddings = {}
 
         for word in self.words.labels():
-            self.word_embeddings += [self.lstm.embed(word)]
-            word_order += [word]
+            weight = self.lstm.embed(word)
+            weights += [weight]
+            order += [word]
+            self.word_embeddings[word] = weight
 
         tsne = TSNE(n_components=3)
-        embeddings_3d = tsne.fit_transform(self.word_embeddings)
+        embeddings_3d = tsne.fit_transform(weights)
         minimum = [None, None, None]
         maximum = [None, None, None]
 
@@ -80,13 +88,14 @@ class NeuralNetwork:
             for i, point in enumerate(embedding):
                 if minimum[i] is None or point < minimum[i]:
                     minimum[i] = point
+
                 if maximum[i] is None or point > maximum[i]:
                     maximum[i] = point
 
         delta = [maximum[i] - minimum[i] for i in range(0, 3)]
         slope = [255.0 / delta[i] for i in range(0, 3)]
         m = lambda i, x: round((slope[i] * x) - (slope[i] * minimum[i]))
-        self.colour_embeddings = {word_order[j]: tuple([m(i, embedding[i]) for i in range(0, 3)]) for j, embedding in enumerate(embeddings_3d)}
+        self.colour_embeddings = {order[j]: tuple([m(i, embedding[i]) for i in range(0, 3)]) for j, embedding in enumerate(embeddings_3d)}
         figure = plt.figure()
         axis = figure.add_subplot(111, projection="3d")
 
@@ -98,18 +107,60 @@ class NeuralNetwork:
         axis.set_xlabel("r")
         axis.set_ylabel("g")
         axis.set_zlabel("b")
-        figure.savefig("rgb.png")
+        figure.savefig("word_colour_embedding.png")
         user_log.info("Training complete")
+        indices = [i for i in range(0, len(order))]
+        reference_indices = set()
 
-    def is_setting_up(self):
-        return self._background_setup.is_alive()
+        while len(reference_indices) < REFERENCES:
+            if len(indices) == 0:
+                break
+
+            i = randint(0, len(indices) - 1)
+            reference_indices.add(indices[i])
+            indices = indices[:i] + indices[i + 1:]
+
+        self.reference_points = [self.word_embeddings[order[i]] for i in reference_indices]
+        self.reference_colours = [self.colour_embeddings[order[i]] for i in reference_indices]
+
+    def is_setup(self):
+        return not self._background_setup.is_alive()
 
     def word_colour(self, word):
-        if self.colour_embeddings is None:
+        if not self.is_setup():
             return "none"
 
         embedding = self.colour_embeddings[self.words.decode(self.words.encode(word, True))]
         return "rgb(%d, %d, %d)" % embedding
+
+    def fit_colours(self, points):
+        if not self.is_setup():
+            return ["none"] * len(points)
+
+        point_distances = []
+        maximum = None
+
+        for i, point in enumerate(points):
+            distances = []
+
+            for reference_point in self.reference_points:
+                distance = geometry.distance(point, reference_point)
+                distances += [distance]
+
+                if maximum is None or distance > maximum:
+                    maximum = distance
+
+            point_distances += [distances]
+
+        # Make the maximum target distance half the size of the colour space.
+        scaler = (255.0 / 2) / maximum
+        colours = []
+
+        for i in range(0, len(points)):
+            fit, t = geometry.fit_point(self.reference_colours, [scaler * d for d in point_distances[i]])
+            colours += ["rgb(%d, %d, %d)" % tuple([round(i) for i in fit])]
+
+        return colours
 
     def weights(self, sequence):
         stepwise_lstm = self.lstm.stepwise()
@@ -118,6 +169,18 @@ class NeuralNetwork:
             x_word = self.words.decode(self.words.encode(x, True))
             result, instruments = stepwise_lstm.step(x, NeuralNetwork.INSTRUMENTS)
 
+        points = []
+
+        for layer in range(0, len(instruments["outputs"])):
+            points += [instruments["input_hats"][layer]]
+            points += [instruments["remembers"][layer]]
+            points += [instruments["cell_previouses"][layer]]
+            points += [instruments["forgets"][layer]]
+            points += [instruments["cells"][layer]]
+            points += [instruments["cell_hats"][layer]]
+            points += [instruments["outputs"][layer]]
+
+        instrument_colours = self.fit_colours(points)
         embedding = WeightVector(instruments["embedding"], colour=self.word_colour(x))
         units = []
 
@@ -125,13 +188,13 @@ class NeuralNetwork:
             remember_gate = WeightVector(instruments["remember_gates"][layer], 0, 1)
             forget_gate = WeightVector(instruments["forget_gates"][layer], 0, 1)
             output_gate = WeightVector(instruments["output_gates"][layer], 0, 1)
-            input_hat = WeightVector(instruments["input_hats"][layer])
-            remember = WeightVector(instruments["remembers"][layer])
-            cell_previous_hat = WeightVector(instruments["cell_previouses"][layer])
-            forget = WeightVector(instruments["forgets"][layer])
-            cell = WeightVector(instruments["cells"][layer])
-            cell_hat = WeightVector(instruments["cell_hats"][layer])
-            output = WeightVector(instruments["outputs"][layer])
+            input_hat = WeightVector(instruments["input_hats"][layer], colour=instrument_colours.pop(0))
+            remember = WeightVector(instruments["remembers"][layer], colour=instrument_colours.pop(0))
+            cell_previous_hat = WeightVector(instruments["cell_previouses"][layer], colour=instrument_colours.pop(0))
+            forget = WeightVector(instruments["forgets"][layer], colour=instrument_colours.pop(0))
+            cell = WeightVector(instruments["cells"][layer], colour=instrument_colours.pop(0))
+            cell_hat = WeightVector(instruments["cell_hats"][layer], colour=instrument_colours.pop(0))
+            output = WeightVector(instruments["outputs"][layer], colour=instrument_colours.pop(0))
             units += [Unit(remember_gate, forget_gate, output_gate, input_hat, remember, cell_previous_hat, forget, cell, cell_hat, output)]
 
         softmax = LabelWeightVector(result.distribution, result.encoding, NeuralNetwork.WIDTH, lambda word: self.word_colour(word))
