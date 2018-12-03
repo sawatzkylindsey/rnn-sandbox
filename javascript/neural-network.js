@@ -24,7 +24,7 @@ $(document).ready(function () {
         .style('top', 0)
         .style('left', 0)
         .style("width", total_width + (total_width / 5) - 10)
-        .style('height', layer_height * 5);
+        .style('height', layer_height * 15);
 
     svg.append("text")
         .attr("x", x_margin + 28)

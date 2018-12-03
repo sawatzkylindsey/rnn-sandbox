@@ -11,7 +11,9 @@ Requirements:
     python3 -m venv p3
     source ./p3/bin/activate
     # Libraries (pip based)
+    pip install matplotlib
     pip install numpy
+    pip install sklearn
     pip install tensorflow==1.9.0
     # Libraries (custom)
     curl -LO https://github.com/sawatzkylindsey/pytils/archive/master.zip
