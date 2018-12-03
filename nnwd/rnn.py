@@ -21,11 +21,13 @@ class Rnn:
     # we track all the other intermediate gates/states for the weight instrumentation.
     SCAN_STATES = 10
 
-    def __init__(self, layers, width, word_labels, scope="rnn"):
+    def __init__(self, layers, width, word_labels, scope="rnn", window=1):
         self.layers = layers
         self.width = width
         self.word_labels = word_labels
         self.scope = scope
+        self.window = window
+        assert window >= 1, window
 
         # Notation:
         #   _p      placeholder
@@ -33,12 +35,26 @@ class Rnn:
 
         self.unrolled_inputs_p = self.placeholder("unrolled_inputs_p", [None, 1, len(self.word_labels)])
         self.output_label_p = self.placeholder("output_label_p", [None, 1, len(self.word_labels)])
+        self.embed_input_p = self.placeholder("embed_input_p", [None, 1, len(self.word_labels)])
+        self.embed_output_p = self.placeholder("embed_output_p", [None, 1, len(self.word_labels)])
 
         self.initial_state_p = self.placeholder("initial_state_p", [Rnn.SCAN_STATES, self.layers, 1, self.width])
         self.initial_state_c = np.zeros([Rnn.SCAN_STATES, self.layers, 1, self.width], dtype="float32")
 
         self.E = self.variable("E", [len(self.word_labels), self.width])
         self.E_bias = self.variable("E_bias", [1, self.width], 0.0)
+        self.G = self.variable("G", [self.width, len(self.word_labels)])
+        self.G_bias = self.variable("G_bias", [1, len(self.word_labels)], 0.0)
+
+        self.embed_logit = tf.matmul(tf.matmul(tf.reshape(self.embed_input_p, [-1, len(self.word_labels)]), self.E) + self.E_bias, self.G) + self.G_bias
+        assert_shape(self.embed_logit, [None, len(self.word_labels)])
+        self.embed_distribution = tf.nn.softmax(self.embed_logit)
+        assert_shape(self.embed_distribution, [None, len(self.word_labels)])
+        shaped_embed_output = tf.reshape(self.embed_output_p, [-1, len(self.word_labels)])
+        # Expected output:                                                          v
+        # Un-scaled prediction:                                                                                                   v
+        self.embed_cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(labels=tf.stop_gradient(shaped_embed_output), logits=self.embed_logit))
+        self.embed_updates = tf.train.AdagradOptimizer(learning_rate=1).minimize(self.embed_cost)
 
         self.R = self.variable("R", [self.layers, self.width * 2, self.width], 0.1)
         self.R_bias = self.variable("R_bias", [self.layers, 1, self.width], 0.0)
@@ -58,7 +74,7 @@ class Rnn:
         self.Y_bias = self.variable("Y_bias", [1, len(self.word_labels)], 0.0)
         tf.identity(tf.reshape(self.Y_bias, [len(self.word_labels)]), name="Y_bias")
 
-        self.unrolled_embedded_inputs = tf.matmul(tf.reshape(self.unrolled_inputs_p, [-1, len(self.word_labels)]), self.E) + self.E_bias
+        self.unrolled_embedded_inputs = tf.matmul(tf.reshape(self.unrolled_inputs_p, [-1, len(self.word_labels)]), tf.stop_gradient(self.E)) + tf.stop_gradient(self.E_bias)
         assert_shape(self.unrolled_embedded_inputs, [None, self.width])
         tf.identity(tf.reshape(self.unrolled_embedded_inputs, [self.width]), name="embedding")
 
@@ -173,9 +189,10 @@ class Rnn:
                 initializer=tf.contrib.layers.xavier_initializer() if initial is None else tf.constant_initializer(initial))
 
     def train(self, xy_sequences, epochs=10, debug=False):
+        self._train_embedding(xy_sequences, epochs, debug)
         shuffled_xy_sequences = xy_sequences.copy()
         slot_length = len(str(epochs)) - 1
-        epoch_template = "Epoch {:%dd}: {:f}" % slot_length
+        epoch_template = "Epoch training {:%dd}: {:f}" % slot_length
         final_loss = None
 
         for epoch in range(epochs):
@@ -185,6 +202,10 @@ class Rnn:
 
             for sequence in shuffled_xy_sequences:
                 assert len(sequence) > 0
+
+                if epoch == 0 and debug:
+                    logging.debug("training on: %s" % sequence)
+
                 input_labels = [np.array([self.word_labels.ook_encode(xy.x)]) for xy in sequence]
                 output_labels = [np.array([self.word_labels.ook_encode(xy.y)]) for xy in sequence]
                 parameters = {
@@ -206,6 +227,40 @@ class Rnn:
                 final_loss = epoch_loss
 
         return final_loss
+
+    def _train_embedding(self, xy_sequences, epochs, debug):
+        data = set()
+
+        for sequence in xy_sequences:
+            for i in range(0, len(sequence)):
+                for j in range(1, self.window + 1):
+                    if i + j < len(sequence):
+                        data.add(Xy(sequence[i].x, sequence[i + j].x))
+
+                    if i - j < len(sequence) and i - j >= 0:
+                        data.add(Xy(sequence[i].x, sequence[i - j].x))
+
+        logging.debug("Embedding data: %s" % data)
+        slot_length = len(str(epochs * 2)) - 1
+        epoch_template = "Epoch embedding training {:%dd}: {:f}" % slot_length
+        data = [d for d in data]
+
+        for epoch in range(0, epochs * 2):
+            epoch_loss = 0
+            random.shuffle(data)
+            b = 0
+
+            while b < len(data):
+                parameters = {
+                    self.embed_input_p: [np.array([self.word_labels.ook_encode(xy.x)]) for xy in data[b:b + 32]],
+                    self.embed_output_p: [np.array([self.word_labels.ook_encode(xy.y)]) for xy in data[b:b + 32]],
+                }
+                _, cost = self.session.run([self.embed_updates, self.embed_cost], feed_dict=parameters)
+                epoch_loss += cost
+                b += 32
+
+            epoch_loss = epoch_loss / len(data)
+            logging.debug(epoch_template.format(epoch, epoch_loss))
 
     def test(self, xy_sequences, debug=False):
         assert len(xy_sequences) > 0
@@ -300,6 +355,13 @@ class Xy:
     def __init__(self, x, y):
         self.x = x
         self.y = y
+
+    def __eq__(self, other):
+        return self.x == other.x \
+            and self.y == other.y
+
+    def __hash__(self):
+        return hash((self.x, self.y))
 
     def __repr__(self):
         return "(x=%s, y=%s)" % (self.x, self.y)

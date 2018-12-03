@@ -56,7 +56,7 @@ class NeuralNetwork:
 
     def __init__(self, words, xy_sequences, epochs):
         self.words = words
-        self.lstm = rnn.Rnn(NeuralNetwork.LAYERS, NeuralNetwork.WIDTH, words)
+        self.lstm = rnn.Rnn(NeuralNetwork.LAYERS, NeuralNetwork.WIDTH, words, window=2)
         self.xy_sequences = [[rnn.Xy(t[0], t[1]) for t in sequence] for sequence in xy_sequences]
         self.epochs = epochs
         self.colour_embeddings = None
