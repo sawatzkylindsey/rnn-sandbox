@@ -10,7 +10,10 @@ var h = layer_height / 3.0;
 var operand_height = (h * 2.0 / 5.0);
 var operator_height = (h - (operand_height * 2));
 var black = "black";
-var light_grey = "#dee0e2";
+var dark_grey = "#c8c8c8";
+var light_grey = "#e1e1e1";
+var dark_red = "#e60000";
+var light_red = "#ff1919";
 var debug = window.location.hash.substring(1) == "debug";
 var svg = null;
 var sequence = [];
@@ -133,22 +136,7 @@ $(document).ready(function () {
 
     d3.json("words")
         .get(function (error, data) { drawAutocomplete(0, data); });
-
-    /*
-    svg.append("rect")
-        .attr("width", 2400)
-        .attr("height", 1000)
-        .style("fill", "none")
-        .style("pointer-events", "all")
-        .call(d3.zoom()
-           .scaleExtent([1, 16])
-            .on("zoom", zoomed));
-    */
 });
-
-function zoomed() {
-  svg.attr("transform", d3.event.transform);
-}
 
 function drawTimestep(fake_timestep, data) {
     console.log("Timestep (fake, actual): (" + fake_timestep + ", " + data.timestep + ")");
@@ -204,13 +192,12 @@ function drawTimestep(fake_timestep, data) {
     for (var u = 0; u < data.units.length; u++) {
         var unit_offset = u * w * 16;
 
-        if (timestep > 0) {
-            drawVline(timestep, x_offset + (w * 13) + (w / 2) + unit_offset, y_margin + ((timestep - 1) * layer_height) + (h * 3 / 2),
-                x_offset + (w * 4) + unit_offset, y_offset);
-        }
+        drawVline(timestep, x_offset + (w * 13) + (w / 2) + unit_offset, y_margin + (timestep * layer_height) + (h * 3 / 2),
+            x_offset + (w * 4) + unit_offset, y_offset + layer_height);
 
         drawWeightVector(getGeometry(timestep, "cell_previous_hat", u), data.units[u].cell_previous_hat);
-        drawMultiplication(timestep, x_offset + (w * 3) + (w) - (operator_height / 2) + unit_offset, y_offset + (h * 1 / 2) - (operator_height / 2), operator_height);
+        drawMultiplication(timestep, x_offset + (w * 3) + (w) - (operator_height / 2) + unit_offset, y_offset + (h * 1 / 2) - (operator_height / 2), operator_height,
+            [data.units[u].cell_previous_hat, data.units[u].forget_gate, data.units[u].forget], u, null);
         var forget_gate = getGeometry(timestep, "forget_gate", u);
         drawWeightVector(forget_gate, data.units[u].forget_gate);
         drawGate(timestep, forget_gate.x - w + 6, forget_gate.y + (operand_height / 4), w * 2 / 4);
@@ -221,13 +208,12 @@ function drawTimestep(fake_timestep, data) {
             x_offset + (w * 7) + (w / 2) + unit_offset, y_offset + h + (operand_height / 2),
             x_offset + (w * 2) + unit_offset + ((w * 3 / 2) / 2), y_offset + h + (operand_height / 4));
 
-        if (timestep > 0) {
-            drawVline(timestep, x_offset + (w * 17) + (w / 2) + unit_offset, y_margin + ((timestep - 1) * layer_height) + (h * 3 / 2),
-                x_offset + (w * 8) + unit_offset, y_offset + (h ));
-        }
+        drawVline(timestep, x_offset + (w * 17) + (w / 2) + unit_offset, y_margin + (timestep * layer_height) + (h * 3 / 2),
+            x_offset + (w * 8) + unit_offset, y_offset + h + layer_height);
 
         drawWeightVector(getGeometry(timestep, "input_hat", u), data.units[u].input_hat);
-        drawMultiplication(timestep, x_offset + (w * 7) + (w) - (operator_height / 2) + unit_offset, y_offset + (h * 3 / 2) - (operator_height / 2), operator_height);
+        drawMultiplication(timestep, x_offset + (w * 7) + (w) - (operator_height / 2) + unit_offset, y_offset + (h * 3 / 2) - (operator_height / 2), operator_height,
+            [data.units[u].input_hat, data.units[u].remember_gate, data.units[u].remember], u, null);
         var remember_gate = getGeometry(timestep, "remember_gate", u);
         drawWeightVector(remember_gate, data.units[u].remember_gate);
         drawGate(timestep, remember_gate.x - w + 6, remember_gate.y + (operand_height / 4), w * 2 / 4);
@@ -239,7 +225,8 @@ function drawTimestep(fake_timestep, data) {
         drawWeightVector(getGeometry(timestep, "forget_hat", u), data.units[u].forget);
         drawHline(timestep, x_offset + (w * 10) + unit_offset, y_offset + (h * 3 / 2),
             x_offset + (w * 11) + (w / 2) + unit_offset, y_offset + h + (operand_height / 2) + (operator_height / 2));
-        drawAddition(timestep, x_offset + (w * 11) + (w) - (operator_height / 2) + unit_offset, y_offset + (h) - (operator_height / 2), operator_height);
+        drawAddition(timestep, x_offset + (w * 11) + (w) - (operator_height / 2) + unit_offset, y_offset + (h) - (operator_height / 2), operator_height,
+            [data.units[u].forget, data.units[u].remember, data.units[u].cell], u, null);
         drawWeightVector(getGeometry(timestep, "remember_hat", u), data.units[u].remember);
         drawHline(timestep, x_offset + (w * 12) + (operator_height / 2) + unit_offset, y_offset + (h * 2 / 2),
             x_offset + (w * 13) + unit_offset, y_offset + (h * 2 / 2));
@@ -247,7 +234,8 @@ function drawTimestep(fake_timestep, data) {
         drawHline(timestep, x_offset + (w * 14) + unit_offset, y_offset + h,
             x_offset + (w * 15) + (w / 2) + unit_offset, y_offset + (h / 2) + (operand_height / 2));
         drawWeightVector(getGeometry(timestep, "cell_hat", u), data.units[u].cell_hat);
-        drawMultiplication(timestep, x_offset + (w * 15) + (w) - (operator_height / 2) + unit_offset, y_offset + (h) - (operator_height / 2), operator_height);
+        drawMultiplication(timestep, x_offset + (w * 15) + (w) - (operator_height / 2) + unit_offset, y_offset + (h) - (operator_height / 2), operator_height,
+            [data.units[u].cell_hat, data.units[u].output_gate, data.units[u].output], u, null);
         var output_gate = getGeometry(timestep, "output_gate", u);
         drawWeightVector(output_gate, data.units[u].output_gate);
         drawGate(timestep, output_gate.x - w + 6, output_gate.y + (operand_height / 4), w * 2 / 4);
@@ -278,15 +266,15 @@ function drawTimestep(fake_timestep, data) {
         .text(data.y_word);
 }
 
-function drawWeightVector(geometry, wv) {
-    drawWeightWidget(geometry, wv.minimum, wv.maximum, wv.vector, wv.colour);
+function drawWeightVector(geometry, wv, class_suffix) {
+    drawWeightWidget(geometry, wv.minimum, wv.maximum, wv.vector, wv.colour, class_suffix);
 }
 
 function drawLabelWeightVector(geometry, lwv) {
-    drawWeightWidget(geometry, lwv.minimum, lwv.maximum, lwv.vector, null);
+    drawWeightWidget(geometry, lwv.minimum, lwv.maximum, lwv.vector, null, null);
 }
 
-function drawWeightWidget(geometry, min, max, vector, colour) {
+function drawWeightWidget(geometry, min, max, vector, colour, class_suffix) {
     if (min >= max) {
         throw "min " + min + " cannot exceed max " + max;
     }
@@ -321,7 +309,7 @@ function drawWeightWidget(geometry, min, max, vector, colour) {
 
     if (debug) {
         svg.append("text")
-            .attr("class", "timestep-" + geometry.timestep)
+            .attr("class", "timestep-" + geometry.timestep + " " + class_suffix)
             .attr("x", geometry.x)
             .attr("y", geometry.y - 2)
             .style("font-size", "12px")
@@ -331,7 +319,7 @@ function drawWeightWidget(geometry, min, max, vector, colour) {
 
     // boundary box
     svg.append("rect")
-        .attr("class", "timestep-" + geometry.timestep)
+        .attr("class", "timestep-" + geometry.timestep + " " + class_suffix)
         .attr("x", geometry.x + 0.5)
         .attr("y", geometry.y + 0.5)
         .attr("width", geometry.width - 1)
@@ -340,7 +328,7 @@ function drawWeightWidget(geometry, min, max, vector, colour) {
         .attr("stroke-width", 1)
         .attr("fill", "none");
     svg.append("line")
-        .attr("class", "timestep-" + geometry.timestep)
+        .attr("class", "timestep-" + geometry.timestep + " " + class_suffix)
         .attr("x1", x(0))
         .attr("y1", y.range()[0] - 2)   // Make the center line stand out slightly by pushing it beyond the rectangle.
         .attr("x2", x(0))
@@ -353,7 +341,7 @@ function drawWeightWidget(geometry, min, max, vector, colour) {
         .data(vector)
         .enter()
             .append("rect")
-            .attr("class", "timestep-" + geometry.timestep)
+            .attr("class", "timestep-" + geometry.timestep + " " + class_suffix)
             .attr("x", function (d) {
                 return x(Math.min(0, d.value));
             })
@@ -373,53 +361,55 @@ function drawWeightWidget(geometry, min, max, vector, colour) {
 
                 return colour;
             });
-    svg.selectAll(".bar")
-        .data(vector)
-        .enter()
-            .append("rect")
-            .attr("id", function(d) { return "hoverbar-" + geometry.timestep + "-" + geometry.name + "-" + d.position; })
-            .attr("class", "timestep-" + geometry.timestep)
-            .attr("x", geometry.x + 1.5)
-            .attr("y", function(d) { return y(d.position) + 1; })
-            .attr("width", geometry.width - 3)
-            .attr("height", y.bandwidth() - 2)
-            .attr("stroke", black)
-            .attr("stroke-width", 1)
-            .attr("fill", colour == "none" ? "white" : colour)
-            .style("opacity", 0)
-            .on("mouseover", function(d) {
-                if (geometry.name != "embedding" && (geometry.timestep > 0 || !geometry.name.startsWith("cell_previous_hat"))) {
-                    d3.select("#hoverbar-" + geometry.timestep + "-" + geometry.name + "-" + d.position)
-                        .style("opacity", 0.5);
-                }
-            })
-            .on("mouseout", function(d) {
-                if (geometry.name != "embedding" && (geometry.timestep > 0 || !geometry.name.startsWith("cell_previous_hat"))) {
-                    d3.select("#hoverbar-" + geometry.timestep + "-" + geometry.name + "-" + d.position)
-                        .style("opacity", 0);
-                }
-            })
-            .on("click", function(d) {
-                var source = {
-                    x: geometry.x + 1,
-                    y: y(d.position) + 1,
-                    width: geometry.width - 2,
-                    height: y.bandwidth() - 2,
-                }
-                if (geometry.name != "embedding" && (geometry.timestep > 0 || !geometry.name.startsWith("cell_previous_hat"))) {
-                    var slice = sequence.slice(0, geometry.timestep + 1);
-                    console.log(geometry.name);
-                    d3.json("weight-explain?" + slice.map(s => "sequence=" + encodeURI(s)).join("&") + "&name=" + geometry.name + "&column=" + d.column)
-                        .get(function (error, we) {
-                            drawExplain(geometry.timestep, source, we, colour);
-                        });
-                }
-            });
+    if (class_suffix == null) {
+        svg.selectAll(".bar")
+            .data(vector)
+            .enter()
+                .append("rect")
+                .attr("id", function(d) { return "hoverbar-" + geometry.timestep + "-" + geometry.name + "-" + d.position; })
+                .attr("class", "timestep-" + geometry.timestep)
+                .attr("x", geometry.x + 1.5)
+                .attr("y", function(d) { return y(d.position) + 1; })
+                .attr("width", geometry.width - 3)
+                .attr("height", y.bandwidth() - 2)
+                .attr("stroke", black)
+                .attr("stroke-width", 1)
+                .attr("fill", colour == "none" ? "white" : colour)
+                .style("opacity", 0)
+                .on("mouseover", function(d) {
+                    if (geometry.name != "embedding" && (geometry.timestep > 0 || !geometry.name.startsWith("cell_previous_hat"))) {
+                        d3.select("#hoverbar-" + geometry.timestep + "-" + geometry.name + "-" + d.position)
+                            .style("opacity", 0.5);
+                    }
+                })
+                .on("mouseout", function(d) {
+                    if (geometry.name != "embedding" && (geometry.timestep > 0 || !geometry.name.startsWith("cell_previous_hat"))) {
+                        d3.select("#hoverbar-" + geometry.timestep + "-" + geometry.name + "-" + d.position)
+                            .style("opacity", 0);
+                    }
+                })
+                .on("click", function(d) {
+                    var source = {
+                        x: geometry.x + 1,
+                        y: y(d.position) + 1,
+                        width: geometry.width - 2,
+                        height: y.bandwidth() - 2,
+                    }
+                    if (geometry.name != "embedding" && (geometry.timestep > 0 || !geometry.name.startsWith("cell_previous_hat"))) {
+                        var slice = sequence.slice(0, geometry.timestep + 1);
+                        console.log(geometry.name);
+                        d3.json("weight-explain?" + slice.map(s => "sequence=" + encodeURI(s)).join("&") + "&name=" + geometry.name + "&column=" + d.column)
+                            .get(function (error, we) {
+                                drawExplain(geometry.timestep, source, we, colour);
+                            });
+                    }
+                });
+    }
     svg.selectAll(".bar")
         .data(vector)
         .enter()
             .append("text")
-            .attr("class", "timestep-" + geometry.timestep)
+            .attr("class", "timestep-" + geometry.timestep + " " + class_suffix)
             .attr("x", function (d) {
                 return geometry.x + Math.abs(x(d.value) - x(min)) + 5;
             })
@@ -648,23 +638,38 @@ function drawVline(timestep, x1, y1, x2, y2, y_midpoint) {
             .style("fill", "none");
 }
 
-function drawOperatorCircle(timestep, x_offset, y_offset, size) {
+function drawOperatorCircle(timestep, x_offset, y_offset, size, addition, parts, class_suffix) {
     svg.append("circle")
-        .attr("class", "timestep-" + timestep)
+        .attr("class", "timestep-" + timestep + " " + class_suffix)
         .attr("cx", x_offset + (size / 2))
         .attr("cy", y_offset + (size / 2))
         .attr("r", (size / 2) - 0.5)
         .attr("stroke", black)
         .attr("stroke-width", 1)
-        .attr("fill", light_grey);
+        .attr("fill", light_grey)
+        .on("mouseover", function(d) {
+            if (parts != null) {
+                d3.event.target.style.fill = dark_grey;
+            }
+        })
+        .on("mouseout", function(d) {
+            if (parts != null) {
+                d3.event.target.style.fill = light_grey;
+            }
+        })
+        .on("click", function(d) {
+            if (parts != null) {
+                drawZoom(timestep, x_offset + (size / 2), addition, parts);
+            }
+        });
 }
 
-function drawAddition(timestep, x_offset, y_offset, size) {
-    drawOperatorCircle(timestep, x_offset, y_offset, size);
+function drawAddition(timestep, x_offset, y_offset, size, parts, class_suffix) {
+    drawOperatorCircle(timestep, x_offset, y_offset, size, true, parts, class_suffix);
     var stroke_width = size / 10;
     var stroke_length = size / 2;
     svg.append("line")
-        .attr("class", "timestep-" + timestep)
+        .attr("class", "timestep-" + timestep + " " + class_suffix)
         .attr("x1", x_offset + ((size - stroke_length) / 2))
         .attr("y1", y_offset + (size / 2))
         .attr("x2", x_offset + ((size - stroke_length) / 2) + stroke_length)
@@ -672,7 +677,7 @@ function drawAddition(timestep, x_offset, y_offset, size) {
         .attr("stroke", black)
         .attr("stroke-width", stroke_width);
     svg.append("line")
-        .attr("class", "timestep-" + timestep)
+        .attr("class", "timestep-" + timestep + " " + class_suffix)
         .attr("x1", x_offset + (size / 2))
         .attr("y1", y_offset + ((size - stroke_length) / 2))
         .attr("x2", x_offset + (size / 2))
@@ -681,13 +686,13 @@ function drawAddition(timestep, x_offset, y_offset, size) {
         .attr("stroke-width", stroke_width);
 }
 
-function drawMultiplication(timestep, x_offset, y_offset, size) {
-    drawOperatorCircle(timestep, x_offset, y_offset, size);
+function drawMultiplication(timestep, x_offset, y_offset, size, parts, class_suffix) {
+    drawOperatorCircle(timestep, x_offset, y_offset, size, false, parts, class_suffix);
     var stroke_width = size / 10;
     var stroke_length = size / 2;
     var qq = Math.sqrt((stroke_length**2) / 2);
     svg.append("line")
-        .attr("class", "timestep-" + timestep)
+        .attr("class", "timestep-" + timestep + " " + class_suffix)
         .attr("x1", x_offset + ((size - qq) / 2))
         .attr("y1", y_offset + ((size - qq) / 2))
         .attr("x2", x_offset + ((size - qq) / 2) + qq)
@@ -695,7 +700,7 @@ function drawMultiplication(timestep, x_offset, y_offset, size) {
         .attr("stroke", black)
         .attr("stroke-width", stroke_width);
     svg.append("line")
-        .attr("class", "timestep-" + timestep)
+        .attr("class", "timestep-" + timestep + " " + class_suffix)
         .attr("x1", x_offset + ((size - qq) / 2))
         .attr("y1", y_offset + ((size - qq) / 2) + qq)
         .attr("x2", x_offset + ((size - qq) / 2) + qq)
@@ -704,12 +709,12 @@ function drawMultiplication(timestep, x_offset, y_offset, size) {
         .attr("stroke-width", stroke_width);
 }
 
-function drawEquals(timestep, x_offset, y_offset, size) {
-    drawOperatorCircle(timestep, x_offset, y_offset, size);
+function drawEquals(timestep, x_offset, y_offset, size, class_suffix) {
+    drawOperatorCircle(timestep, x_offset, y_offset, size, false, null, class_suffix);
     var stroke_width = size / 10;
     var stroke_length = size / 2;
     svg.append("line")
-        .attr("class", "timestep-" + timestep)
+        .attr("class", "timestep-" + timestep + " " + class_suffix)
         .attr("x1", x_offset + ((size - stroke_length) / 2))
         .attr("y1", y_offset + (size / 2) - (stroke_width * 1))
         .attr("x2", x_offset + ((size - stroke_length) / 2) + stroke_length)
@@ -717,7 +722,7 @@ function drawEquals(timestep, x_offset, y_offset, size) {
         .attr("stroke", black)
         .attr("stroke-width", stroke_width);
     svg.append("line")
-        .attr("class", "timestep-" + timestep)
+        .attr("class", "timestep-" + timestep + " " + class_suffix)
         .attr("x1", x_offset + ((size - stroke_length) / 2))
         .attr("y1", y_offset + (size / 2) + (stroke_width * 1))
         .attr("x2", x_offset + ((size - stroke_length) / 2) + stroke_length)
@@ -749,7 +754,6 @@ function drawGate(timestep, x_offset, y_offset, size) {
         .attr("stroke", black)
         .attr("stroke-width", stroke_width)
         .attr("fill", "#FFF");
-
 
     //right vertical bar
     svg.append("rect")
@@ -827,6 +831,77 @@ function drawGate(timestep, x_offset, y_offset, size) {
         .attr("y2", y_offset+size-size/8)
         .attr("stroke", black)
         .attr("stroke-width", stroke_width);
+}
+
+function drawZoom(timestep, x_middle, addition, parts) {
+    var x_offset = x_middle - ((w * 4.5) / 2) - (operator_height * 2);
+    var y_offset = y_margin + (timestep * layer_height);
+    var zoom_class = "zoom-" + Math.random().toString(36).substring(5);
+    svg.append("rect")
+        .attr("class", "timestep-" + timestep + " " + zoom_class)
+        .attr("x", x_offset)
+        .attr("y", y_offset)
+        .attr("width", (w * 4.5) + (operator_height * 4))
+        .attr("height", h * 2)
+        .attr("stroke", black)
+        .attr("stroke-width", 1)
+        .attr("fill", "white");
+    var close_x_offset = x_offset + (w * 4.5) + (operator_height * 4);
+    var close_y_offset = y_offset;
+    svg.append("circle")
+        .attr("class", "timestep-" + timestep + " " + zoom_class)
+        .attr("cx", close_x_offset)
+        .attr("cy", close_y_offset)
+        .attr("r", (operator_height / 2) - 0.5)
+        .attr("stroke", dark_red)
+        .attr("stroke-width", 1)
+        .attr("fill", light_red)
+        .on("mouseover", function(d) {
+            if (parts != null) {
+                d3.event.target.style.fill = dark_red;
+            }
+        })
+        .on("mouseout", function(d) {
+            if (parts != null) {
+                d3.event.target.style.fill = light_red;
+            }
+        })
+        .on("click", function(d) {
+            $("." + zoom_class).remove();
+        });
+    var stroke_width = operator_height / 10;
+    var stroke_length = operator_height / 2;
+    var qq = Math.sqrt((stroke_length**2) / 2);
+    svg.append("line")
+        .attr("class", "timestep-" + timestep + " " + zoom_class)
+        .attr("x1", close_x_offset - ((operator_height - qq) / 2))
+        .attr("y1", close_y_offset - ((operator_height - qq) / 2))
+        .attr("x2", close_x_offset + qq)
+        .attr("y2", close_y_offset + qq)
+        .attr("stroke", black)
+        .attr("stroke-width", stroke_width);
+    svg.append("line")
+        .attr("class", "timestep-" + timestep + " " + zoom_class)
+        .attr("x1", close_x_offset - ((operator_height - qq) / 2))
+        .attr("y1", close_y_offset + qq)
+        .attr("x2", close_x_offset + qq)
+        .attr("y2", close_y_offset - ((operator_height - qq) / 2))
+        .attr("stroke", black)
+        .attr("stroke-width", stroke_width);
+    var geometry = {width: w * 1.5, timestep: timestep, x: x_offset + operator_height, y: y_offset + (h * 0.25), height: h * 1.5};
+    drawWeightVector(geometry, parts[0], zoom_class);
+
+    if (addition) {
+        drawAddition(timestep, geometry.x + (w * 1.5), y_offset + (h) - (operator_height / 2), operator_height, null, zoom_class);
+    } else {
+        drawMultiplication(timestep, geometry.x + (w * 1.5), y_offset + (h) - (operator_height / 2), operator_height, null, zoom_class);
+    }
+
+    geometry.x += (w * 1.5) + operator_height;
+    drawWeightVector(geometry, parts[1], zoom_class);
+    drawEquals(timestep, geometry.x + (w * 1.5), y_offset + (h) - (operator_height / 2), operator_height, zoom_class);
+    geometry.x += (w * 1.5) + operator_height;
+    drawWeightVector(geometry, parts[2], zoom_class);
 }
 
 function drawAutocomplete(timestep, words) {
@@ -907,7 +982,7 @@ function drawAutocomplete(timestep, words) {
                     var tail = sequence.length;
                     sequence = sequence.slice(0, timestep);
 
-                    for (var s = timestep; s < tail; s++) {
+                    for (var s = timestep; s <= tail; s++) {
                         if (s != timestep) {
                             $("#autocomplete-" + s).remove();
                         }
