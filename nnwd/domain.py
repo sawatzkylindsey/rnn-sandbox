@@ -103,10 +103,11 @@ class NeuralNetwork:
             x, y, z = colour_embedding
             axis.scatter(x, y, z, c=[c / 255.0 for c in colour_embedding])
             axis.text(x, y, z, word, zorder=1)
+            logging.debug("%s: %s -> %s" % (word, self.word_embeddings[word], colour_embedding))
 
-        axis.set_xlabel("r")
-        axis.set_ylabel("g")
-        axis.set_zlabel("b")
+        axis.set_xlabel("Red")
+        axis.set_ylabel("Green")
+        axis.set_zlabel("Blue")
         figure.savefig("word_colour_embedding.png")
         user_log.info("Training complete")
         indices = [i for i in range(0, len(order))]
