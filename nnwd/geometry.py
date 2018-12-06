@@ -29,7 +29,7 @@ def fit_point(reference_points, target_distances, epsilon=0.00001, visualize=Fal
         figure = plt.figure()
         axis = figure.add_subplot(111, projection="3d")
         plot_point = lambda p: p + ([] if dimensions == 3 else [0])
-        colouring = lambda x: to_hex([0, min((x * 10) + 100, 255), 0])
+        colouring = lambda x: to_hex([0, min((x * 20) + 100, 255), 0])
 
     for j, reference in enumerate(reference_points):
         if visualize:
@@ -57,7 +57,7 @@ def fit_point(reference_points, target_distances, epsilon=0.00001, visualize=Fal
     if visualize:
         axis.scatter(*plot_point(point), c=colouring(t))
 
-    while any([abs(i) > epsilon for i in correction]):
+    while sum([abs(i) for i in correction]) > epsilon and t < 1000:
         t += 1
         correction = _correction(reference_points, target_distances, point, relaxation_fn(r), importance_fn)
 
@@ -65,6 +65,7 @@ def fit_point(reference_points, target_distances, epsilon=0.00001, visualize=Fal
         if sum([abs(i) for i in correction]) > sum([abs(i) for i in previous]):
             # If the correction starts increasing, it means we're not going to converge - so increase the relaxation step and re-loop (without apply the correction).
             r += 1
+            t -= 1
             logging.debug("previous: %s, correction: %s" % (previous, correction))
         else:
             point = [point[i] + correction[i] for i in range(0, dimensions)]

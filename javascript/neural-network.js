@@ -888,19 +888,19 @@ function drawZoom(timestep, x_middle, addition, parts) {
         .attr("y2", close_y_offset - ((operator_height - qq) / 2))
         .attr("stroke", black)
         .attr("stroke-width", stroke_width);
-    var geometry = {width: w * 1.5, timestep: timestep, x: x_offset + operator_height, y: y_offset + (h * 0.25), height: h * 1.5};
+    var geometry = {width: w * 1.5, timestep: timestep, x: x_offset + operator_height - 2, y: y_offset + (h * 0.25), height: h * 1.5};
     drawWeightVector(geometry, parts[0], zoom_class);
 
     if (addition) {
-        drawAddition(timestep, geometry.x + (w * 1.5), y_offset + (h) - (operator_height / 2), operator_height, null, zoom_class);
+        drawAddition(timestep, geometry.x + (w * 1.5) + 1, y_offset + (h) - (operator_height / 2), operator_height, null, zoom_class);
     } else {
-        drawMultiplication(timestep, geometry.x + (w * 1.5), y_offset + (h) - (operator_height / 2), operator_height, null, zoom_class);
+        drawMultiplication(timestep, geometry.x + (w * 1.5) + 1, y_offset + (h) - (operator_height / 2), operator_height, null, zoom_class);
     }
 
-    geometry.x += (w * 1.5) + operator_height;
+    geometry.x += (w * 1.5) + operator_height + 2;
     drawWeightVector(geometry, parts[1], zoom_class);
-    drawEquals(timestep, geometry.x + (w * 1.5), y_offset + (h) - (operator_height / 2), operator_height, zoom_class);
-    geometry.x += (w * 1.5) + operator_height;
+    drawEquals(timestep, geometry.x + (w * 1.5) + 1, y_offset + (h) - (operator_height / 2), operator_height, zoom_class);
+    geometry.x += (w * 1.5) + operator_height + 2;
     drawWeightVector(geometry, parts[2], zoom_class);
 }
 

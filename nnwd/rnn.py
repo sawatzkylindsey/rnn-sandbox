@@ -265,12 +265,12 @@ class Rnn:
 
             while b < len(data):
                 parameters = {
-                    self.embed_input_p: [np.array([self.word_labels.ook_encode(xy.x)]) for xy in data[b:b + 32]],
-                    self.embed_output_p: [np.array([self.word_labels.ook_encode(xy.y)]) for xy in data[b:b + 32]],
+                    self.embed_input_p: [np.array([self.word_labels.ook_encode(xy.x)]) for xy in data[b:b + 2]],
+                    self.embed_output_p: [np.array([self.word_labels.ook_encode(xy.y)]) for xy in data[b:b + 2]],
                 }
                 _, cost = self.session.run([self.embed_updates, self.embed_cost], feed_dict=parameters)
                 epoch_loss += cost
-                b += 32
+                b += 2
 
             epoch_loss = epoch_loss / len(data)
             logging.debug(epoch_template.format(epoch, epoch_loss))

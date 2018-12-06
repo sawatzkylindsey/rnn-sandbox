@@ -154,7 +154,7 @@ class NeuralNetwork:
             point_distances += [distances]
 
         # Make the maximum target distance half the size of the colour space.
-        scaler = (255.0 / 2) / maximum
+        scaler = (255.0 / 4) / maximum
         colours = []
 
         for i in range(0, len(points)):

@@ -10,4 +10,8 @@ i walk to the park.
 you walk to the park.
 he walks to the park.
 she walks to the park.
+i drink coffee.
+you drink coffee.
+she drinks tea.
+he drinks tea.
 

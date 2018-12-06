@@ -16,6 +16,7 @@ class Echo:
 class Words:
     def __init__(self, words):
         self.words = sorted([w for w in words])
+        user_log.info("Vocabulary  %d" % len(self.words))
 
     def get(self, data):
         return self.words
@@ -29,8 +30,8 @@ class Weights:
         sequence = data["sequence"]
 
         if sequence == ["<test>"]:
-            v = [0, 1, 0.5, -0.5, -1]
-            g = [0, 1, 0.5, 0, 1]
+            v = [1, 0, 0.5, -0.5]
+            g = [.5, 1, 0.5, 1]
             embedding = WeightVector(v)
             units = []
 
@@ -39,10 +40,10 @@ class Weights:
                 forget_gate = WeightVector(g, 0, 1)
                 output_gate = WeightVector(g, 0, 1)
                 input_hat = WeightVector(v)
-                remember = WeightVector(v)
+                remember = WeightVector([.5, 0, .25, -0.5])
                 cell_previous_hat = WeightVector(v)
-                forget = WeightVector(v)
-                cell = WeightVector(v)
+                forget = WeightVector([.25, -.25, .25, -0.5])
+                cell = WeightVector([.75, -.25, .5, -1])
                 cell_hat = WeightVector(v)
                 output = WeightVector(v)
                 units += [Unit(remember_gate, forget_gate, output_gate, input_hat, remember, cell_previous_hat, forget, cell, cell_hat, output)]

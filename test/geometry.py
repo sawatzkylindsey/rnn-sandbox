@@ -61,9 +61,11 @@ class Tests(TestCase):
 
     def test_fit_point(self):
         reference_points_1 = [[0, -2, 3], [1, 0, -6], [2, 4, 9], [3, 6, -12]]
+        #reference_points_1 = [[0, -2, 3], [1, 0, -6], [0, 4, 9], [3, 6, -12]]
         reference_points_2 = [[3, -2, 3], [2, 0, -6], [1, 4, 9], [0, 6, -12]]
         target_distances_1 = [5, 4, 3, 2]
         target_distances_2 = [1, 2, 3, 4]
+        #target_distances_2 = [1, 1, 4, 3]
 
         point_11, t_11 = fit_point(reference_points_1, target_distances_1, visualize=True)
         self.assertTrue(all([not math.isnan(p) for p in point_11]), point_11)
