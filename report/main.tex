@@ -94,9 +94,9 @@
 
 %% Abstract section.
 \abstract{The prevalence of neural networks in a broad range of applications has opened up an important field in visualization, where we seek to explain and diagram the complexities of these neural network systems.
-Many different approaches to this have been undertaken, but as far as these authors are aware non attempt to visualize the flow of weights through these networks in a elucidating way.
+Many different approaches to this have been undertaken, but as far as these authors are aware non attempt to visualize the flow of weights through these networks in an informative way.
 We make such an attempt by diagramming not matrices or activations, but rather weights and their changes through the computational graph.
-Although the relatively high dimensionality and mass of this data can be quite daunting, we use several novel techniques to that help the user to focus into the interesting aspects of the neural network and visualize the weights in a meaningful and informative manner.
+Although the relatively high dimensionality and mass of this data can be quite daunting, we use several novel techniques to that help the user to focus into the interesting aspects of the neural network and visualize the weights in a meaningful and thought-provocative manner.
 } % end of abstract
 
 %% Keywords that describe your work. Will show as 'Index Terms' in journal
@@ -117,8 +117,8 @@ Although the relatively high dimensionality and mass of this data can be quite d
 \teaser{
   \centering
   \includegraphics[width=\linewidth]{2layers.png}
-  \caption{Two timesteps of the Neural Network Weight Flow Visualization}
-    \label{fig:teaser}
+  \caption{Two timesteps of the Neural Network Weight Flow Visualization.}
+	\label{fig:teaser}
 }
 
 %% Uncomment below to disable the manuscript note
@@ -170,23 +170,22 @@ We explore techniques to show details around what is happening in this neural ne
 \\
 \\
 A neural network language model is defined as a classifier trained to learn the probability distribution:
-
 \begin{equation}
     P(w_t|context)
 \end{equation}
-
+\\
 where $w_t$ is the word to predict at timestep $t$, and the context is some representation of the current linguistic context.
 The context can typically be represented as a window of previous words $w_{t-w},..,w_{t-1}$.
 With a recurrent neural network, the context spans back to the beginning of the sentence $w_1,..,w_{t-1}$ through the recurrence of the network itself, and additionally includes an input word $w_{in}$ which may differ from $w_{t-1}$.
-
 \begin{equation}
     P(w_t|w_{in},w_1,..,w_{t-1})
 \end{equation}
-
+\\
 In this model, the words of the vocabulary $V$ are encoded by a one-of-K coding.
 A high dimensional embedding is trained to map words that occur in similar contexts closer in an $N << |V|$ dimensional space, while words that don't occur in similar context are trained to map farther apart in this space.
 This is referred to as a word embedding, and will factor into the visual idiom design later in this work.
-
+\\
+\\
 The recurrent units of the architecture are trained against an input corpus to minimize the error, or rather to maximize the probability (1).
 Without going into too many details, the LSTM has a few key characteristics, namely that it represents and learns information that it needs to remember as weight vectors, and this information is allowed to flow or not via other weight vectors typically referred to as `gates'.
 These gates sound complex, but in reality they are merely element wise multiplications, so when the gate has a value of 1 all the information is allowed through, and conversely when the gate has a value of 0 none is allowed through.
@@ -303,7 +302,7 @@ Figure 3 part 1) demonstrates the result of this interaction.
 
 \begin{figure}[tb]
  \centering % avoid the use of \begin{center}...\end{center} and use \centering instead (more compact)
- \includegraphics[width=\linewidth]{weight_explain_and_softmax.png}
+ \includegraphics[scale=.35]{weight_explain_and_softmax.png}
  \caption{1) Explaining the final dimension (a) of the right-purple weight vector as a result of the left-green weight vector.  Despite having a value of 0, we see that in fact several positive and negative factors have contributed to the final effect.  We also see how the contribution of a value can switch, as in the example where (b) is positive but its contribution is actually negative.  2) Showing the output softmax.  The relative probabilities stand out and highlight the most likely vs. least likely words.}
  %\autoref{tab:vis_papers}. The image is from \cite{Isenberg:2017:VMC} and is in the public domain.}
  \label{fig:weight_explain}
@@ -357,7 +356,7 @@ In no particular order, these are:
 To answer these questions rigorously we would need to perform controlled experiments with at least two user groups, one testing the visualization and one against some control.
 However, we don't have the time or resources for such a study in the period of a course final project, so our own analysis of these questions will have to suffice.
 
-\subsection{What portions of the neural network do the weights change most drastically?}
+\subsection{Where do the weights change most drastically?}
 To us, it seems quite clear that the visualization excels at answering this question.
 The technique to map weights into some lower dimensional colour representation very effectively allows the user to mentally group sections of the neural network as similar, and where the outlines of those groups are formed then immediately stand out as important to answering this question.
 \\
@@ -366,7 +365,7 @@ It is probably worth noting that this simple question cannot be answered with ot
 For example, looking simply at a computational graph such as that provided by Tensorflow will never show this detail because it does not show any instantiation of the network against some input, and the values that input elicits.
 On the other hand, looking at the activations/patterns visualized in LSTMViz does highlight where changes occurr, but doesn't orient those changes in the context of the entire neural network.
 
-\subsection{What semantic representation do the weights hold, especially the various `memory' cells of the LSTM?}
+\subsection{What semantic representation do the weights hold?}
 Indeed, not just mapping the weights into some lower dimensional colour space, but specifically mapping them into the same colour space as the word embeddings begins to provide some insight into answering this question.
 By doing so, the user can begin to think of the weights, especially the so called `memory' cells, as slight perturbations of words themselves.
 As these close-to-words weights flow through the neural network they are then slowly transformed, operation by operation, until finally arriving at the output.
@@ -385,7 +384,7 @@ Unfortunately in those cases, it isn't clear how the same mapping effects would 
 \\
 Future work should attempt to address this concern, or discover a still meaningful alternative approach to this problem.
 
-\subsection{If the neural network isn't behaving as expected, why?  Specifically, can the user point at an aspect of the neural network and say to some reasonable detail what has gone wrong?}
+\subsection{Can a misbehaving neural network be debugged?}
 This question is difficult to answer without exploring several specific example datasets, which we unfortunately do not have the time to do.
 However, it seems clear that at the very least the visualization will indeed be able to answer the question for some, if not many, such broken behaviour cases.
 \\
@@ -446,5 +445,4 @@ Although more rigorous tuning and experimentation is required to refine these id
 \end{figure}
 
 \end{document}
-
 
