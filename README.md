@@ -15,6 +15,8 @@ Requirements:
     pip install numpy
     pip install sklearn
     pip install tensorflow==1.9.0
+    # If above doesn't work (you'll have to manually fix the install tf library):
+    #   pip install --upgrade https://storage.googleapis.com/tensorflow/mac/cpu/tensorflow-1.9.0-py3-none-any.whl
     # Libraries (custom)
     curl -LO https://github.com/sawatzkylindsey/pytils/archive/master.zip
     cd pytils-master/
@@ -25,7 +27,8 @@ Running:
     python dev-server.py -v
 
 Running after system restart:
-    
+
     python3 -m venv p3
     source ./p3/bin/activate
     python dev-server.py -v
+
