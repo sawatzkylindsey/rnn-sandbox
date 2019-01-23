@@ -1,6 +1,7 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 
+import collections
 import logging
 import numpy as np
 import os
@@ -21,13 +22,11 @@ class Rnn:
     # we track all the other intermediate gates/states for the weight instrumentation.
     SCAN_STATES = 10
 
-    def __init__(self, layers, width, word_labels, scope="rnn", window=1):
+    def __init__(self, layers, width, word_labels, scope="rnn"):
         self.layers = layers
         self.width = width
         self.word_labels = word_labels
         self.scope = scope
-        self.window = window
-        assert window >= 1, window
 
         # Notation:
         #   _p      placeholder
@@ -43,26 +42,14 @@ class Rnn:
 
         self.E = self.variable("E", [len(self.word_labels), self.width])
         self.E_bias = self.variable("E_bias", [1, self.width], 0.0)
-        self.G = self.variable("G", [self.width, len(self.word_labels)])
-        self.G_bias = self.variable("G_bias", [1, len(self.word_labels)], 0.0)
 
-        self.embed_logit = tf.matmul(tf.matmul(tf.reshape(self.embed_input_p, [-1, len(self.word_labels)]), self.E) + self.E_bias, self.G) + self.G_bias
-        assert_shape(self.embed_logit, [None, len(self.word_labels)])
-        self.embed_distribution = tf.nn.softmax(self.embed_logit)
-        assert_shape(self.embed_distribution, [None, len(self.word_labels)])
-        shaped_embed_output = tf.reshape(self.embed_output_p, [-1, len(self.word_labels)])
-        # Expected output:                                                          v
-        # Un-scaled prediction:                                                                                                   v
-        self.embed_cost = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits_v2(labels=tf.stop_gradient(shaped_embed_output), logits=self.embed_logit))
-        self.embed_updates = tf.train.AdagradOptimizer(learning_rate=1).minimize(self.embed_cost)
-
-        self.R = self.variable("R", [self.layers, self.width * 2, self.width], -1.0)
+        self.R = self.variable("R", [self.layers, self.width * 2, self.width], 1.0)
         self.R_bias = self.variable("R_bias", [self.layers, 1, self.width], 0.0)
         tf.identity(tf.reshape(self.R_bias, [-1, self.width]), name="R_bias")
         self.F = self.variable("F", [self.layers, self.width * 2, self.width], -1.0)
         self.F_bias = self.variable("F_bias", [self.layers, 1, self.width], 0.0)
         tf.identity(tf.reshape(self.F_bias, [-1, self.width]), name="F_bias")
-        self.O = self.variable("O", [self.layers, self.width * 2, self.width], -1.0)
+        self.O = self.variable("O", [self.layers, self.width * 2, self.width], 1.0)
         self.O_bias = self.variable("O_bias", [self.layers, 1, self.width], 0.0)
         tf.identity(tf.reshape(self.O_bias, [-1, self.width]), name="O_bias")
 
@@ -74,7 +61,7 @@ class Rnn:
         self.Y_bias = self.variable("Y_bias", [1, len(self.word_labels)], 0.0)
         tf.identity(tf.reshape(self.Y_bias, [len(self.word_labels)]), name="Y_bias")
 
-        self.unrolled_embedded_inputs = tf.matmul(tf.reshape(self.unrolled_inputs_p, [-1, len(self.word_labels)]), tf.stop_gradient(self.E)) + tf.stop_gradient(self.E_bias)
+        self.unrolled_embedded_inputs = tf.matmul(tf.reshape(self.unrolled_inputs_p, [-1, len(self.word_labels)]), self.E) + self.E_bias
         assert_shape(self.unrolled_embedded_inputs, [None, self.width])
         tf.identity(tf.reshape(self.unrolled_embedded_inputs, [self.width]), name="embedding")
 
@@ -174,10 +161,9 @@ class Rnn:
         # Expected output:                 v
         # Un-scaled prediction:                                                      v
         self.cost = tf.reduce_mean(loss_fn(labels=tf.stop_gradient(expected_output), logits=self.output_logit))
-        self.updates = tf.train.AdagradOptimizer(learning_rate=0.1).minimize(self.cost)
+        self.updates = tf.train.AdamOptimizer(learning_rate=0.1).minimize(self.cost)
 
         self.session = tf.Session()
-        #self.session = tf_debug.LocalCLIDebugWrapperSession(tf.Session())
         self.session.run(tf.global_variables_initializer())
 
     def placeholder(self, name, shape):
@@ -188,14 +174,18 @@ class Rnn:
             return tf.get_variable(name, shape=shape,
                 initializer=tf.contrib.layers.xavier_initializer() if initial is None else tf.constant_initializer(initial))
 
-    def train(self, xy_sequences, epochs=10, debug=False):
-        self._train_embedding(xy_sequences, epochs, debug)
+    def train(self, xy_sequences, epoch_threshold=1000, loss_threshold=0.5, debug=False):
         shuffled_xy_sequences = xy_sequences.copy()
-        slot_length = len(str(epochs)) - 1
+        slot_length = len(str(epoch_threshold)) - 1
         epoch_template = "Epoch training {:%dd}: {:f}" % slot_length
-        final_loss = None
+        epochs_tenth = int(epoch_threshold / 10)
+        loss_window = 5
+        losses = collections.deque([])
+        finished = False
+        epoch = 0
 
-        for epoch in range(epochs):
+        while not finished:
+            epoch += 1
             epoch_loss = 0
             # Shuffle the training set for every epoch.
             random.shuffle(shuffled_xy_sequences)
@@ -208,72 +198,35 @@ class Rnn:
 
                 input_labels = [np.array([self.word_labels.ook_encode(xy.x)]) for xy in sequence]
                 output_labels = [np.array([self.word_labels.ook_encode(xy.y)]) for xy in sequence]
-                #parameters = {
-                #    self.unrolled_inputs_p: input_labels,
-                #    self.initial_state_p: self.initial_state_c,
-                #    self.output_label_p: output_labels,
-                #}
-                #_, total_cost = self.session.run([self.updates, self.cost], feed_dict=parameters)
-                #epoch_loss += (total_cost / len(input_labels))
-                total_cost = 0
-                for i in sorted(range(len(input_labels)), key=lambda item: random.randint(0, 1)):
-                    parameters = {
-                        self.unrolled_inputs_p: input_labels[:i + 1],
-                        self.initial_state_p: self.initial_state_c,
-                        self.output_label_p: output_labels[:i + 1],
-                    }
-                    ## Give the last training example an extra boost
-                    #if i + 1 == len(input_labels):
-                    #   self.session.run([self.updates, self.cost], feed_dict=parameters)
-                    _, cost = self.session.run([self.updates, self.cost], feed_dict=parameters)
-                    total_cost += cost
+                parameters = {
+                    self.unrolled_inputs_p: input_labels,
+                    self.initial_state_p: self.initial_state_c,
+                    self.output_label_p: output_labels,
+                }
+                _, total_cost = self.session.run([self.updates, self.cost], feed_dict=parameters)
+                epoch_loss += total_cost
 
-            epoch_loss += (total_cost / len(input_labels))
             logging.debug(epoch_template.format(epoch, epoch_loss))
 
             # Every 10th epoch (epochs start at 0, which is why we add 1).
-            if debug and (epoch + 1) % 10 == 0:
-                # Run the training sequence and compare the Rnn's output with that of what is expected.
-                self.test(xy_sequences)
+            if epoch % epochs_tenth == 0:
+                logging.debug(epoch_template.format(epoch, epoch_loss))
 
-            if epoch + 1 == epochs:
-                final_loss = epoch_loss
+                if debug:
+                    # Run the training data and compare the network's output with that of what is expected.
+                    self.test(xy_sequences)
 
-        return final_loss
+            losses.append(epoch_loss)
 
-    def _train_embedding(self, xy_sequences, epochs, debug):
-        data = set()
+            if len(losses) > loss_window:
+                losses.popleft()
 
-        for sequence in xy_sequences:
-            for i in range(0, len(sequence)):
-                for j in range(1, self.window + 1):
-                    if i + j < len(sequence):
-                        data.add(Xy(sequence[i].x, sequence[i + j].x))
+            # Training is finished if:
+            #   1. The current epoch exceeds the epochs threshold, or
+            #   2. The losses are full and consistently lower than the loss threshold
+            finished = epoch > epoch_threshold or (len(losses) == loss_window and all([loss < loss_threshold for loss in losses]))
 
-                    if i - j < len(sequence) and i - j >= 0:
-                        data.add(Xy(sequence[i].x, sequence[i - j].x))
-
-        logging.debug("Embedding data: %s" % data)
-        slot_length = len(str(epochs * 2)) - 1
-        epoch_template = "Epoch embedding training {:%dd}: {:f}" % slot_length
-        data = [d for d in data]
-
-        for epoch in range(0, epochs):
-            epoch_loss = 0
-            random.shuffle(data)
-            b = 0
-
-            while b < len(data):
-                parameters = {
-                    self.embed_input_p: [np.array([self.word_labels.ook_encode(xy.x)]) for xy in data[b:b + 2]],
-                    self.embed_output_p: [np.array([self.word_labels.ook_encode(xy.y)]) for xy in data[b:b + 2]],
-                }
-                _, cost = self.session.run([self.embed_updates, self.embed_cost], feed_dict=parameters)
-                epoch_loss += cost
-                b += 2
-
-            epoch_loss = epoch_loss / len(data)
-            logging.debug(epoch_template.format(epoch, epoch_loss))
+        return epoch_loss
 
     def test(self, xy_sequences, debug=False):
         assert len(xy_sequences) > 0

@@ -20,14 +20,14 @@ from pytils.log import setup_logging, user_log
 REFERENCES = 16
 
 
-def create(corpus, epochs, verbose):
+def create(corpus, epochs, loss, verbose):
     words, xy_sequences = nlp.corpus_sequences(corpus)
 
     if verbose:
         for sequence in xy_sequences:
             logging.debug(sequence)
 
-    return words, xy_sequences, NeuralNetwork(words, xy_sequences, epochs)
+    return words, xy_sequences, NeuralNetwork(words, xy_sequences, epochs, loss)
 
 
 class NeuralNetwork:
@@ -54,18 +54,19 @@ class NeuralNetwork:
         "softmax": "Y",
     }
 
-    def __init__(self, words, xy_sequences, epochs):
+    def __init__(self, words, xy_sequences, epoch_threshold, loss_threshold):
         self.words = words
-        self.lstm = rnn.Rnn(NeuralNetwork.LAYERS, NeuralNetwork.WIDTH, words, window=2)
+        self.lstm = rnn.Rnn(NeuralNetwork.LAYERS, NeuralNetwork.WIDTH, words)
         self.xy_sequences = [[rnn.Xy(t[0], t[1]) for t in sequence] for sequence in xy_sequences]
-        self.epochs = epochs
+        self.epoch_threshold = epoch_threshold
+        self.loss_threshold = loss_threshold
         self.colour_embeddings = None
         self._background_setup = threading.Thread(target=self._setup)
         self._background_setup.daemon = True
         self._background_setup.start()
 
     def _setup(self):
-        loss = self.lstm.train(self.xy_sequences, self.epochs, True)
+        loss = self.lstm.train(self.xy_sequences, self.epoch_threshold, self.loss_threshold, True)
         logging.debug("train %s" % loss)
         accuracy = self.lstm.test(self.xy_sequences, True)
         logging.debug("test %s" % accuracy)
