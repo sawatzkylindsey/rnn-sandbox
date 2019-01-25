@@ -102,7 +102,7 @@ class NeuralNetwork:
 
         for word, colour_embedding in self.colour_embeddings.items():
             x, y, z = colour_embedding
-            axis.scatter(x, y, z, c=[c / 255.0 for c in colour_embedding])
+            axis.scatter(x, y, z, c=[[c / 255.0 for c in colour_embedding]])
             axis.text(x, y, z, word, zorder=1)
             logging.debug("%s: %s -> %s" % (word, self.word_embeddings[word], colour_embedding))
 

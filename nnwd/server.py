@@ -117,7 +117,7 @@ def main(argv):
     ap.add_argument("-p", "--port", default=8888, type=int)
     ap.add_argument("--corpus", default="corpus.txt")
     ap.add_argument("--epochs", default=1000, type=int)
-    ap.add_argument("--loss", default=0.5, type=int)
+    ap.add_argument("--loss", default=0.5, type=float)
     args = ap.parse_args(argv)
     setup_logging(".%s.log" % os.path.splitext(os.path.basename(__file__))[0], args.verbose, False, True)
     logging.debug(args)

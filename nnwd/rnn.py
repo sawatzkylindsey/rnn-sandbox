@@ -28,40 +28,39 @@ class Rnn:
         self.word_labels = word_labels
         self.scope = scope
 
+        time_dimension = None
+        batch_dimension = None
         # Notation:
         #   _p      placeholder
         #   _c      constant
 
-        self.unrolled_inputs_p = self.placeholder("unrolled_inputs_p", [None, 1, len(self.word_labels)])
-        self.output_label_p = self.placeholder("output_label_p", [None, 1, len(self.word_labels)])
-        self.embed_input_p = self.placeholder("embed_input_p", [None, 1, len(self.word_labels)])
-        self.embed_output_p = self.placeholder("embed_output_p", [None, 1, len(self.word_labels)])
+        self.unrolled_inputs_p = self.placeholder("unrolled_inputs_p", [time_dimension], tf.int32)
+        self.unrolled_outputs_p = self.placeholder("unrolled_outputs_p", [time_dimension], tf.int32)
 
         self.initial_state_p = self.placeholder("initial_state_p", [Rnn.SCAN_STATES, self.layers, 1, self.width])
         self.initial_state_c = np.zeros([Rnn.SCAN_STATES, self.layers, 1, self.width], dtype="float32")
 
         self.E = self.variable("E", [len(self.word_labels), self.width])
-        self.E_bias = self.variable("E_bias", [1, self.width], 0.0)
 
-        self.R = self.variable("R", [self.layers, self.width * 2, self.width], 1.0)
-        self.R_bias = self.variable("R_bias", [self.layers, 1, self.width], 0.0)
+        self.R = self.variable("R", [self.layers, self.width * 2, self.width])
+        self.R_bias = self.variable("R_bias", [self.layers, self.width], initial=0.0)
         tf.identity(tf.reshape(self.R_bias, [-1, self.width]), name="R_bias")
-        self.F = self.variable("F", [self.layers, self.width * 2, self.width], -1.0)
-        self.F_bias = self.variable("F_bias", [self.layers, 1, self.width], 0.0)
+        self.F = self.variable("F", [self.layers, self.width * 2, self.width])
+        self.F_bias = self.variable("F_bias", [self.layers, self.width], initial=1.0)
         tf.identity(tf.reshape(self.F_bias, [-1, self.width]), name="F_bias")
-        self.O = self.variable("O", [self.layers, self.width * 2, self.width], 1.0)
-        self.O_bias = self.variable("O_bias", [self.layers, 1, self.width], 0.0)
+        self.O = self.variable("O", [self.layers, self.width * 2, self.width])
+        self.O_bias = self.variable("O_bias", [self.layers, self.width], initial=0.0)
         tf.identity(tf.reshape(self.O_bias, [-1, self.width]), name="O_bias")
 
         self.H = self.variable("H", [self.layers, self.width * 2, self.width])
-        self.H_bias = self.variable("H_bias", [self.layers, 1, self.width], 0.0)
+        self.H_bias = self.variable("H_bias", [self.layers, self.width], initial=0.0)
         tf.identity(tf.reshape(self.H_bias, [-1, self.width]), name="H_bias")
 
         self.Y = self.variable("Y", [self.width, len(self.word_labels)])
-        self.Y_bias = self.variable("Y_bias", [1, len(self.word_labels)], 0.0)
+        self.Y_bias = self.variable("Y_bias", [1, len(self.word_labels)], initial=0.0)
         tf.identity(tf.reshape(self.Y_bias, [len(self.word_labels)]), name="Y_bias")
 
-        self.unrolled_embedded_inputs = tf.matmul(tf.reshape(self.unrolled_inputs_p, [-1, len(self.word_labels)]), self.E) + self.E_bias
+        self.unrolled_embedded_inputs = tf.nn.embedding_lookup(self.E, self.unrolled_inputs_p)
         assert_shape(self.unrolled_embedded_inputs, [None, self.width])
         tf.identity(tf.reshape(self.unrolled_embedded_inputs, [self.width]), name="embedding")
 
@@ -147,11 +146,8 @@ class Rnn:
         final_state_for_matmul = tf.reshape(self.final_state, [-1, self.width])
         assert_shape(final_state_for_matmul, [None, self.width])
 
-        self.output_logit = tf.tanh(tf.matmul(final_state_for_matmul, self.Y) + self.Y_bias)
+        self.output_logit = tf.matmul(final_state_for_matmul, self.Y) + self.Y_bias
         assert_shape(self.output_logit, [None, len(self.word_labels)])
-
-        expected_output = tf.reshape(self.output_label_p, [-1, len(self.word_labels)])
-        assert self.output_logit.shape.as_list() == expected_output.shape.as_list(), "%s != %s" % (self.output_logit.shape.as_list(), expected_output.shape.as_list())
 
         self.output_distribution = tf.nn.softmax(self.output_logit[0])
         assert_shape(self.output_distribution, [len(self.word_labels)])
@@ -159,19 +155,19 @@ class Rnn:
         loss_fn = tf.nn.softmax_cross_entropy_with_logits_v2
 
         # Expected output:                 v
-        # Un-scaled prediction:                                                      v
-        self.cost = tf.reduce_mean(loss_fn(labels=tf.stop_gradient(expected_output), logits=self.output_logit))
-        self.updates = tf.train.AdamOptimizer(learning_rate=0.1).minimize(self.cost)
+        # Un-scaled prediction:                                                                                           v
+        self.cost = tf.reduce_mean(loss_fn(labels=tf.stop_gradient(tf.one_hot(self.unrolled_outputs_p, len(self.word_labels))), logits=self.output_logit))
+        self.updates = tf.train.AdamOptimizer().minimize(self.cost)
 
         self.session = tf.Session()
         self.session.run(tf.global_variables_initializer())
 
-    def placeholder(self, name, shape):
-        return tf.placeholder(tf.float32, shape, name=name)
+    def placeholder(self, name, shape, dtype=tf.float32):
+        return tf.placeholder(dtype, shape, name=name)
 
-    def variable(self, name, shape, initial=None):
+    def variable(self, name, shape, dtype=tf.float32, initial=None):
         with tf.variable_scope(self.scope):
-            return tf.get_variable(name, shape=shape,
+            return tf.get_variable(name, shape=shape, dtype=dtype,
                 initializer=tf.contrib.layers.xavier_initializer() if initial is None else tf.constant_initializer(initial))
 
     def train(self, xy_sequences, epoch_threshold=1000, loss_threshold=0.5, debug=False):
@@ -182,7 +178,7 @@ class Rnn:
         loss_window = 5
         losses = collections.deque([])
         finished = False
-        epoch = 0
+        epoch = -1
 
         while not finished:
             epoch += 1
@@ -196,25 +192,18 @@ class Rnn:
                 if epoch == 0 and debug:
                     logging.debug("training on: %s" % sequence)
 
-                input_labels = [np.array([self.word_labels.ook_encode(xy.x)]) for xy in sequence]
-                output_labels = [np.array([self.word_labels.ook_encode(xy.y)]) for xy in sequence]
+                input_labels = [self.word_labels.encode(xy.x) for xy in sequence]
+                output_labels = [self.word_labels.encode(xy.y) for xy in sequence]
                 parameters = {
-                    self.unrolled_inputs_p: input_labels,
+                    self.unrolled_inputs_p: np.array(input_labels),
                     self.initial_state_p: self.initial_state_c,
-                    self.output_label_p: output_labels,
+                    self.unrolled_outputs_p: np.array(output_labels),
                 }
                 _, total_cost = self.session.run([self.updates, self.cost], feed_dict=parameters)
                 epoch_loss += total_cost
 
-            logging.debug(epoch_template.format(epoch, epoch_loss))
-
-            # Every 10th epoch (epochs start at 0, which is why we add 1).
             if epoch % epochs_tenth == 0:
                 logging.debug(epoch_template.format(epoch, epoch_loss))
-
-                if debug:
-                    # Run the training data and compare the network's output with that of what is expected.
-                    self.test(xy_sequences)
 
             losses.append(epoch_loss)
 
@@ -273,7 +262,7 @@ class Rnn:
 
     def evaluate(self, x, state=None, instrument_names=[]):
         parameters = {
-            self.unrolled_inputs_p: np.array([np.array([self.word_labels.ook_encode(x, True)])]),
+            self.unrolled_inputs_p: np.array([self.word_labels.encode(x, True)]),
             self.initial_state_p: state if state is not None else self.initial_state_c
         }
         instruments = [self.session.graph.get_tensor_by_name("%s:0" % name) for name in instrument_names]
@@ -297,7 +286,7 @@ class Rnn:
 
     def embed(self, x):
         parameters = {
-            self.unrolled_inputs_p: np.array([np.array([self.word_labels.ook_encode(x, True)])]),
+            self.unrolled_inputs_p: np.array([self.word_labels.encode(x, True)]),
             self.initial_state_p: self.initial_state_c
         }
         return self.session.run([self.session.graph.get_tensor_by_name("embedding:0")], feed_dict=parameters)[0]
