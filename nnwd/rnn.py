@@ -289,7 +289,7 @@ class Rnn:
             self.unrolled_inputs_p: np.array([self.word_labels.encode(x, True)]),
             self.initial_state_p: self.initial_state_c
         }
-        return self.session.run([self.session.graph.get_tensor_by_name("embedding:0")], feed_dict=parameters)[0]
+        return self.session.run([self.session.graph.get_tensor_by_name("embedding:0")], feed_dict=parameters)[0].tolist()
 
 
 class Stepwise:

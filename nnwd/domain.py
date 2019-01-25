@@ -18,6 +18,8 @@ from pytils.log import setup_logging, user_log
 
 
 REFERENCES = 16
+REFERENCE_WINDOW = 3
+assert REFERENCES >= REFERENCE_WINDOW * 2
 
 
 def create(corpus, epochs, loss, verbose):
@@ -32,7 +34,8 @@ def create(corpus, epochs, loss, verbose):
 
 class NeuralNetwork:
     LAYERS = 2
-    WIDTH = 5
+    WIDTH = 20
+    OUTPUT_WIDTH = 7
     INSTRUMENTS = [
         "embedding",
         "remember_gates",
@@ -104,7 +107,7 @@ class NeuralNetwork:
             x, y, z = colour_embedding
             axis.scatter(x, y, z, c=[[c / 255.0 for c in colour_embedding]])
             axis.text(x, y, z, word, zorder=1)
-            logging.debug("%s: %s -> %s" % (word, self.word_embeddings[word], colour_embedding))
+            logging.debug("colour_embedding '%s': %s -> %s" % (word, self.word_embeddings[word], colour_embedding))
 
         axis.set_xlabel("Red")
         axis.set_ylabel("Green")
@@ -145,21 +148,22 @@ class NeuralNetwork:
         for i, point in enumerate(points):
             distances = []
 
-            for reference_point in self.reference_points:
+            for j, reference_point in enumerate(self.reference_points):
                 distance = geometry.distance(point, reference_point)
-                distances += [distance]
+                distances += [(self.reference_colours[j], distance)]
 
                 if maximum is None or distance > maximum:
                     maximum = distance
 
-            point_distances += [distances]
+            distances = sorted(distances, key=lambda item: item[1])
+            point_distances += [distances[:REFERENCE_WINDOW] + distances[-REFERENCE_WINDOW:]]
 
         # Make the maximum target distance half the size of the colour space.
-        scaler = (255.0 / 4) / maximum
+        scaler = (255.0 / 2) / maximum
         colours = []
 
         for i in range(0, len(points)):
-            fit, t = geometry.fit_point(self.reference_colours, [scaler * d for d in point_distances[i]])
+            fit, t = geometry.fit_point([item[0] for item in point_distances[i]], [scaler * item[1] for item in point_distances[i]])
             colours += ["rgb(%d, %d, %d)" % tuple([round(i) for i in fit])]
 
         return colours
@@ -199,7 +203,7 @@ class NeuralNetwork:
             output = WeightVector(instruments["outputs"][layer], colour=instrument_colours.pop(0))
             units += [Unit(remember_gate, forget_gate, output_gate, input_hat, remember, cell_previous_hat, forget, cell, cell_hat, output)]
 
-        softmax = LabelWeightVector(result.distribution, result.encoding, NeuralNetwork.WIDTH, lambda word: self.word_colour(word))
+        softmax = LabelWeightVector(result.distribution, result.encoding, NeuralNetwork.OUTPUT_WIDTH, lambda word: self.word_colour(word))
         return Layer(embedding, units, softmax, len(sequence) - 1, x_word, result.prediction)
 
     def weight_explain(self, sequence, name, column):

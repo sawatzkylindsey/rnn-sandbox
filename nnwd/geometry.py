@@ -15,6 +15,7 @@ def fit_point(reference_points, target_distances, epsilon=0.00001, visualize=Fal
     assert len(reference_points) > 0
     assert len(reference_points) == len(target_distances), "%d != %d" % (len(reference_points), len(target_distances))
     assert epsilon > 0
+    logging.debug("fitting: %s, %s" % (reference_points, target_distances))
     dimensions = len(reference_points[0])
 
     if visualize:
@@ -28,7 +29,7 @@ def fit_point(reference_points, target_distances, epsilon=0.00001, visualize=Fal
     if visualize:
         figure = plt.figure()
         axis = figure.add_subplot(111, projection="3d")
-        plot_point = lambda p: p + ([] if dimensions == 3 else [0])
+        plot_point = lambda p: list(p) + ([] if dimensions == 3 else [0])
         colouring = lambda x: to_hex([0, min((x * 20) + 100, 255), 0])
 
     for j, reference in enumerate(reference_points):
@@ -82,7 +83,7 @@ def fit_point(reference_points, target_distances, epsilon=0.00001, visualize=Fal
         axis.set_ylabel("y")
         axis.set_zlabel("z")
         plt.draw()
-        plt.pause(60)
+        plt.pause(120)
 
     return point, t
 
@@ -120,6 +121,10 @@ def _correction(reference_points, target_distances, point, relaxation, importanc
 
 
 def _find_importance(target_distances):
+    target_maximum = max(target_distances)
+    target_minimum = min(target_distances)
+    delta = target_maximum - target_minimum
+    return lambda x: ((-1.0 / delta) * (x - target_minimum)) + 1
     # Close distances should be respected more than far ones.
     # A distance of 0 is perfectly respected (its correction is valued at 100%).
     # The maximum distance is mush less respected (its correction is valued at marker = ~25%).

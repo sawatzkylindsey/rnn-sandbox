@@ -111,23 +111,17 @@ def canonicalize_bounds(minimum, maximum, vector):
         maximum = max(vector)
 
     if minimum > 0:
-        logging.debug("pushing minimum from (%s) to (0)" % minimum)
         minimum = 0
     elif minimum >= -1 and minimum < 0:
-        logging.debug("pushing minimum from (%s) to (-1)" % minimum)
         minimum = -1
     else:
-        logging.debug("giving minimum 25%% leeway (%s) to (%s)" % (minimum, minimum - abs(minimum * .25)))
         minimum = minimum - abs(minimum * .25)
 
     if maximum < 0:
-        logging.debug("pushing maximum from (%s) to (0)" % maximum)
         maximum = 0
     elif maximum >= 0 and maximum <= 1:
-        logging.debug("pushing maximum from (%s) to (1)" % maximum)
         maximum = 1
     else:
-        logging.debug("giving maximum 25%% leeway (%s) to (%s)" % (maximum, maximum + abs(maximum * .25)))
         maximum = maximum + abs(maximum * .25)
 
     assert minimum < maximum, "the minimum (%s) must be less than the maximum (%s)" % (minimum, maximum)
