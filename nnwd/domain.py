@@ -1,4 +1,5 @@
 
+import itertools
 import json
 import logging
 import math
@@ -18,8 +19,7 @@ from pytils.log import setup_logging, user_log
 
 
 REFERENCES = 16
-REFERENCE_WINDOW = 3
-assert REFERENCES >= REFERENCE_WINDOW * 2
+SHORTLIST_REFERENCES = int(REFERENCES / 2)
 
 
 def create(corpus, epochs, loss, verbose):
@@ -34,7 +34,7 @@ def create(corpus, epochs, loss, verbose):
 
 class NeuralNetwork:
     LAYERS = 2
-    WIDTH = 20
+    WIDTH = 10
     OUTPUT_WIDTH = 7
     INSTRUMENTS = [
         "embedding",
@@ -71,8 +71,6 @@ class NeuralNetwork:
     def _setup(self):
         loss = self.lstm.train(self.xy_sequences, self.epoch_threshold, self.loss_threshold, True)
         logging.debug("train %s" % loss)
-        accuracy = self.lstm.test(self.xy_sequences, True)
-        logging.debug("test %s" % accuracy)
         weights = []
         order = []
         self.word_embeddings = {}
@@ -83,6 +81,7 @@ class NeuralNetwork:
             order += [word]
             self.word_embeddings[word] = weight
 
+        assert len(self.word_embeddings) >= REFERENCES, "not enough word embeddings (%d < %d" % (len(self.word_embeddings), REFERENCES)
         tsne = TSNE(n_components=3)
         embeddings_3d = tsne.fit_transform(weights)
         minimum = [None, None, None]
@@ -142,31 +141,64 @@ class NeuralNetwork:
         if not self.is_setup():
             return ["none"] * len(points)
 
-        point_distances = []
-        maximum = None
+        point_data = []
 
-        for i, point in enumerate(points):
-            distances = []
+        for point in points:
+            distances = {}
+            maximum_distance = 0
 
             for j, reference_point in enumerate(self.reference_points):
                 distance = geometry.distance(point, reference_point)
-                distances += [(self.reference_colours[j], distance)]
+                distances[self.reference_colours[j]] = distance
 
-                if maximum is None or distance > maximum:
-                    maximum = distance
+                if distance > maximum_distance:
+                    maximum_distance = distance
 
-            distances = sorted(distances, key=lambda item: item[1])
-            point_distances += [distances[:REFERENCE_WINDOW] + distances[-REFERENCE_WINDOW:]]
+            # Select the lowest several distances and put them into a map keyed by the reference_colour (reference_colour -> distance to the equivalent point in the high dimensional space).
+            ordered_references = [item[0] for item in sorted(distances.items(), key=lambda item: item[1])]
+            closest_references = ordered_references[:SHORTLIST_REFERENCES]
+            assert len(closest_references) == SHORTLIST_REFERENCES, "%d != %d" % (len(closest_references), SHORTLIST_REFERENCES)
+            closest_cluster = self.minimum_distance_cluster(closest_references)
+            farthest_references = ordered_references[-SHORTLIST_REFERENCES:]
+            assert len(farthest_references) == SHORTLIST_REFERENCES, "%d != %d" % (len(farthest_references), SHORTLIST_REFERENCES)
+            farthest_cluster = self.minimum_distance_cluster(farthest_references)
+            references = closest_cluster + farthest_cluster
+            point_data += [{
+                "distances": [distances[reference] for reference in references],
+                "references": references,
+                "maximum": maximum_distance
+            }]
 
-        # Make the maximum target distance half the size of the colour space.
-        scaler = (255.0 / 2) / maximum
         colours = []
 
-        for i in range(0, len(points)):
-            fit, t = geometry.fit_point([item[0] for item in point_distances[i]], [scaler * item[1] for item in point_distances[i]])
+        for data in point_data:
+            # Make the maximum target distance one third the length of a dimension in the colour space.
+            scaler = (255.0 / 3) / data["maximum"]
+            fit, _ = geometry.fit_point(data["references"], [scaler * distance for distance in data["distances"]])
             colours += ["rgb(%d, %d, %d)" % tuple([round(i) for i in fit])]
 
         return colours
+
+    def minimum_distance_cluster(self, references):
+        minimum_error = None
+        cluster = None
+
+        for pair in itertools.combinations(references, 2):
+            error = geometry.distance(pair[0], pair[1])
+            if minimum_error is None or error < minimum_error:
+                minimum_error = error
+                cluster = pair
+        #for triple in itertools.combinations(references, 3):
+        #    error = 0
+
+        #    for pair in itertools.combinations(triple, 2):
+        #        error += geometry.distance(pair[0], pair[1])
+
+        #    if minimum_error is None or error < minimum_error:
+        #        minimum_error = error
+        #        cluster = triple
+
+        return cluster
 
     def weights(self, sequence):
         stepwise_lstm = self.lstm.stepwise()

@@ -12,8 +12,8 @@ def tests():
     return create_suite(Tests)
 
 
-SMALL_MAX_T = 10
-BIG_MAX_T = 50
+SMALL_MAX_T = 25
+BIG_MAX_T = 100
 
 
 class Tests(TestCase):
