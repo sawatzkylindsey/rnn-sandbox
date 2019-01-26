@@ -39,7 +39,7 @@ class ServerHandler(BaseHTTPRequestHandler):
 
             if hasattr(out, "as_json"):
                 out = out.as_json()
-                logging.debug("as_json: %s" % out)
+                #logging.debug("as_json: %s" % out)
 
             self._write_content(json.dumps(out))
         else:

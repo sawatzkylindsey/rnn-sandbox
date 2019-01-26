@@ -1,4 +1,5 @@
 
+import hashlib
 import logging
 import math
 import re
@@ -52,7 +53,7 @@ def fit_point(reference_points, target_distances, epsilon=0.00001, visualize=Fal
     correction = _correction(reference_points, target_distances, center, importance_fn, relaxation)
     previous = correction
     point = [center[i] + correction[i] for i in range(0, dimensions)]
-    logging.debug("center: %s -> point: %s (correction %s)" % (center, point, correction))
+    #logging.debug("center: %s -> point: %s (correction %s)" % (center, point, correction))
     t = 0
 
     if visualize:
@@ -66,7 +67,7 @@ def fit_point(reference_points, target_distances, epsilon=0.00001, visualize=Fal
         if sum([abs(i) for i in correction]) > sum([abs(i) for i in previous]):
             # If the correction starts increasing, it means we're not going to converge - so increase the relaxation step and re-loop (without apply the correction).
             relaxation += 1
-            logging.debug("t=%d: r=%d, previous: %s, correction: %s" % (t, relaxation, previous, correction))
+            #logging.debug("t=%d: r=%d, previous: %s, correction: %s" % (t, relaxation, previous, correction))
         else:
             point = [point[i] + correction[i] for i in range(0, dimensions)]
             previous = correction
@@ -75,19 +76,21 @@ def fit_point(reference_points, target_distances, epsilon=0.00001, visualize=Fal
                 axis.scatter(*plot_point(point), c=colouring(t))
 
         if t % 10 == 0:
-            logging.debug("..fit_point.. t=%d: r=%f, %s" % (t, relaxation, point))
+            pass
+            #logging.debug("..fit_point.. t=%d: r=%f, %s" % (t, relaxation, point))
 
     if visualize:
         axis.set_xlabel("x")
         axis.set_ylabel("y")
         axis.set_zlabel("z")
-        #reference_points_name = re.sub("[\(\)\[\] ]", "", str(reference_points))
-        #target_distances_name = re.sub("[\(\)\[\] ]", "", str(target_distances))
-        #name = "%s-%s" % (reference_points_name, target_distances_name)
-        #figure.savefig("internal_embedding-%s.png" % name)
+        #m = hashlib.sha256()
+        #m.update(re.sub("[\(\)\[\] ]", "", str(reference_points)).encode("utf-8"))
+        #m.update(re.sub("[\(\)\[\] ]", "", str(target_distances)).encode("utf-8"))
+        #figure.savefig("internal_embedding-%s.png" % m.hexdigest())
         plt.draw()
         plt.pause(120)
 
+    logging.debug("t=%d: %s" % (t, point))
     return point, t
 
 

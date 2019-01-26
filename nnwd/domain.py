@@ -18,8 +18,8 @@ from nnwd import rnn
 from pytils.log import setup_logging, user_log
 
 
-REFERENCES = 16
-SHORTLIST_REFERENCES = int(REFERENCES / 2)
+REFERENCES = 32
+SHORTLIST_REFERENCES = int(REFERENCES / 3)
 
 
 def create(corpus, epochs, loss, verbose):
@@ -81,7 +81,7 @@ class NeuralNetwork:
             order += [word]
             self.word_embeddings[word] = weight
 
-        assert len(self.word_embeddings) >= REFERENCES, "not enough word embeddings (%d < %d" % (len(self.word_embeddings), REFERENCES)
+        assert len(self.word_embeddings) >= SHORTLIST_REFERENCES, "not enough words (%d < %d" % (len(self.word_embeddings), SHORTLIST_REFERENCES)
         tsne = TSNE(n_components=3)
         embeddings_3d = tsne.fit_transform(weights)
         minimum = [None, None, None]
@@ -158,11 +158,9 @@ class NeuralNetwork:
             ordered_references = [item[0] for item in sorted(distances.items(), key=lambda item: item[1])]
             closest_references = ordered_references[:SHORTLIST_REFERENCES]
             assert len(closest_references) == SHORTLIST_REFERENCES, "%d != %d" % (len(closest_references), SHORTLIST_REFERENCES)
-            closest_cluster = self.minimum_distance_cluster(closest_references)
             farthest_references = ordered_references[-SHORTLIST_REFERENCES:]
             assert len(farthest_references) == SHORTLIST_REFERENCES, "%d != %d" % (len(farthest_references), SHORTLIST_REFERENCES)
-            farthest_cluster = self.minimum_distance_cluster(farthest_references)
-            references = closest_cluster + farthest_cluster
+            references = self.min_max_cluster(closest_references, farthest_references)
             point_data += [{
                 "distances": [distances[reference] for reference in references],
                 "references": references,
@@ -172,31 +170,37 @@ class NeuralNetwork:
         colours = []
 
         for data in point_data:
-            # Make the maximum target distance one third the length of a dimension in the colour space.
-            scaler = (255.0 / 3) / data["maximum"]
-            fit, _ = geometry.fit_point(data["references"], [scaler * distance for distance in data["distances"]])
+            # Make the maximum target distance one quarter the length of a dimension in the colour space.
+            scaler = (255.0 / 4) / data["maximum"]
+            fit, _ = geometry.fit_point(data["references"], [scaler * distance for distance in data["distances"]], epsilon=1)
             colours += ["rgb(%d, %d, %d)" % tuple([round(i) for i in fit])]
 
         return colours
 
-    def minimum_distance_cluster(self, references):
-        minimum_error = None
-        cluster = None
+    def min_max_cluster(self, a, b):
+        a_clusters = {}
 
-        for pair in itertools.combinations(references, 2):
-            error = geometry.distance(pair[0], pair[1])
-            if minimum_error is None or error < minimum_error:
-                minimum_error = error
-                cluster = pair
-        #for triple in itertools.combinations(references, 3):
-        #    error = 0
+        for pair in itertools.combinations(a, 2):
+            distance = geometry.distance(pair[0], pair[1])
+            middle = [(pair[0][i] + pair[1][i]) / 2.0 for i in range(len(pair[0]))]
+            a_clusters[pair] = (distance, middle)
 
-        #    for pair in itertools.combinations(triple, 2):
-        #        error += geometry.distance(pair[0], pair[1])
+        b_clusters = {}
 
-        #    if minimum_error is None or error < minimum_error:
-        #        minimum_error = error
-        #        cluster = triple
+        for pair in itertools.combinations(b, 2):
+            distance = geometry.distance(pair[0], pair[1])
+            middle = [(pair[0][i] + pair[1][i]) / 2.0 for i in range(len(pair[0]))]
+            b_clusters[pair] = (distance, middle)
+
+        minimum = None
+
+        for a_pair, a_cluster in a_clusters.items():
+            for b_pair, b_cluster in b_clusters.items():
+                error = a_cluster[0]**2 + b_cluster[0] - geometry.distance(a_cluster[1], b_cluster[1])
+
+                if minimum is None or error < minimum:
+                    minimum = error
+                    cluster = [a_pair[0], a_pair[1], b_pair[0], b_pair[1]]
 
         return cluster
 
