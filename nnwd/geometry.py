@@ -31,13 +31,16 @@ def fit_point(reference_points, target_distances, epsilon=0.00001, visualize=Fal
     if visualize:
         figure = plt.figure()
         axis = figure.add_subplot(111, projection="3d")
+        axis.set_xlabel("x")
+        axis.set_ylabel("y")
+        axis.set_zlabel("z")
         plot_point = lambda p: list(p) + ([] if dimensions == 3 else [0])
         colouring = lambda x: to_hex([0, min((x * 20) + 100, 255), 0])
 
     for j, reference in enumerate(reference_points):
         if visualize:
             axis.scatter(*plot_point(reference), c=to_hex([0, 0, 255]))
-            axis.text(*plot_point(reference), target_distances[j], zorder=1)
+            axis.text(*plot_point(reference), "%.2f" % target_distances[j], zorder=1)
 
         for i in range(0, dimensions):
             point[i] += reference[i]
@@ -80,15 +83,14 @@ def fit_point(reference_points, target_distances, epsilon=0.00001, visualize=Fal
             #logging.debug("..fit_point.. t=%d: r=%f, %s" % (t, relaxation, point))
 
     if visualize:
-        axis.set_xlabel("x")
-        axis.set_ylabel("y")
-        axis.set_zlabel("z")
-        #m = hashlib.sha256()
-        #m.update(re.sub("[\(\)\[\] ]", "", str(reference_points)).encode("utf-8"))
-        #m.update(re.sub("[\(\)\[\] ]", "", str(target_distances)).encode("utf-8"))
-        #figure.savefig("internal_embedding-%s.png" % m.hexdigest())
-        plt.draw()
-        plt.pause(120)
+        axis.scatter(*plot_point(point), c=colouring(t))
+        axis.text(*plot_point(point), "%.2f, %.2f, %.2f" % tuple(plot_point(point)), zorder=1)
+        m = hashlib.sha256()
+        m.update(re.sub("[\(\)\[\] ]", "", str(reference_points)).encode("utf-8"))
+        m.update(re.sub("[\(\)\[\] ]", "", str(target_distances)).encode("utf-8"))
+        figure.savefig("internal_embedding-%s.png" % m.hexdigest())
+        #plt.draw()
+        #plt.pause(120)
 
     logging.debug("t=%d: %s" % (t, point))
     return point, t

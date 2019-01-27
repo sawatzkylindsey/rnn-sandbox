@@ -64,6 +64,7 @@ class NeuralNetwork:
         self.epoch_threshold = epoch_threshold
         self.loss_threshold = loss_threshold
         self.colour_embeddings = None
+        self.maximum_distance = 0
         self._background_setup = threading.Thread(target=self._setup)
         self._background_setup.daemon = True
         self._background_setup.start()
@@ -82,36 +83,7 @@ class NeuralNetwork:
             self.word_embeddings[word] = weight
 
         assert len(self.word_embeddings) >= SHORTLIST_REFERENCES, "not enough words (%d < %d" % (len(self.word_embeddings), SHORTLIST_REFERENCES)
-        tsne = TSNE(n_components=3)
-        embeddings_3d = tsne.fit_transform(weights)
-        minimum = [None, None, None]
-        maximum = [None, None, None]
-
-        for embedding in embeddings_3d:
-            for i, point in enumerate(embedding):
-                if minimum[i] is None or point < minimum[i]:
-                    minimum[i] = point
-
-                if maximum[i] is None or point > maximum[i]:
-                    maximum[i] = point
-
-        delta = [maximum[i] - minimum[i] for i in range(0, 3)]
-        slope = [255.0 / delta[i] for i in range(0, 3)]
-        m = lambda i, x: round((slope[i] * x) - (slope[i] * minimum[i]))
-        self.colour_embeddings = {order[j]: tuple([m(i, embedding[i]) for i in range(0, 3)]) for j, embedding in enumerate(embeddings_3d)}
-        figure = plt.figure()
-        axis = figure.add_subplot(111, projection="3d")
-
-        for word, colour_embedding in self.colour_embeddings.items():
-            x, y, z = colour_embedding
-            axis.scatter(x, y, z, c=[[c / 255.0 for c in colour_embedding]])
-            axis.text(x, y, z, word, zorder=1)
-            logging.debug("colour_embedding '%s': %s -> %s" % (word, self.word_embeddings[word], colour_embedding))
-
-        axis.set_xlabel("Red")
-        axis.set_ylabel("Green")
-        axis.set_zlabel("Blue")
-        figure.savefig("word_colour_embedding.png")
+        self.colour_embeddings = self.find_colour_embeddings(weights, order)
         user_log.info("Training complete")
         indices = [i for i in range(0, len(order))]
         reference_indices = set()
@@ -126,6 +98,48 @@ class NeuralNetwork:
 
         self.reference_points = [self.word_embeddings[order[i]] for i in reference_indices]
         self.reference_colours = [self.colour_embeddings[order[i]] for i in reference_indices]
+
+    def find_colour_embeddings(self, weights, order):
+        colour_embeddings = {}
+
+        for perplexity in [5, 10, 20, 30, 50]:
+            tsne = TSNE(n_components=3, perplexity=perplexity)
+            embeddings_3d = tsne.fit_transform(weights)
+            minimum = [None, None, None]
+            maximum = [None, None, None]
+
+            for embedding in embeddings_3d:
+                for i, point in enumerate(embedding):
+                    if minimum[i] is None or point < minimum[i]:
+                        minimum[i] = point
+
+                    if maximum[i] is None or point > maximum[i]:
+                        maximum[i] = point
+
+            delta = [maximum[i] - minimum[i] for i in range(0, 3)]
+            slope = [255.0 / delta[i] for i in range(0, 3)]
+            m = lambda i, x: round((slope[i] * x) - (slope[i] * minimum[i]))
+            colour_embeddings[perplexity] = {order[j]: tuple([m(i, embedding[i]) for i in range(0, 3)]) for j, embedding in enumerate(embeddings_3d)}
+            figure = plt.figure()
+            axis = figure.add_subplot(111, projection="3d")
+
+            for word, colour_embedding in colour_embeddings[perplexity].items():
+                x, y, z = colour_embedding
+                axis.scatter(x, y, z, c=[[c / 255.0 for c in colour_embedding]])
+                axis.text(x, y, z, word, zorder=1)
+                logging.debug("colour_embedding '%s': %s -> %s" % (word, self.word_embeddings[word], colour_embedding))
+
+            axis.set_xlabel("Red")
+            axis.set_ylabel("Green")
+            axis.set_zlabel("Blue")
+
+            if perplexity < 10:
+                figure.savefig("word_colour_embedding-0%d.png" % perplexity)
+            else:
+                figure.savefig("word_colour_embedding-%d.png" % perplexity)
+
+        choice = input("choice (05, 10, 20, 30, 50): ")
+        return colour_embeddings[int(choice)]
 
     def is_setup(self):
         return not self._background_setup.is_alive()
@@ -145,14 +159,13 @@ class NeuralNetwork:
 
         for point in points:
             distances = {}
-            maximum_distance = 0
 
             for j, reference_point in enumerate(self.reference_points):
                 distance = geometry.distance(point, reference_point)
                 distances[self.reference_colours[j]] = distance
 
-                if distance > maximum_distance:
-                    maximum_distance = distance
+                if distance > self.maximum_distance:
+                    self.maximum_distance = distance
 
             # Select the lowest several distances and put them into a map keyed by the reference_colour (reference_colour -> distance to the equivalent point in the high dimensional space).
             ordered_references = [item[0] for item in sorted(distances.items(), key=lambda item: item[1])]
@@ -164,15 +177,14 @@ class NeuralNetwork:
             point_data += [{
                 "distances": [distances[reference] for reference in references],
                 "references": references,
-                "maximum": maximum_distance
             }]
 
         colours = []
 
         for data in point_data:
             # Make the maximum target distance one quarter the length of a dimension in the colour space.
-            scaler = (255.0 / 4) / data["maximum"]
-            fit, _ = geometry.fit_point(data["references"], [scaler * distance for distance in data["distances"]], epsilon=1)
+            scaler = (255.0 / 4) / (self.maximum_distance * 2)
+            fit, _ = geometry.fit_point(data["references"], [scaler * distance for distance in data["distances"]], epsilon=1, visualize=True)
             colours += ["rgb(%d, %d, %d)" % tuple([round(i) for i in fit])]
 
         return colours
@@ -196,7 +208,7 @@ class NeuralNetwork:
 
         for a_pair, a_cluster in a_clusters.items():
             for b_pair, b_cluster in b_clusters.items():
-                error = a_cluster[0]**2 + b_cluster[0] - geometry.distance(a_cluster[1], b_cluster[1])
+                error = a_cluster[0] + b_cluster[0]**2 - geometry.distance(a_cluster[1], b_cluster[1])**2
 
                 if minimum is None or error < minimum:
                     minimum = error
