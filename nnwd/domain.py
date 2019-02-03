@@ -16,6 +16,7 @@ from nnwd.models import Layer, Unit, WeightExplain, WeightVector, LabelWeightVec
 from nnwd import nlp
 from nnwd import rnn
 from pytils.log import setup_logging, user_log
+from pytils import adjutant, check
 
 
 REFERENCES = 32
@@ -35,6 +36,7 @@ def create(corpus, epochs, loss, verbose):
 class NeuralNetwork:
     LAYERS = 2
     WIDTH = 10
+    EMBEDDING_WIDTH = 5
     OUTPUT_WIDTH = 7
     INSTRUMENTS = [
         "embedding",
@@ -56,15 +58,23 @@ class NeuralNetwork:
         "input_hat": "H",
         "softmax": "Y",
     }
+    MAPPED_KINDS = [
+        "input_hats",
+        "remembers",
+        "cell_previouses",
+        "forgets",
+        "cells",
+        "cell_hats",
+        "outputs",
+    ]
 
     def __init__(self, words, xy_sequences, epoch_threshold, loss_threshold):
         self.words = words
-        self.lstm = rnn.Rnn(NeuralNetwork.LAYERS, NeuralNetwork.WIDTH, words)
+        self.lstm = rnn.Rnn(NeuralNetwork.LAYERS, NeuralNetwork.WIDTH, NeuralNetwork.EMBEDDING_WIDTH, words)
         self.xy_sequences = [[rnn.Xy(t[0], t[1]) for t in sequence] for sequence in xy_sequences]
         self.epoch_threshold = epoch_threshold
         self.loss_threshold = loss_threshold
         self.colour_embeddings = None
-        self.maximum_distance = 0
         self._background_setup = threading.Thread(target=self._setup)
         self._background_setup.daemon = True
         self._background_setup.start()
@@ -72,6 +82,43 @@ class NeuralNetwork:
     def _setup(self):
         loss = self.lstm.train(self.xy_sequences, self.epoch_threshold, self.loss_threshold, True)
         logging.debug("train %s" % loss)
+        self._setup_reference_points()
+        self._setup_colour_embeddings()
+        user_log.info("Setup complete")
+
+    def _setup_reference_points(self):
+        self.reference_points = {kind: {layer: [] for layer in range(NeuralNetwork.LAYERS)} for kind in NeuralNetwork.MAPPED_KINDS}
+        self.reference_distribution = {kind: {layer: {} for layer in range(NeuralNetwork.LAYERS)} for kind in NeuralNetwork.MAPPED_KINDS}
+        self.maximum_distance = {kind: {layer: 0 for layer in range(NeuralNetwork.LAYERS)} for kind in NeuralNetwork.MAPPED_KINDS}
+        firsts = {kind: {} for kind in NeuralNetwork.MAPPED_KINDS}
+
+        for xy_sequence in self.xy_sequences:
+            stepwise_lstm = self.lstm.stepwise()
+
+            for x in xy_sequence:
+                x_word = self.words.decode(self.words.encode(x, True))
+                result, instruments = stepwise_lstm.step(x, NeuralNetwork.INSTRUMENTS)
+
+                for kind in NeuralNetwork.MAPPED_KINDS:
+                    for layer in range(NeuralNetwork.LAYERS):
+                        point = tuple(instruments[kind][layer])
+                        self.reference_points[kind][layer] += [point]
+
+                        if layer not in firsts[kind]:
+                            firsts[kind][layer] = point
+                        else:
+                            # Establish a baseline maximum_distance
+                            distance = geometry.distance(firsts[kind][layer], point)
+
+                            if distance > self.maximum_distance[kind][layer]:
+                                self.maximum_distance[kind][layer] = distance
+
+                        if point not in self.reference_distribution[kind][layer]:
+                            self.reference_distribution[kind][layer][point] = [result.distribution]
+                        else:
+                            self.reference_distribution[kind][layer][point] += [result.distribution]
+
+    def _setup_colour_embeddings(self):
         weights = []
         order = []
         self.word_embeddings = {}
@@ -84,20 +131,6 @@ class NeuralNetwork:
 
         assert len(self.word_embeddings) >= SHORTLIST_REFERENCES, "not enough words (%d < %d" % (len(self.word_embeddings), SHORTLIST_REFERENCES)
         self.colour_embeddings = self.find_colour_embeddings(weights, order)
-        user_log.info("Training complete")
-        indices = [i for i in range(0, len(order))]
-        reference_indices = set()
-
-        while len(reference_indices) < REFERENCES:
-            if len(indices) == 0:
-                break
-
-            i = randint(0, len(indices) - 1)
-            reference_indices.add(indices[i])
-            indices = indices[:i] + indices[i + 1:]
-
-        self.reference_points = [self.word_embeddings[order[i]] for i in reference_indices]
-        self.reference_colours = [self.colour_embeddings[order[i]] for i in reference_indices]
 
     def find_colour_embeddings(self, weights, order):
         colour_embeddings = {}
@@ -151,70 +184,81 @@ class NeuralNetwork:
         embedding = self.colour_embeddings[self.words.decode(self.words.encode(word, True))]
         return "rgb(%d, %d, %d)" % embedding
 
-    def fit_colours(self, points):
+    def interpolate_distributions(self, points, distribution):
+        if not self.is_setup():
+            return distribution
+
+        interpolate = lambda k, l, d: 1.0 / (1 + math.exp((d * 10 / self.maximum_distance[k][l]) - 2.0))
+        interpolations = {kind: {} for kind in NeuralNetwork.MAPPED_KINDS}
+        logging.debug("base: %s" % adjutant.dict_as_str(distribution, use_key=False))
+
+        for kind, subd in points.items():
+            for layer, point in subd.items():
+                factor = interpolate(kind, layer, 0)
+                interpolation = {k: factor * v for k, v in distribution.items()}
+                logging.debug("initial: %s-%d: %s" % (kind, layer, adjutant.dict_as_str(interpolation, use_key=False)))
+
+                for reference_point in self.reference_points[kind][layer]:
+                    distance = geometry.distance(point, reference_point)
+
+                    if distance > self.maximum_distance[kind][layer]:
+                        self.maximum_distance[kind][layer] = distance
+
+                    factor = interpolate(kind, layer, distance)
+
+                    if factor >= 0.5:
+                        for value in self.reference_distribution[kind][layer][reference_point]:
+                            for k, v in value.items():
+                                interpolation[k] += factor * v
+
+                interpolations[kind][layer] = nlp.softmax(interpolation)
+                logging.debug("final: %s-%d: %s" % (kind, layer, adjutant.dict_as_str(interpolations[kind][layer], use_key=False)))
+
+        return interpolations
+
+    def fit_colours(self, points, distribution):
         if not self.is_setup():
             return ["none"] * len(points)
 
-        point_data = []
+        interpolations = self.interpolate_distributions(points, distribution)
+        point_data = {kind: {} for kind in NeuralNetwork.MAPPED_KINDS}
 
-        for point in points:
-            distances = {}
+        for kind, subd in points.items():
+            for layer, point in subd.items():
+                # Select the lowest several distances and put them into a map keyed by the reference_word_colour
+                # (reference_word_colour -> distance to the equivalent point in the high dimensional space).
+                ordered_predictions = [item[0] for item in sorted(interpolations[kind][layer].items(), key=lambda item: item[1], reverse=True)]
+                references = []
+                proceed = True
 
-            for j, reference_point in enumerate(self.reference_points):
-                distance = geometry.distance(point, reference_point)
-                distances[self.reference_colours[j]] = distance
+                while proceed:
+                    references += [ordered_predictions[len(references)]]
 
-                if distance > self.maximum_distance:
-                    self.maximum_distance = distance
+                    if proceed and len(references) >= 2:
+                        if len(references) > min(5, len(ordered_predictions)):
+                            proceed = False
+                        else:
+                            proceed = interpolations[kind][layer][references[-2]] / 2.0 < interpolations[kind][layer][references[-1]]
 
-            # Select the lowest several distances and put them into a map keyed by the reference_colour (reference_colour -> distance to the equivalent point in the high dimensional space).
-            ordered_references = [item[0] for item in sorted(distances.items(), key=lambda item: item[1])]
-            closest_references = ordered_references[:SHORTLIST_REFERENCES]
-            assert len(closest_references) == SHORTLIST_REFERENCES, "%d != %d" % (len(closest_references), SHORTLIST_REFERENCES)
-            farthest_references = ordered_references[-SHORTLIST_REFERENCES:]
-            assert len(farthest_references) == SHORTLIST_REFERENCES, "%d != %d" % (len(farthest_references), SHORTLIST_REFERENCES)
-            references = self.min_max_cluster(closest_references, farthest_references)
-            point_data += [{
-                "distances": [distances[reference] for reference in references],
-                "references": references,
-            }]
+                predictions = {reference: interpolations[kind][layer][reference] for reference in references}
+                distro = {k: 1.0 - v for k, v in nlp.regmax(predictions).items()}
+                logging.debug("refs: %s -> %s" % (adjutant.dict_as_str(predictions, use_key=False), adjutant.dict_as_str(distro, use_key=False)))
+                point_data[kind][layer] = [(self.colour_embeddings[k], v) for k, v in distro.items()]
+                logging.debug("point_data: %s-%d: %s" % (kind, layer, point_data[kind][layer]))
 
-        colours = []
+        colours = {}
 
-        for data in point_data:
-            # Make the maximum target distance one quarter the length of a dimension in the colour space.
-            scaler = (255.0 / 4) / (self.maximum_distance * 2)
-            fit, _ = geometry.fit_point(data["references"], [scaler * distance for distance in data["distances"]], epsilon=1, visualize=True)
-            colours += ["rgb(%d, %d, %d)" % tuple([round(i) for i in fit])]
+        for kind, subd in point_data.items():
+            colours[kind] = {}
 
+            for layer, data in subd.items():
+                # Make the maximum target distance (1.0) one quarter the length of a dimension in the colour space.
+                scaler = (255.0 / 4)
+                fit, _ = geometry.fit_point([item[0] for item in data], [item[1] for item in data], epsilon=0.1, visualize=False)
+                colours[kind][layer] = "rgb(%d, %d, %d)" % tuple([round(i) for i in fit])
+
+        logging.debug("colours: %s" % colours)
         return colours
-
-    def min_max_cluster(self, a, b):
-        a_clusters = {}
-
-        for pair in itertools.combinations(a, 2):
-            distance = geometry.distance(pair[0], pair[1])
-            middle = [(pair[0][i] + pair[1][i]) / 2.0 for i in range(len(pair[0]))]
-            a_clusters[pair] = (distance, middle)
-
-        b_clusters = {}
-
-        for pair in itertools.combinations(b, 2):
-            distance = geometry.distance(pair[0], pair[1])
-            middle = [(pair[0][i] + pair[1][i]) / 2.0 for i in range(len(pair[0]))]
-            b_clusters[pair] = (distance, middle)
-
-        minimum = None
-
-        for a_pair, a_cluster in a_clusters.items():
-            for b_pair, b_cluster in b_clusters.items():
-                error = a_cluster[0] + b_cluster[0]**2 - geometry.distance(a_cluster[1], b_cluster[1])**2
-
-                if minimum is None or error < minimum:
-                    minimum = error
-                    cluster = [a_pair[0], a_pair[1], b_pair[0], b_pair[1]]
-
-        return cluster
 
     def weights(self, sequence):
         stepwise_lstm = self.lstm.stepwise()
@@ -223,18 +267,15 @@ class NeuralNetwork:
             x_word = self.words.decode(self.words.encode(x, True))
             result, instruments = stepwise_lstm.step(x, NeuralNetwork.INSTRUMENTS)
 
-        points = []
+        points = {}
 
-        for layer in range(0, len(instruments["outputs"])):
-            points += [instruments["input_hats"][layer]]
-            points += [instruments["remembers"][layer]]
-            points += [instruments["cell_previouses"][layer]]
-            points += [instruments["forgets"][layer]]
-            points += [instruments["cells"][layer]]
-            points += [instruments["cell_hats"][layer]]
-            points += [instruments["outputs"][layer]]
+        for kind in NeuralNetwork.MAPPED_KINDS:
+            points[kind] = {}
 
-        instrument_colours = self.fit_colours(points)
+            for layer in range(NeuralNetwork.LAYERS):
+                points[kind][layer] = instruments[kind][layer]
+
+        instrument_colours = self.fit_colours(points, result.distribution)
         embedding = WeightVector(instruments["embedding"], colour=self.word_colour(x))
         units = []
 
@@ -242,13 +283,13 @@ class NeuralNetwork:
             remember_gate = WeightVector(instruments["remember_gates"][layer], 0, 1)
             forget_gate = WeightVector(instruments["forget_gates"][layer], 0, 1)
             output_gate = WeightVector(instruments["output_gates"][layer], 0, 1)
-            input_hat = WeightVector(instruments["input_hats"][layer], colour=instrument_colours.pop(0))
-            remember = WeightVector(instruments["remembers"][layer], colour=instrument_colours.pop(0))
-            cell_previous_hat = WeightVector(instruments["cell_previouses"][layer], colour=instrument_colours.pop(0))
-            forget = WeightVector(instruments["forgets"][layer], colour=instrument_colours.pop(0))
-            cell = WeightVector(instruments["cells"][layer], colour=instrument_colours.pop(0))
-            cell_hat = WeightVector(instruments["cell_hats"][layer], colour=instrument_colours.pop(0))
-            output = WeightVector(instruments["outputs"][layer], colour=instrument_colours.pop(0))
+            input_hat = WeightVector(instruments["input_hats"][layer], colour=instrument_colours[kind][layer])
+            remember = WeightVector(instruments["remembers"][layer], colour=instrument_colours[kind][layer])
+            cell_previous_hat = WeightVector(instruments["cell_previouses"][layer], colour=instrument_colours[kind][layer])
+            forget = WeightVector(instruments["forgets"][layer], colour=instrument_colours[kind][layer])
+            cell = WeightVector(instruments["cells"][layer], colour=instrument_colours[kind][layer])
+            cell_hat = WeightVector(instruments["cell_hats"][layer], colour=instrument_colours[kind][layer])
+            output = WeightVector(instruments["outputs"][layer], colour=instrument_colours[kind][layer])
             units += [Unit(remember_gate, forget_gate, output_gate, input_hat, remember, cell_previous_hat, forget, cell, cell_hat, output)]
 
         softmax = LabelWeightVector(result.distribution, result.encoding, NeuralNetwork.OUTPUT_WIDTH, lambda word: self.word_colour(word))

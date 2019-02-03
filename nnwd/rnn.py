@@ -22,9 +22,10 @@ class Rnn:
     # we track all the other intermediate gates/states for the weight instrumentation.
     SCAN_STATES = 10
 
-    def __init__(self, layers, width, word_labels, scope="rnn"):
+    def __init__(self, layers, width, embedding_width, word_labels, scope="rnn"):
         self.layers = layers
         self.width = width
+        self.embedding_width = embedding_width
         self.word_labels = word_labels
         self.scope = scope
 
@@ -40,7 +41,8 @@ class Rnn:
         self.initial_state_p = self.placeholder("initial_state_p", [Rnn.SCAN_STATES, self.layers, 1, self.width])
         self.initial_state_c = np.zeros([Rnn.SCAN_STATES, self.layers, 1, self.width], dtype="float32")
 
-        self.E = self.variable("E", [len(self.word_labels), self.width])
+        self.E = self.variable("E", [len(self.word_labels), self.embedding_width])
+        self.EP = self.variable("EP", [self.embedding_width, self.width])
 
         self.R = self.variable("R", [self.layers, self.width * 2, self.width])
         self.R_bias = self.variable("R_bias", [self.layers, self.width], initial=0.0)
@@ -61,8 +63,11 @@ class Rnn:
         tf.identity(tf.reshape(self.Y_bias, [len(self.word_labels)]), name="Y_bias")
 
         self.unrolled_embedded_inputs = tf.nn.embedding_lookup(self.E, self.unrolled_inputs_p)
-        assert_shape(self.unrolled_embedded_inputs, [None, self.width])
-        tf.identity(tf.reshape(self.unrolled_embedded_inputs, [self.width]), name="embedding")
+        assert_shape(self.unrolled_embedded_inputs, [None, self.embedding_width])
+        tf.identity(tf.reshape(self.unrolled_embedded_inputs, [self.embedding_width]), name="embedding")
+
+        self.unrolled_embedded_projected_inputs = tf.matmul(self.unrolled_embedded_inputs, self.EP)
+        assert_shape(self.unrolled_embedded_projected_inputs, [None, self.width])
 
         def step_lstm(previous_state, current_input):
             # This is all the other stacks, which we don't actually need for the looping (just there for instrumentation).
@@ -109,7 +114,7 @@ class Rnn:
 
             return tf.stack([output_stack, cell_stack, remember_gate_stack, forget_gate_stack, output_gate_stack, input_hat_stack, remember_stack, cell_previous_stack, forget_stack, cell_hat_stack])
 
-        self.unrolled_states = tf.scan(step_lstm, tf.reshape(self.unrolled_embedded_inputs, [-1, 1, self.width]), self.initial_state_p)
+        self.unrolled_states = tf.scan(step_lstm, tf.reshape(self.unrolled_embedded_projected_inputs, [-1, 1, self.width]), self.initial_state_p)
         assert_shape(self.unrolled_states, [None, Rnn.SCAN_STATES, self.layers, 1, self.width])
 
         # Grab the last timesteps' state layers out of the unrolled state layers ([x y z] in diagram).

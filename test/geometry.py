@@ -12,7 +12,7 @@ def tests():
     return create_suite(Tests)
 
 
-SMALL_MAX_T = 25
+SMALL_MAX_T = 50
 BIG_MAX_T = 100
 
 
@@ -57,7 +57,7 @@ class Tests(TestCase):
         expected = [0, 0]
         point, t = fit_point(reference_points, target_distances, visualize=True)
         self.assertTrue(math.isclose(distance(point, expected), 0, abs_tol=0.0001), point)
-        self.assertLess(t, BIG_MAX_T)
+        self.assertLess(t, SMALL_MAX_T)
 
     def test_fit_point(self):
         reference_points_1 = [[0, -2, 3], [1, 0, -6], [2, 4, 9], [3, 6, -12]]

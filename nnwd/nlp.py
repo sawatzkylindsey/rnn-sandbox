@@ -259,3 +259,26 @@ def ook_max(ooks):
     return out
 
 
+def softmax(distribution):
+    total = 0.0
+    output = {}
+
+    for k, v in distribution.items():
+        value = math.exp(v)
+        output[k] = value
+        total += value
+
+    return {k: v / total for k, v in output.items()}
+
+
+def regmax(distribution):
+    total = 0.0
+    output = {}
+
+    for k, v in distribution.items():
+        value = v
+        output[k] = value
+        total += value
+
+    return {k: v / total for k, v in output.items()}
+

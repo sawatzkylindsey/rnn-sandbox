@@ -35,7 +35,7 @@ def fit_point(reference_points, target_distances, epsilon=0.00001, visualize=Fal
         axis.set_ylabel("y")
         axis.set_zlabel("z")
         plot_point = lambda p: list(p) + ([] if dimensions == 3 else [0])
-        colouring = lambda x: to_hex([0, min((x * 20) + 100, 255), 0])
+        colouring = lambda x: to_hex([0, min((x * 5) + 100, 255), 0])
 
     for j, reference in enumerate(reference_points):
         if visualize:
@@ -85,10 +85,10 @@ def fit_point(reference_points, target_distances, epsilon=0.00001, visualize=Fal
     if visualize:
         axis.scatter(*plot_point(point), c=colouring(t))
         axis.text(*plot_point(point), "%.2f, %.2f, %.2f" % tuple(plot_point(point)), zorder=1)
-        m = hashlib.sha256()
-        m.update(re.sub("[\(\)\[\] ]", "", str(reference_points)).encode("utf-8"))
-        m.update(re.sub("[\(\)\[\] ]", "", str(target_distances)).encode("utf-8"))
-        figure.savefig("internal_embedding-%s.png" % m.hexdigest())
+        #m = hashlib.sha256()
+        #m.update(re.sub("[\(\)\[\] ]", "", str(reference_points)).encode("utf-8"))
+        #m.update(re.sub("[\(\)\[\] ]", "", str(target_distances)).encode("utf-8"))
+        #figure.savefig("internal_embedding-%s.png" % m.hexdigest())
         #plt.draw()
         #plt.pause(120)
 
@@ -132,5 +132,20 @@ def _find_importance(target_distances):
     target_maximum = max(target_distances)
     target_minimum = min(target_distances)
     delta = target_maximum - target_minimum + 1
-    return lambda x, r: 1.0 / 2**((x - target_minimum + (r / 10.0)) / (delta / r**2))
+    #
+    # Base form:
+    #     1
+    # __________
+    #   x/delta
+    #  2
+    #
+    # The idea is use this base form, but push the curve so that the mininum input results in ~1 and the maximum input results in ~.7.
+    # This means we'll adhere to the change required to the minimum inputs ~100%, and the change required to the maximum inputs ~70%.
+    #
+    # Never output exactly 1, which would overfocus on the minimum input.
+    # This also needs to scale with relaxation, otherwise the far points eventually degrade while the close point remain ~100% salient.
+    #                                                    vvvvvvvvvvvvvvvvvvvvvvvvvv
+    # This is what pushes the maximum input to ~.7.  Setting the 2.0 to 1.0 will push to precisely .5.
+    #                                                                                    vvvvvvvvvvvvvvvvvvvv
+    return lambda x, r: 1.0 / 2**((x - target_minimum + (0.1 * (target_minimum + r))) / (delta * (2.0 / r**2)))
 
