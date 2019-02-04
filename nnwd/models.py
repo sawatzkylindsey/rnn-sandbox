@@ -53,10 +53,11 @@ class Unit:
 
 
 class WeightVector:
-    def __init__(self, vector, minimum=None, maximum=None, colour="none"):
+    def __init__(self, vector, minimum=None, maximum=None, colour="none", prediction=(None, None)):
         self.vector = [float(value) for value in vector]
         self.minimum, self.maximum = canonicalize_bounds(minimum, maximum, self.vector)
         self.colour = colour
+        self.prediction = prediction
 
     def as_json(self):
         return {
@@ -64,6 +65,7 @@ class WeightVector:
             "minimum": self.minimum,
             "maximum": self.maximum,
             "colour": self.colour,
+            "prediction": list(self.prediction),
         }
 
 

@@ -11,6 +11,8 @@ from random import randint
 from sklearn.manifold import TSNE
 import threading
 
+from ml import base as mlbase
+from ml import nn as ffnn
 from nnwd import geometry
 from nnwd.models import Layer, Unit, WeightExplain, WeightVector, LabelWeightVector
 from nnwd import nlp
@@ -82,41 +84,33 @@ class NeuralNetwork:
     def _setup(self):
         loss = self.lstm.train(self.xy_sequences, self.epoch_threshold, self.loss_threshold, True)
         logging.debug("train %s" % loss)
-        self._setup_reference_points()
+        self._train_predictor()
         self._setup_colour_embeddings()
         user_log.info("Setup complete")
 
-    def _setup_reference_points(self):
-        self.reference_points = {kind: {layer: [] for layer in range(NeuralNetwork.LAYERS)} for kind in NeuralNetwork.MAPPED_KINDS}
-        self.reference_distribution = {kind: {layer: {} for layer in range(NeuralNetwork.LAYERS)} for kind in NeuralNetwork.MAPPED_KINDS}
-        self.maximum_distance = {kind: {layer: 0 for layer in range(NeuralNetwork.LAYERS)} for kind in NeuralNetwork.MAPPED_KINDS}
-        firsts = {kind: {} for kind in NeuralNetwork.MAPPED_KINDS}
+    def _train_predictor(self):
+        kind_labels = mlbase.Labels(set(NeuralNetwork.MAPPED_KINDS))
+        layer_labels = mlbase.Labels(set(range(NeuralNetwork.LAYERS)))
+        activation_vector = mlbase.VectorField(NeuralNetwork.WIDTH)
+        predictor_input = mlbase.ConcatField([kind_labels, layer_labels, activation_vector])
+        predictor_output = mlbase.Labels(self.words.labels())
+        self.predictor = ffnn.Model("predictor", ffnn.HyperParameters().width(int(len(predictor_input) * .8)), predictor_input, predictor_output, mlbase.SINGLE_LABEL)
+        self.predictor_data = []
 
         for xy_sequence in self.xy_sequences:
             stepwise_lstm = self.lstm.stepwise()
 
             for x in xy_sequence:
-                x_word = self.words.decode(self.words.encode(x, True))
-                result, instruments = stepwise_lstm.step(x, NeuralNetwork.INSTRUMENTS)
+                result, instruments = stepwise_lstm.step(x.x, NeuralNetwork.INSTRUMENTS)
 
                 for kind in NeuralNetwork.MAPPED_KINDS:
                     for layer in range(NeuralNetwork.LAYERS):
                         point = tuple(instruments[kind][layer])
-                        self.reference_points[kind][layer] += [point]
+                        train_xy = mlbase.Xy((kind, layer, point), result.distribution)
+                        self.predictor_data += [train_xy]
 
-                        if layer not in firsts[kind]:
-                            firsts[kind][layer] = point
-                        else:
-                            # Establish a baseline maximum_distance
-                            distance = geometry.distance(firsts[kind][layer], point)
-
-                            if distance > self.maximum_distance[kind][layer]:
-                                self.maximum_distance[kind][layer] = distance
-
-                        if point not in self.reference_distribution[kind][layer]:
-                            self.reference_distribution[kind][layer][point] = [result.distribution]
-                        else:
-                            self.reference_distribution[kind][layer][point] += [result.distribution]
+        loss = self.predictor.train(self.predictor_data, mlbase.TrainingParameters().epochs(300).loss(0.5))
+        logging.debug("train predictor %s" % loss)
 
     def _setup_colour_embeddings(self):
         weights = []
@@ -184,65 +178,65 @@ class NeuralNetwork:
         embedding = self.colour_embeddings[self.words.decode(self.words.encode(word, True))]
         return "rgb(%d, %d, %d)" % embedding
 
-    def interpolate_distributions(self, points, distribution):
+    def get_activation_prediction_encoding(self, points):
         if not self.is_setup():
-            return distribution
+            return {kind: {layer: "none" for layer in range(NeuralNetwork.LAYERS)} for kind in NeuralNetwork.MAPPED_KINDS}
 
-        interpolate = lambda k, l, d: 1.0 / (1 + math.exp((d * 10 / self.maximum_distance[k][l]) - 2.0))
-        interpolations = {kind: {} for kind in NeuralNetwork.MAPPED_KINDS}
-        logging.debug("base: %s" % adjutant.dict_as_str(distribution, use_key=False))
-
-        for kind, subd in points.items():
-            for layer, point in subd.items():
-                factor = interpolate(kind, layer, 0)
-                interpolation = {k: factor * v for k, v in distribution.items()}
-                logging.debug("initial: %s-%d: %s" % (kind, layer, adjutant.dict_as_str(interpolation, use_key=False)))
-
-                for reference_point in self.reference_points[kind][layer]:
-                    distance = geometry.distance(point, reference_point)
-
-                    if distance > self.maximum_distance[kind][layer]:
-                        self.maximum_distance[kind][layer] = distance
-
-                    factor = interpolate(kind, layer, distance)
-
-                    if factor >= 0.5:
-                        for value in self.reference_distribution[kind][layer][reference_point]:
-                            for k, v in value.items():
-                                interpolation[k] += factor * v
-
-                interpolations[kind][layer] = nlp.softmax(interpolation)
-                logging.debug("final: %s-%d: %s" % (kind, layer, adjutant.dict_as_str(interpolations[kind][layer], use_key=False)))
-
-        return interpolations
-
-    def fit_colours(self, points, distribution):
-        if not self.is_setup():
-            return ["none"] * len(points)
-
-        interpolations = self.interpolate_distributions(points, distribution)
+        # Maps roughly:
+        #   0.00 -> 0.5
+        #   0.05 -> 0.7
+        #   0.10 -> 0.8
+        #   0.20 -> 1.0
+        #   1.00 -> 1.0
+        likelyness_opacity = lambda x: min(1.0, math.sqrt(x) + 0.5)
         point_data = {kind: {} for kind in NeuralNetwork.MAPPED_KINDS}
+        predictions = {}
 
         for kind, subd in points.items():
+            predictions[kind] = {}
+
             for layer, point in subd.items():
-                # Select the lowest several distances and put them into a map keyed by the reference_word_colour
-                # (reference_word_colour -> distance to the equivalent point in the high dimensional space).
-                ordered_predictions = [item[0] for item in sorted(interpolations[kind][layer].items(), key=lambda item: item[1], reverse=True)]
-                references = []
+                result = self.predictor.evaluate((kind, layer, point))
+                predictions[kind][layer] = (result.prediction, likelyness_opacity(result.distribution[result.prediction]))
+                logging.debug("predicted: %s-%d-%s -> %s" % (kind, layer, point, adjutant.dict_as_str(result.distribution, use_key=False)))
+                distances = {}
+                minimum = None
+                maximum = None
+
+                for i, data in enumerate(self.predictor_data):
+                    if data.x[0] == kind and data.x[1] == layer:
+                        distance = geometry.distance(point, data.x[2])
+                        distances[i] = distance
+
+                        if minimum is None or distance < minimum:
+                            minimum = distance
+
+                        if maximum is None or distance > maximum:
+                            maximum = distance
+
+                half = minimum + ((maximum - minimum) / 2.0)
+
+                for item in filter(lambda item: item[1] < half, distances.items()):
+                    train_xy = self.predictor_data[item[0]]
+                    logging.debug("trained: %s @%.2f -> %s" % (train_xy.x[2], item[1], adjutant.dict_as_str(train_xy.y, use_key=False)))
+
+                # Select the most likely several predictions for this activation vector (kind, layer, point).
+                ordered_predictions = [item[0] for item in sorted(result.distribution.items(), key=lambda item: item[1], reverse=True)]
+                likely_predictions = []
                 proceed = True
 
                 while proceed:
-                    references += [ordered_predictions[len(references)]]
+                    likely_predictions += [ordered_predictions[len(likely_predictions)]]
 
-                    if proceed and len(references) >= 2:
-                        if len(references) > min(5, len(ordered_predictions)):
+                    if proceed and len(likely_predictions) >= 2:
+                        if len(likely_predictions) > min(5, len(ordered_predictions)):
                             proceed = False
                         else:
-                            proceed = interpolations[kind][layer][references[-2]] / 2.0 < interpolations[kind][layer][references[-1]]
+                            proceed = result.distribution[likely_predictions[-2]] / 2.0 < result.distribution[likely_predictions[-1]]
 
-                predictions = {reference: interpolations[kind][layer][reference] for reference in references}
-                distro = {k: 1.0 - v for k, v in nlp.regmax(predictions).items()}
-                logging.debug("refs: %s -> %s" % (adjutant.dict_as_str(predictions, use_key=False), adjutant.dict_as_str(distro, use_key=False)))
+                top_predictions = {prediction: result.distribution[prediction] for prediction in likely_predictions}
+                distro = {k: 1.0 - v for k, v in nlp.regmax(top_predictions).items()}
+                logging.debug("refs: %s -> %s" % (adjutant.dict_as_str(top_predictions, use_key=False), adjutant.dict_as_str(distro, use_key=False)))
                 point_data[kind][layer] = [(self.colour_embeddings[k], v) for k, v in distro.items()]
                 logging.debug("point_data: %s-%d: %s" % (kind, layer, point_data[kind][layer]))
 
@@ -254,11 +248,11 @@ class NeuralNetwork:
             for layer, data in subd.items():
                 # Make the maximum target distance (1.0) one quarter the length of a dimension in the colour space.
                 scaler = (255.0 / 4)
-                fit, _ = geometry.fit_point([item[0] for item in data], [item[1] for item in data], epsilon=0.1, visualize=False)
+                fit, _ = geometry.fit_point([item[0] for item in data], [scaler * item[1] for item in data], epsilon=0.1, visualize=False)
                 colours[kind][layer] = "rgb(%d, %d, %d)" % tuple([round(i) for i in fit])
 
         logging.debug("colours: %s" % colours)
-        return colours
+        return predictions, colours
 
     def weights(self, sequence):
         stepwise_lstm = self.lstm.stepwise()
@@ -275,21 +269,22 @@ class NeuralNetwork:
             for layer in range(NeuralNetwork.LAYERS):
                 points[kind][layer] = instruments[kind][layer]
 
-        instrument_colours = self.fit_colours(points, result.distribution)
+        instrument_predictions, instrument_colours = self.get_activation_prediction_encoding(points)
+        logging.debug("instrument_colours: %s" % str([[(k, i) for i in v.keys()] for k, v in instrument_colours.items()]))
         embedding = WeightVector(instruments["embedding"], colour=self.word_colour(x))
         units = []
 
-        for layer in range(0, len(instruments["outputs"])):
+        for layer in range(NeuralNetwork.LAYERS):
             remember_gate = WeightVector(instruments["remember_gates"][layer], 0, 1)
             forget_gate = WeightVector(instruments["forget_gates"][layer], 0, 1)
             output_gate = WeightVector(instruments["output_gates"][layer], 0, 1)
-            input_hat = WeightVector(instruments["input_hats"][layer], colour=instrument_colours[kind][layer])
-            remember = WeightVector(instruments["remembers"][layer], colour=instrument_colours[kind][layer])
-            cell_previous_hat = WeightVector(instruments["cell_previouses"][layer], colour=instrument_colours[kind][layer])
-            forget = WeightVector(instruments["forgets"][layer], colour=instrument_colours[kind][layer])
-            cell = WeightVector(instruments["cells"][layer], colour=instrument_colours[kind][layer])
-            cell_hat = WeightVector(instruments["cell_hats"][layer], colour=instrument_colours[kind][layer])
-            output = WeightVector(instruments["outputs"][layer], colour=instrument_colours[kind][layer])
+            input_hat = WeightVector(instruments["input_hats"][layer], colour=instrument_colours["input_hats"][layer], prediction=instrument_predictions["input_hats"][layer])
+            remember = WeightVector(instruments["remembers"][layer], colour=instrument_colours["remembers"][layer], prediction=instrument_predictions["remembers"][layer])
+            cell_previous_hat = WeightVector(instruments["cell_previouses"][layer], colour=instrument_colours["cell_previouses"][layer], prediction=instrument_predictions["cell_previouses"][layer])
+            forget = WeightVector(instruments["forgets"][layer], colour=instrument_colours["forgets"][layer], prediction=instrument_predictions["forgets"][layer])
+            cell = WeightVector(instruments["cells"][layer], colour=instrument_colours["cells"][layer], prediction=instrument_predictions["cells"][layer])
+            cell_hat = WeightVector(instruments["cell_hats"][layer], colour=instrument_colours["cell_hats"][layer], prediction=instrument_predictions["cell_hats"][layer])
+            output = WeightVector(instruments["outputs"][layer], colour=instrument_colours["outputs"][layer], prediction=instrument_predictions["outputs"][layer])
             units += [Unit(remember_gate, forget_gate, output_gate, input_hat, remember, cell_previous_hat, forget, cell, cell_hat, output)]
 
         softmax = LabelWeightVector(result.distribution, result.encoding, NeuralNetwork.OUTPUT_WIDTH, lambda word: self.word_colour(word))

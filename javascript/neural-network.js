@@ -24,7 +24,7 @@ $(document).ready(function () {
         .style('top', 0)
         .style('left', 0)
         .style("width", total_width + (total_width / 5) - 10)
-        .style('height', layer_height * 15);
+        .style('height', layer_height * 25);
 
     svg.append("text")
         .attr("x", x_margin + 28)
@@ -267,14 +267,14 @@ function drawTimestep(fake_timestep, data) {
 }
 
 function drawWeightVector(geometry, wv, class_suffix) {
-    drawWeightWidget(geometry, wv.minimum, wv.maximum, wv.vector, wv.colour, class_suffix);
+    drawWeightWidget(geometry, wv.minimum, wv.maximum, wv.vector, wv.colour, wv.prediction, class_suffix);
 }
 
 function drawLabelWeightVector(geometry, lwv) {
-    drawWeightWidget(geometry, lwv.minimum, lwv.maximum, lwv.vector, null, null);
+    drawWeightWidget(geometry, lwv.minimum, lwv.maximum, lwv.vector, null, null, null);
 }
 
-function drawWeightWidget(geometry, min, max, vector, colour, class_suffix) {
+function drawWeightWidget(geometry, min, max, vector, colour, prediction, class_suffix) {
     if (min >= max) {
         throw "min " + min + " cannot exceed max " + max;
     }
@@ -315,6 +315,17 @@ function drawWeightWidget(geometry, min, max, vector, colour, class_suffix) {
             .style("font-size", "12px")
             .style("fill", "red")
             .text(geometry.name);
+    }
+
+    if (prediction != null) {
+        svg.append("text")
+            .attr("class", "timestep-" + geometry.timestep + " " + class_suffix)
+            .attr("x", geometry.x + (geometry.width / 2.0) + 2.5)
+            .attr("y", geometry.y - 2)
+            .style("font-size", "12px")
+            .style("fill", "black")
+            .style("opacity", prediction[1])
+            .text(prediction[0]);
     }
 
     // boundary box
