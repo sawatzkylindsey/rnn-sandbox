@@ -180,7 +180,9 @@ class NeuralNetwork:
 
     def get_activation_prediction_encoding(self, points):
         if not self.is_setup():
-            return {kind: {layer: "none" for layer in range(NeuralNetwork.LAYERS)} for kind in NeuralNetwork.MAPPED_KINDS}
+            predictions = {kind: {layer: (nlp.UNKNOWN, 1.0) for layer in range(NeuralNetwork.LAYERS)} for kind in NeuralNetwork.MAPPED_KINDS}
+            colours = {kind: {layer: "none" for layer in range(NeuralNetwork.LAYERS)} for kind in NeuralNetwork.MAPPED_KINDS}
+            return predictions, colours
 
         # Maps roughly:
         #   0.00 -> 0.5
