@@ -25,14 +25,14 @@ REFERENCES = 32
 SHORTLIST_REFERENCES = int(REFERENCES / 3)
 
 
-def create(corpus, epochs, loss, verbose):
+def create(corpus, epochs, verbose):
     words, xy_sequences = nlp.corpus_sequences(corpus)
 
     if verbose:
         for sequence in xy_sequences:
             logging.debug(sequence)
 
-    return words, xy_sequences, NeuralNetwork(words, xy_sequences, epochs, loss)
+    return words, xy_sequences, NeuralNetwork(words, xy_sequences, epochs)
 
 
 class NeuralNetwork:
@@ -70,19 +70,18 @@ class NeuralNetwork:
         "outputs",
     ]
 
-    def __init__(self, words, xy_sequences, epoch_threshold, loss_threshold):
+    def __init__(self, words, xy_sequences, epoch_threshold):
         self.words = words
         self.lstm = rnn.Rnn(NeuralNetwork.LAYERS, NeuralNetwork.WIDTH, NeuralNetwork.EMBEDDING_WIDTH, words)
         self.xy_sequences = [[rnn.Xy(t[0], t[1]) for t in sequence] for sequence in xy_sequences]
         self.epoch_threshold = epoch_threshold
-        self.loss_threshold = loss_threshold
         self.colour_embeddings = None
         self._background_setup = threading.Thread(target=self._setup)
         self._background_setup.daemon = True
         self._background_setup.start()
 
     def _setup(self):
-        loss = self.lstm.train(self.xy_sequences, self.epoch_threshold, self.loss_threshold, True)
+        loss = self.lstm.train(self.xy_sequences, mlbase.TrainingParameters().epochs(self.epoch_threshold))
         logging.debug("train %s" % loss)
         self._train_predictor()
         self._setup_colour_embeddings()
@@ -109,7 +108,7 @@ class NeuralNetwork:
                         train_xy = mlbase.Xy((kind, layer, point), result.distribution)
                         self.predictor_data += [train_xy]
 
-        loss = self.predictor.train(self.predictor_data, mlbase.TrainingParameters().epochs(300).loss(0.5))
+        loss = self.predictor.train(self.predictor_data, mlbase.TrainingParameters())
         logging.debug("train predictor %s" % loss)
 
     def _setup_colour_embeddings(self):

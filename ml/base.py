@@ -67,15 +67,21 @@ class Result:
 class TrainingParameters:
     DEFAULT_BATCH = 4
     DEFAULT_EPOCHS = 1000
-    DEFAULT_LOSS = 0.05
-    DEFAULT_LOSS_WINDOW = 5
+    DEFAULT_ABSOLUTE = 0.05
+    DEFAULT_RELATIVE = 0.001
+    DEFAULT_WINDOW = 10
     DEFAULT_DEBUG = False
+    REASON_EPOCHS = "maximum epochs"
+    REASON_ABSOLUTE = "absolute convergence"
+    REASON_RELATIVE = "relative convergence"
+    REASON_DEGRADING = "degradation"
 
     def __init__(self):
         self._batch = TrainingParameters.DEFAULT_BATCH
         self._epochs = TrainingParameters.DEFAULT_EPOCHS
-        self._loss = TrainingParameters.DEFAULT_LOSS
-        self._loss_window = TrainingParameters.DEFAULT_LOSS_WINDOW
+        self._absolute = TrainingParameters.DEFAULT_ABSOLUTE
+        self._relative = TrainingParameters.DEFAULT_RELATIVE
+        self._window = TrainingParameters.DEFAULT_WINDOW
         self._debug = TrainingParameters.DEFAULT_DEBUG
 
     def losses(self):
@@ -96,14 +102,41 @@ class TrainingParameters:
             def __len__(self):
                 return len(self.queue)
 
-        return Window(self._loss_window)
+            def __getitem__(self, index):
+                return self.queue[index]
+
+            def __repr__(self):
+                return str(["%.4f" % l for l in self])
+
+        return Window(self._window)
 
     def finished(self, epoch, losses):
         # Training is finished if:
         #   1. The current epoch exceeds the epochs threshold, or
-        #   2. The losses are full and consistently lower than the loss threshold
-        return epoch > self._epochs \
-            or (len(losses) == self._loss_window and all([loss < self._loss for loss in losses]))
+        #   2. The losses are full, decreasing, and consistently lower than the absolute threshold
+        #   3. The losses are full, decreasing, and consistently lower than the relative threshold
+        if epoch > self._epochs:
+            return True, TrainingParameters.REASON_EPOCHS
+
+        if len(losses) == self._window:
+            deltas = [losses[i] - losses[i + 1] for i in range(len(losses) - 1)]
+
+            if all([d > 0.0 for d in deltas]):
+                if all([loss <= self._absolute for loss in losses]):
+                    return True, TrainingParameters.REASON_ABSOLUTE
+
+                maximum_loss = max(losses)
+                relative_threshold = maximum_loss * self._relative
+
+                if all([d <= relative_threshold for d in deltas]):
+                    return True, TrainingParameters.REASON_RELATIVE
+
+            slopes = [losses[0] - losses[i] for i in range(1, len(losses))]
+            increasing_slopes = [slope for slope in slopes if slope < 0.0]
+            if len(increasing_slopes) >= int(self._window / 2.0):
+                return True, TrainingParameters.REASON_DEGRADING
+
+        return False, None
 
     def batch(self, value=None):
         if value is None:
@@ -119,18 +152,25 @@ class TrainingParameters:
         self._epochs = check.check_gte(value, 1)
         return self
 
-    def loss(self, value=None):
+    def absolute(self, value=None):
         if value is None:
-            return self._loss
+            return self._absolute
 
-        self._loss = check.check_gte(value, 0.0)
+        self._absolute = check.check_gte(value, 0.0)
         return self
 
-    def loss_window(self, value=None):
+    def relative(self, value=None):
         if value is None:
-            return self._loss_window
+            return self._relative
 
-        self._loss_window = check.check_gte(value, 1)
+        self._relative = check.check_probability(value)
+        return self
+
+    def window(self, value=None):
+        if value is None:
+            return self._window
+
+        self._window = check.check_gte(value, 1)
         return self
 
     def debug(self, value=None):
@@ -141,7 +181,7 @@ class TrainingParameters:
         return self
 
     def __repr__(self):
-        return "TrainingParameters{b=%d, e=%d, l=%.4f, lw=%d, d=%s}" % (self._batch, self._epochs, self._loss, self._loss_window, self._debug)
+        return "TrainingParameters{b=%d, e=%d, a=%.4f, r=%.4f, w=%d, d=%s}" % (self._batch, self._epochs, self._absolute, self._relative, self._window, self._debug)
 
 
 class Field(object):

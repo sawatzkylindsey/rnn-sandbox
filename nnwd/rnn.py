@@ -13,6 +13,7 @@ import tensorflow as tf
 tf.logging.set_verbosity(logging.WARN)
 from tensorflow.python import debug as tf_debug
 
+from ml import base as mlbase
 from pytils import adjutant, base, check
 from pytils.log import user_log
 
@@ -175,13 +176,13 @@ class Rnn:
             return tf.get_variable(name, shape=shape, dtype=dtype,
                 initializer=tf.contrib.layers.xavier_initializer() if initial is None else tf.constant_initializer(initial))
 
-    def train(self, xy_sequences, epoch_threshold=1000, loss_threshold=0.5, debug=False):
+    def train(self, xy_sequences, training_parameters):
+        check.check_instance(training_parameters, mlbase.TrainingParameters)
         shuffled_xy_sequences = xy_sequences.copy()
-        slot_length = len(str(epoch_threshold)) - 1
+        slot_length = len(str(training_parameters.epochs())) - 1
         epoch_template = "Epoch training {:%dd}: {:f}" % slot_length
-        epochs_tenth = int(epoch_threshold / 10)
-        loss_window = 5
-        losses = collections.deque([])
+        epochs_tenth = int(training_parameters.epochs() / 10)
+        losses = training_parameters.losses()
         finished = False
         epoch = -1
 
@@ -194,7 +195,7 @@ class Rnn:
             for sequence in shuffled_xy_sequences:
                 assert len(sequence) > 0
 
-                if epoch == 0 and debug:
+                if epoch == 0 and training_parameters.debug():
                     logging.debug("training on: %s" % sequence)
 
                 input_labels = [self.word_labels.encode(xy.x) for xy in sequence]
@@ -211,15 +212,10 @@ class Rnn:
                 logging.debug(epoch_template.format(epoch, epoch_loss))
 
             losses.append(epoch_loss)
+            finished, reason = training_parameters.finished(epoch, losses)
 
-            if len(losses) > loss_window:
-                losses.popleft()
-
-            # Training is finished if:
-            #   1. The current epoch exceeds the epochs threshold, or
-            #   2. The losses are full and consistently lower than the loss threshold
-            finished = epoch > epoch_threshold or (len(losses) == loss_window and all([loss < loss_threshold for loss in losses]))
-
+        logging.debug("Training finished due to %s (%s)." % (reason, losses))
+        logging.debug(epoch_template.format(epoch, epoch_loss))
         return epoch_loss
 
     def test(self, xy_sequences, debug=False):

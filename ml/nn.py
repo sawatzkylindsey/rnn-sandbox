@@ -89,11 +89,12 @@ class Model:
         slot_length = len(str(training_parameters.epochs())) - 1
         epoch_template = "[%s] Epoch {:%dd}: {:f}" % (self.scope, slot_length)
         final_loss = None
-        epochs_hundredth = int(training_parameters.epochs() / 10)
+        epochs_tenth = int(training_parameters.epochs() / 10)
         losses = training_parameters.losses()
+        finished = False
         epoch = -1
 
-        while not training_parameters.finished(epoch, losses):
+        while not finished:
             epoch += 1
             epoch_loss = 0
             # Shuffle the training set for every epoch.
@@ -114,13 +115,16 @@ class Model:
 
             losses.append(epoch_loss)
 
-            if epoch % epochs_hundredth == 0:
+            if epoch % epochs_tenth == 0:
                 logging.debug(epoch_template.format(epoch, epoch_loss))
 
                 if training_parameters.debug():
                     # Run the training data and compare the network's output with that of what is expected.
                     self.test(xys)
 
+            finished, reason = training_parameters.finished(epoch, losses)
+
+        logging.debug("Training finished due to %s (%s)." % (reason, losses))
         logging.debug(epoch_template.format(epoch, epoch_loss))
         return epoch_loss
 
