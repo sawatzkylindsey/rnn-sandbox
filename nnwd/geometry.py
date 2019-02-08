@@ -17,7 +17,6 @@ def fit_point(reference_points, target_distances, epsilon=0.00001, visualize=Fal
     assert len(reference_points) > 0
     assert len(reference_points) == len(target_distances), "%d != %d" % (len(reference_points), len(target_distances))
     assert epsilon > 0
-    logging.debug("fitting: %s, %s" % (reference_points, target_distances))
     dimensions = len(reference_points[0])
 
     if visualize:
@@ -56,7 +55,6 @@ def fit_point(reference_points, target_distances, epsilon=0.00001, visualize=Fal
     correction = _correction(reference_points, target_distances, center, importance_fn, relaxation)
     previous = correction
     point = [center[i] + correction[i] for i in range(0, dimensions)]
-    #logging.debug("center: %s -> point: %s (correction %s)" % (center, point, correction))
     t = 0
 
     if visualize:
@@ -70,7 +68,6 @@ def fit_point(reference_points, target_distances, epsilon=0.00001, visualize=Fal
         if sum([abs(i) for i in correction]) > sum([abs(i) for i in previous]):
             # If the correction starts increasing, it means we're not going to converge - so increase the relaxation step and re-loop (without apply the correction).
             relaxation += 1
-            #logging.debug("t=%d: r=%d, previous: %s, correction: %s" % (t, relaxation, previous, correction))
         else:
             point = [point[i] + correction[i] for i in range(0, dimensions)]
             previous = correction
@@ -80,7 +77,6 @@ def fit_point(reference_points, target_distances, epsilon=0.00001, visualize=Fal
 
         if t % 10 == 0:
             pass
-            #logging.debug("..fit_point.. t=%d: r=%f, %s" % (t, relaxation, point))
 
     if visualize:
         axis.scatter(*plot_point(point), c=colouring(t))
@@ -92,7 +88,6 @@ def fit_point(reference_points, target_distances, epsilon=0.00001, visualize=Fal
         #plt.draw()
         #plt.pause(120)
 
-    logging.debug("t=%d: %s" % (t, point))
     return point, t
 
 

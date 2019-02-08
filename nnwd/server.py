@@ -118,9 +118,9 @@ def main(argv):
     ap.add_argument("--corpus", default="corpus.txt")
     ap.add_argument("--epochs", default=1000, type=int)
     args = ap.parse_args(argv)
-    setup_logging(".%s.log" % os.path.splitext(os.path.basename(__file__))[0], args.verbose, False, True)
+    setup_logging(".%s.log" % os.path.splitext(os.path.basename(__file__))[0], args.verbose, False, True, True)
     logging.debug(args)
-    words, _, neural_network = domain.create(args.corpus, args.epochs, args.verbose)
+    words, neural_network = domain.create(args.corpus, args.epochs, args.verbose)
     run(args.port, words, neural_network)
 
 

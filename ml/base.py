@@ -68,7 +68,10 @@ class TrainingParameters:
     DEFAULT_BATCH = 4
     DEFAULT_EPOCHS = 1000
     DEFAULT_ABSOLUTE = 0.05
-    DEFAULT_RELATIVE = 0.001
+    # .005%
+    DEFAULT_RELATIVE = 0.00005
+    # 25%
+    DEFAULT_DEGRADATION = 0.25
     DEFAULT_WINDOW = 10
     DEFAULT_DEBUG = False
     REASON_EPOCHS = "maximum epochs"
@@ -81,6 +84,7 @@ class TrainingParameters:
         self._epochs = TrainingParameters.DEFAULT_EPOCHS
         self._absolute = TrainingParameters.DEFAULT_ABSOLUTE
         self._relative = TrainingParameters.DEFAULT_RELATIVE
+        self._degradation = TrainingParameters.DEFAULT_DEGRADATION
         self._window = TrainingParameters.DEFAULT_WINDOW
         self._debug = TrainingParameters.DEFAULT_DEBUG
 
@@ -120,20 +124,21 @@ class TrainingParameters:
 
         if len(losses) == self._window:
             deltas = [losses[i] - losses[i + 1] for i in range(len(losses) - 1)]
+            maximum_loss = max(losses)
 
             if all([d > 0.0 for d in deltas]):
                 if all([loss <= self._absolute for loss in losses]):
                     return True, TrainingParameters.REASON_ABSOLUTE
 
-                maximum_loss = max(losses)
                 relative_threshold = maximum_loss * self._relative
 
                 if all([d <= relative_threshold for d in deltas]):
                     return True, TrainingParameters.REASON_RELATIVE
 
-            slopes = [losses[0] - losses[i] for i in range(1, len(losses))]
-            increasing_slopes = [slope for slope in slopes if slope < 0.0]
-            if len(increasing_slopes) >= int(self._window / 2.0):
+            slopes = [losses[i] - losses[0] for i in range(1, len(losses))]
+            degradation_threshold = losses[0] * self._degradation
+
+            if all([slope >= degradation_threshold for slope in slopes]):
                 return True, TrainingParameters.REASON_DEGRADING
 
         return False, None
@@ -166,6 +171,13 @@ class TrainingParameters:
         self._relative = check.check_probability(value)
         return self
 
+    def degradation(self, value=None):
+        if value is None:
+            return self._degradation
+
+        self._degradation = check.check_probability(value)
+        return self
+
     def window(self, value=None):
         if value is None:
             return self._window
@@ -181,7 +193,8 @@ class TrainingParameters:
         return self
 
     def __repr__(self):
-        return "TrainingParameters{b=%d, e=%d, a=%.4f, r=%.4f, w=%d, d=%s}" % (self._batch, self._epochs, self._absolute, self._relative, self._window, self._debug)
+        return "TrainingParameters{b=%d, e=%d, a=%.4f, r=%.4f, r=%d, w=%d, d=%s}" % \
+            (self._batch, self._epochs, self._absolute, self._relative, self._degradation, self._window, self._debug)
 
 
 class Field(object):
@@ -323,7 +336,7 @@ class VectorField(Field):
 
     def vector_encode(self, value, handle_unknown=False):
         if len(value) != len(self):
-            raise ValueError()
+            raise ValueError("value '%s' doesn't match vector width '%d'" % (value, self._length))
 
         return value
 

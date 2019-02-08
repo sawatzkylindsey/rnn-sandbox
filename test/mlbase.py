@@ -49,7 +49,7 @@ class Tests(TestCase):
     def test_finished_relative(self):
         tp = base.TrainingParameters()
         start = base.TrainingParameters.DEFAULT_ABSOLUTE * 1000
-        step = start * base.TrainingParameters.DEFAULT_RELATIVE * 0.99
+        step = start * base.TrainingParameters.DEFAULT_RELATIVE * 0.9
         # Less than
         losses = tp.losses()
 
@@ -75,19 +75,19 @@ class Tests(TestCase):
     def test_finished_degrading(self):
         tp = base.TrainingParameters()
         start = base.TrainingParameters.DEFAULT_ABSOLUTE
-        step = start * base.TrainingParameters.DEFAULT_RELATIVE
+        step = start * base.TrainingParameters.DEFAULT_DEGRADATION * 1.1
         # Degradation
         losses = tp.losses()
 
         for i in range(base.TrainingParameters.DEFAULT_WINDOW):
-            losses.append(start + (step if (i + 1) % 2 == 0 else 0.0))
+            losses.append(start + (step if i != 0 else 0.0))
 
-        self.assertEqual(tp.finished(1, losses), (True, "degradation"))
+        self.assertEqual(tp.finished(1, losses), (True, "degradation"), losses)
         # No degradation
         losses = tp.losses()
 
         for i in range(base.TrainingParameters.DEFAULT_WINDOW):
-            losses.append(start + (step if (i + 1) % 3 == 0 else 0.0))
+            losses.append(start + (step if (i + 1) % 2 == 0 else 0.0))
 
         self.assertEqual(tp.finished(1, losses), (False, None))
 

@@ -7,6 +7,7 @@ import numpy as np
 import pdb
 import re
 
+from ml import base as mlbase
 from pytils import check
 
 
@@ -148,6 +149,7 @@ class SpecialLabels:
     def ook_decode_distribution(self, array):
         raise TypeError()
 
+
 import random
 SENTENCE_BREAK = "SB%s" % random.randrange(1000)
 QUESTION_BREAK = "QB%s" % random.randrange(1000)
@@ -194,7 +196,7 @@ def corpus_sequences(corpus_file):
     with open(corpus_file, "r") as fh:
         corpus_lines = fh.readlines()
 
-    words = set(["."])
+    words = set([".", mlbase.BLANK])
     xy_sequences = []
 
     for line in corpus_lines:
@@ -203,11 +205,9 @@ def corpus_sequences(corpus_file):
 
             for i, word in enumerate(sentence):
                 words.add(word)
+                sequence.append(word)
 
-                if i + 1 < len(sentence):
-                    sequence.append((word, sentence[i + 1]))
-                else:
-                    sequence.append((word, "."))
+            sequence.append(".")
 
             if len(sequence) > 0:
                 xy_sequences.append(sequence)

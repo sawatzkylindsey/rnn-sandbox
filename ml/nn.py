@@ -176,7 +176,6 @@ class Stepwise:
 
     def step(self, x):
         result = self.nn.evaluate(x)
-        logging.debug("%s: %s" % (self.name, result))
         return result
 
 

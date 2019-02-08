@@ -30,17 +30,17 @@ class Rnn:
         self.word_labels = word_labels
         self.scope = scope
 
-        time_dimension = None
-        batch_dimension = None
+        self.time_dimension = None
+        self.batch_dimension = None
         # Notation:
         #   _p      placeholder
         #   _c      constant
 
-        self.unrolled_inputs_p = self.placeholder("unrolled_inputs_p", [time_dimension], tf.int32)
-        self.unrolled_outputs_p = self.placeholder("unrolled_outputs_p", [time_dimension], tf.int32)
+        self.unrolled_inputs_p = self.placeholder("unrolled_inputs_p", [self.time_dimension, self.batch_dimension], tf.int32)
+        self.input_lengths_p = self.placeholder("input_lengths_p", [self.batch_dimension], tf.int32)
+        self.unrolled_outputs_p = self.placeholder("unrolled_outputs_p", [self.time_dimension, self.batch_dimension], tf.int32)
 
-        self.initial_state_p = self.placeholder("initial_state_p", [Rnn.SCAN_STATES, self.layers, 1, self.width])
-        self.initial_state_c = np.zeros([Rnn.SCAN_STATES, self.layers, 1, self.width], dtype="float32")
+        self.initial_state_p = self.placeholder("initial_state_p", [Rnn.SCAN_STATES, self.layers, self.batch_dimension, self.width])
 
         self.E = self.variable("E", [len(self.word_labels), self.embedding_width])
         self.EP = self.variable("EP", [self.embedding_width, self.width])
@@ -64,11 +64,11 @@ class Rnn:
         tf.identity(tf.reshape(self.Y_bias, [len(self.word_labels)]), name="Y_bias")
 
         self.unrolled_embedded_inputs = tf.nn.embedding_lookup(self.E, self.unrolled_inputs_p)
-        assert_shape(self.unrolled_embedded_inputs, [None, self.embedding_width])
+        assert_shape(self.unrolled_embedded_inputs, [self.time_dimension, self.batch_dimension, self.embedding_width])
         tf.identity(tf.reshape(self.unrolled_embedded_inputs, [self.embedding_width]), name="embedding")
 
-        self.unrolled_embedded_projected_inputs = tf.matmul(self.unrolled_embedded_inputs, self.EP)
-        assert_shape(self.unrolled_embedded_projected_inputs, [None, self.width])
+        self.unrolled_embedded_projected_inputs = tf.matmul(tf.reshape(self.unrolled_embedded_inputs, [-1, self.embedding_width]), self.EP)
+        assert_shape(self.unrolled_embedded_projected_inputs, [self.combine_dimensions(), self.width])
 
         def step_lstm(previous_state, current_input):
             # This is all the other stacks, which we don't actually need for the looping (just there for instrumentation).
@@ -87,9 +87,9 @@ class Rnn:
             output_stack = []
 
             for l in range(self.layers):
-                assert_shape(output_previous[l], [1, self.width])
-                assert_shape(cell_previous[l], [1, self.width])
-                assert_shape(x, [1, self.width])
+                assert_shape(output_previous[l], [self.batch_dimension, self.width])
+                assert_shape(cell_previous[l], [self.batch_dimension, self.width])
+                assert_shape(x, [self.batch_dimension, self.width])
                 remember_gate = tf.sigmoid(tf.matmul(tf.concat([output_previous[l], x], axis=-1), self.R[l]) + self.R_bias[l])
                 remember_gate_stack.append(remember_gate)
                 forget_gate = tf.sigmoid(tf.matmul(tf.concat([output_previous[l], x], axis=-1), self.F[l]) + self.F_bias[l])
@@ -104,19 +104,22 @@ class Rnn:
                 forget = cell_previous[l] * forget_gate
                 forget_stack.append(forget)
                 cell = forget + remember
-                assert_shape(cell, [1, self.width])
+                assert_shape(cell, [self.batch_dimension, self.width])
                 cell_stack.append(cell)
                 cell_hat = tf.tanh(cell)
                 cell_hat_stack.append(cell_hat)
                 output = cell_hat * output_gate
-                assert_shape(output, [1, self.width])
+                assert_shape(output, [self.batch_dimension, self.width])
                 output_stack.append(output)
                 x = output
 
             return tf.stack([output_stack, cell_stack, remember_gate_stack, forget_gate_stack, output_gate_stack, input_hat_stack, remember_stack, cell_previous_stack, forget_stack, cell_hat_stack])
 
-        self.unrolled_states = tf.scan(step_lstm, tf.reshape(self.unrolled_embedded_projected_inputs, [-1, 1, self.width]), self.initial_state_p)
-        assert_shape(self.unrolled_states, [None, Rnn.SCAN_STATES, self.layers, 1, self.width])
+        max_time, batch_size = tf.unstack(tf.shape(self.unrolled_inputs_p))
+        scan_inputs = tf.reshape(self.unrolled_embedded_projected_inputs, [max_time, batch_size, self.width])
+        assert_shape(scan_inputs, [self.time_dimension, self.batch_dimension, self.width])
+        self.unrolled_states = tf.scan(step_lstm, scan_inputs, self.initial_state_p)
+        assert_shape(self.unrolled_states, [self.time_dimension, Rnn.SCAN_STATES, self.layers, self.batch_dimension, self.width])
 
         # Grab the last timesteps' state layers out of the unrolled state layers ([x y z] in diagram).
         # Notice, each cell in the diagram represents 2 (+all the extra instrumentation) states (hidden, cell, ..instrumentation..).
@@ -126,18 +129,18 @@ class Rnn:
         # state layer 0     x x  x
         # time              0 .. T
         self.state = self.unrolled_states[-1]
-        assert_shape(self.state, [Rnn.SCAN_STATES, self.layers, 1, self.width])
+        assert_shape(self.state, [Rnn.SCAN_STATES, self.layers, self.batch_dimension, self.width])
         output_states, cell_states, remember_gates, forget_gates, output_gates, input_hats, remembers, cell_previouses, forgets, cell_hats = tf.unstack(self.state)
-        tf.identity(tf.reshape(output_states, [self.layers, self.width]), name="outputs")
-        tf.identity(tf.reshape(cell_states, [self.layers, self.width]), name="cells")
-        tf.identity(tf.reshape(remember_gates, [self.layers, self.width]), name="remember_gates")
-        tf.identity(tf.reshape(forget_gates, [self.layers, self.width]), name="forget_gates")
-        tf.identity(tf.reshape(output_gates, [self.layers, self.width]), name="output_gates")
-        tf.identity(tf.reshape(input_hats, [self.layers, self.width]), name="input_hats")
-        tf.identity(tf.reshape(remembers, [self.layers, self.width]), name="remembers")
-        tf.identity(tf.reshape(cell_previouses, [self.layers, self.width]), name="cell_previouses")
-        tf.identity(tf.reshape(forgets, [self.layers, self.width]), name="forgets")
-        tf.identity(tf.reshape(cell_hats, [self.layers, self.width]), name="cell_hats")
+        tf.identity(tf.reshape(output_states, [-1, self.width]), name="outputs")
+        tf.identity(tf.reshape(cell_states, [-1, self.width]), name="cells")
+        tf.identity(tf.reshape(remember_gates, [-1, self.width]), name="remember_gates")
+        tf.identity(tf.reshape(forget_gates, [-1, self.width]), name="forget_gates")
+        tf.identity(tf.reshape(output_gates, [-1, self.width]), name="output_gates")
+        tf.identity(tf.reshape(input_hats, [-1, self.width]), name="input_hats")
+        tf.identity(tf.reshape(remembers, [-1, self.width]), name="remembers")
+        tf.identity(tf.reshape(cell_previouses, [-1, self.width]), name="cell_previouses")
+        tf.identity(tf.reshape(forgets, [-1, self.width]), name="forgets")
+        tf.identity(tf.reshape(cell_hats, [-1, self.width]), name="cell_hats")
 
         # Grab the last state layer across all timesteps from the unrolled state layers ([z z z] in diagram).
         # Notice, each cell in the diagram represents 2 (+all the extra instrumentation) states (hidden, cell, ..instrumentation..).
@@ -147,22 +150,20 @@ class Rnn:
         # state layer 0     x x  x
         # time              0 .. T
         self.final_state = self.unrolled_states[:, 0, -1]
-        assert_shape(self.final_state, [None, 1, self.width])
+        assert_shape(self.final_state, [self.time_dimension, self.batch_dimension, self.width])
 
         final_state_for_matmul = tf.reshape(self.final_state, [-1, self.width])
-        assert_shape(final_state_for_matmul, [None, self.width])
+        assert_shape(final_state_for_matmul, [self.combine_dimensions(), self.width])
 
-        self.output_logit = tf.matmul(final_state_for_matmul, self.Y) + self.Y_bias
-        assert_shape(self.output_logit, [None, len(self.word_labels)])
+        self.output_logits = tf.matmul(final_state_for_matmul, self.Y) + self.Y_bias
+        assert_shape(self.output_logits, [self.combine_dimensions(), len(self.word_labels)])
 
-        self.output_distribution = tf.nn.softmax(self.output_logit[0])
+        self.output_distribution = tf.nn.softmax(self.output_logits[0])
         assert_shape(self.output_distribution, [len(self.word_labels)])
 
-        loss_fn = tf.nn.softmax_cross_entropy_with_logits_v2
-
-        # Expected output:                 v
-        # Un-scaled prediction:                                                                                           v
-        self.cost = tf.reduce_mean(loss_fn(labels=tf.stop_gradient(tf.one_hot(self.unrolled_outputs_p, len(self.word_labels))), logits=self.output_logit))
+        expected_outputs = tf.reshape(self.output_logits, [max_time, batch_size, len(self.word_labels)])
+        mask = tf.sequence_mask(self.input_lengths_p, dtype=tf.float32)
+        self.cost = tf.contrib.seq2seq.sequence_loss(logits=expected_outputs, targets=self.unrolled_outputs_p, weights=mask)
         self.updates = tf.train.AdamOptimizer().minimize(self.cost)
 
         self.session = tf.Session()
@@ -176,9 +177,18 @@ class Rnn:
             return tf.get_variable(name, shape=shape, dtype=dtype,
                 initializer=tf.contrib.layers.xavier_initializer() if initial is None else tf.constant_initializer(initial))
 
+    def initial_state(self, batch_length):
+        return np.zeros([Rnn.SCAN_STATES, self.layers, batch_length, self.width], dtype="float32")
+
+    def combine_dimensions(self):
+        if self.time_dimension is None or self.batch_dimension is None:
+            return None
+        else:
+            return self.time_dimension * self.batch_dimension
+
     def train(self, xy_sequences, training_parameters):
         check.check_instance(training_parameters, mlbase.TrainingParameters)
-        shuffled_xy_sequences = xy_sequences.copy()
+        shuffled_xys = xy_sequences.copy()
         slot_length = len(str(training_parameters.epochs())) - 1
         epoch_template = "Epoch training {:%dd}: {:f}" % slot_length
         epochs_tenth = int(training_parameters.epochs() / 10)
@@ -190,19 +200,20 @@ class Rnn:
             epoch += 1
             epoch_loss = 0
             # Shuffle the training set for every epoch.
-            random.shuffle(shuffled_xy_sequences)
+            random.shuffle(shuffled_xys)
+            offset = 0
 
-            for sequence in shuffled_xy_sequences:
-                assert len(sequence) > 0
-
-                if epoch == 0 and training_parameters.debug():
-                    logging.debug("training on: %s" % sequence)
-
-                input_labels = [self.word_labels.encode(xy.x) for xy in sequence]
-                output_labels = [self.word_labels.encode(xy.y) for xy in sequence]
+            while offset < len(shuffled_xys):
+                batch = shuffled_xys[offset:offset + training_parameters.batch()]
+                offset += training_parameters.batch()
+                data_x, data_y = mlbase.as_time_major(batch)
+                input_labels = [[self.word_labels.encode(word if word is not None else mlbase.BLANK) for word in timespot] for timespot in data_x]
+                input_lengths = [len(sequence.x) for sequence in batch]
+                output_labels = [[self.word_labels.encode(word if word is not None else mlbase.BLANK) for word in timespot] for timespot in data_y]
                 parameters = {
                     self.unrolled_inputs_p: np.array(input_labels),
-                    self.initial_state_p: self.initial_state_c,
+                    self.input_lengths_p: np.array(input_lengths),
+                    self.initial_state_p: self.initial_state(len(batch)),
                     self.unrolled_outputs_p: np.array(output_labels),
                 }
                 _, total_cost = self.session.run([self.updates, self.cost], feed_dict=parameters)
@@ -263,8 +274,8 @@ class Rnn:
 
     def evaluate(self, x, state=None, instrument_names=[]):
         parameters = {
-            self.unrolled_inputs_p: np.array([self.word_labels.encode(x, True)]),
-            self.initial_state_p: state if state is not None else self.initial_state_c
+            self.unrolled_inputs_p: np.array([np.array([self.word_labels.encode(x, True)])]),
+            self.initial_state_p: state if state is not None else self.initial_state(1)
         }
         instruments = [self.session.graph.get_tensor_by_name("%s:0" % name) for name in instrument_names]
         distribution, next_state, *instrument_values = self.session.run([self.output_distribution, self.state] + instruments, feed_dict=parameters)
@@ -287,8 +298,8 @@ class Rnn:
 
     def embed(self, x):
         parameters = {
-            self.unrolled_inputs_p: np.array([self.word_labels.encode(x, True)]),
-            self.initial_state_p: self.initial_state_c
+            self.unrolled_inputs_p: np.array([np.array([self.word_labels.encode(x, True)])]),
+            self.initial_state_p: self.initial_state(1)
         }
         return self.session.run([self.session.graph.get_tensor_by_name("embedding:0")], feed_dict=parameters)[0].tolist()
 
@@ -302,31 +313,8 @@ class Stepwise:
 
     def step(self, x, instrument_names=[]):
         result, self.state, instruments = self.rnn.evaluate(x, self.state, instrument_names)
-        logging.debug("%s @%3d: %s." % (self.name, self.t, result))
         self.t += 1
         return result, instruments
-
-
-class Xy:
-    def __init__(self, x, y):
-        self.x = x
-        self.y = y
-
-    def __eq__(self, other):
-        return self.x == other.x \
-            and self.y == other.y
-
-    def __hash__(self):
-        return hash((self.x, self.y))
-
-    def __repr__(self):
-        return "(x=%s, y=%s)" % (self.x, self.y)
-
-    def expected(self):
-        if isinstance(self.y, dict):
-            return max(self.y.items(), key=lambda item: item[1])[0]
-        else:
-            return self.y
 
 
 class Result:

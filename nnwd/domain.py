@@ -32,7 +32,7 @@ def create(corpus, epochs, verbose):
         for sequence in xy_sequences:
             logging.debug(sequence)
 
-    return words, xy_sequences, NeuralNetwork(words, xy_sequences, epochs)
+    return words, NeuralNetwork(words, xy_sequences, epochs)
 
 
 class NeuralNetwork:
@@ -73,7 +73,7 @@ class NeuralNetwork:
     def __init__(self, words, xy_sequences, epoch_threshold):
         self.words = words
         self.lstm = rnn.Rnn(NeuralNetwork.LAYERS, NeuralNetwork.WIDTH, NeuralNetwork.EMBEDDING_WIDTH, words)
-        self.xy_sequences = [[rnn.Xy(t[0], t[1]) for t in sequence] for sequence in xy_sequences]
+        self.xy_sequences = [mlbase.Xy(sequence[:-1], sequence[1:]) for sequence in xy_sequences]
         self.epoch_threshold = epoch_threshold
         self.colour_embeddings = None
         self._background_setup = threading.Thread(target=self._setup)
@@ -82,6 +82,7 @@ class NeuralNetwork:
 
     def _setup(self):
         loss = self.lstm.train(self.xy_sequences, mlbase.TrainingParameters().epochs(self.epoch_threshold))
+        loss = self.lstm.train(self.xy_sequences, mlbase.TrainingParameters().epochs(int(self.epoch_threshold / 10)).batch(1))
         logging.debug("train %s" % loss)
         self._train_predictor()
         self._setup_colour_embeddings()
@@ -96,11 +97,11 @@ class NeuralNetwork:
         self.predictor = ffnn.Model("predictor", ffnn.HyperParameters().width(int(len(predictor_input) * .8)), predictor_input, predictor_output, mlbase.SINGLE_LABEL)
         self.predictor_data = []
 
-        for xy_sequence in self.xy_sequences:
+        for sequence in self.xy_sequences:
             stepwise_lstm = self.lstm.stepwise()
 
-            for x in xy_sequence:
-                result, instruments = stepwise_lstm.step(x.x, NeuralNetwork.INSTRUMENTS)
+            for x in sequence.x:
+                result, instruments = stepwise_lstm.step(x, NeuralNetwork.INSTRUMENTS)
 
                 for kind in NeuralNetwork.MAPPED_KINDS:
                     for layer in range(NeuralNetwork.LAYERS):
@@ -108,7 +109,7 @@ class NeuralNetwork:
                         train_xy = mlbase.Xy((kind, layer, point), result.distribution)
                         self.predictor_data += [train_xy]
 
-        loss = self.predictor.train(self.predictor_data, mlbase.TrainingParameters())
+        loss = self.predictor.train(self.predictor_data, mlbase.TrainingParameters().epochs(int(self.epoch_threshold / 2)))
         logging.debug("train predictor %s" % loss)
 
     def _setup_colour_embeddings(self):
@@ -153,7 +154,6 @@ class NeuralNetwork:
                 x, y, z = colour_embedding
                 axis.scatter(x, y, z, c=[[c / 255.0 for c in colour_embedding]])
                 axis.text(x, y, z, word, zorder=1)
-                logging.debug("colour_embedding '%s': %s -> %s" % (word, self.word_embeddings[word], colour_embedding))
 
             axis.set_xlabel("Red")
             axis.set_ylabel("Green")
@@ -199,7 +199,6 @@ class NeuralNetwork:
             for layer, point in subd.items():
                 result = self.predictor.evaluate((kind, layer, point))
                 predictions[kind][layer] = (result.prediction, likelyness_opacity(result.distribution[result.prediction]))
-                logging.debug("predicted: %s-%d-%s -> %s" % (kind, layer, point, adjutant.dict_as_str(result.distribution, use_key=False)))
                 distances = {}
                 minimum = None
                 maximum = None
@@ -219,7 +218,6 @@ class NeuralNetwork:
 
                 for item in filter(lambda item: item[1] < half, distances.items()):
                     train_xy = self.predictor_data[item[0]]
-                    logging.debug("trained: %s @%.2f -> %s" % (train_xy.x[2], item[1], adjutant.dict_as_str(train_xy.y, use_key=False)))
 
                 # Select the most likely several predictions for this activation vector (kind, layer, point).
                 ordered_predictions = [item[0] for item in sorted(result.distribution.items(), key=lambda item: item[1], reverse=True)]
@@ -237,9 +235,7 @@ class NeuralNetwork:
 
                 top_predictions = {prediction: result.distribution[prediction] for prediction in likely_predictions}
                 distro = {k: 1.0 - v for k, v in nlp.regmax(top_predictions).items()}
-                logging.debug("refs: %s -> %s" % (adjutant.dict_as_str(top_predictions, use_key=False), adjutant.dict_as_str(distro, use_key=False)))
                 point_data[kind][layer] = [(self.colour_embeddings[k], v) for k, v in distro.items()]
-                logging.debug("point_data: %s-%d: %s" % (kind, layer, point_data[kind][layer]))
 
         colours = {}
 
@@ -252,7 +248,6 @@ class NeuralNetwork:
                 fit, _ = geometry.fit_point([item[0] for item in data], [scaler * item[1] for item in data], epsilon=0.1, visualize=False)
                 colours[kind][layer] = "rgb(%d, %d, %d)" % tuple([round(i) for i in fit])
 
-        logging.debug("colours: %s" % colours)
         return predictions, colours
 
     def weights(self, sequence):
@@ -271,7 +266,6 @@ class NeuralNetwork:
                 points[kind][layer] = instruments[kind][layer]
 
         instrument_predictions, instrument_colours = self.get_activation_prediction_encoding(points)
-        logging.debug("instrument_colours: %s" % str([[(k, i) for i in v.keys()] for k, v in instrument_colours.items()]))
         embedding = WeightVector(instruments["embedding"], colour=self.word_colour(x))
         units = []
 
