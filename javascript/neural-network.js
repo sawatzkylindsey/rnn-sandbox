@@ -200,9 +200,9 @@ function drawTimestep(fake_timestep, data) {
         /*drawVline(timestep, x_offset + (w * 13) + (w / 2) + unit_offset, y_margin + (timestep * layer_height) + (h * 3 / 2),
             x_offset + (w * 4) + unit_offset, y_offset + layer_height);*/
 
-        drawHiddenState(getGeometry(timestep, "cell_previous_hat", u), data.units[u].cell_previous_hat);
+        drawHiddenState(getGeometry(timestep, "cell_previous", u), data.units[u].cell_previous);
         /*drawMultiplication(timestep, x_offset + (w * 3) + (w) - (operator_height / 2) + unit_offset, y_offset + (h * 1 / 2) - (operator_height / 2), operator_height,
-            [data.units[u].cell_previous_hat, data.units[u].forget_gate, data.units[u].forget], u, null);
+            [data.units[u].cell_previous, data.units[u].forget_gate, data.units[u].forget], u, null);
         var forget_gate = getGeometry(timestep, "forget_gate", u);
         drawHiddenState(forget_gate, data.units[u].forget_gate);
         drawGate(timestep, forget_gate.x - w + 6, forget_gate.y + (operand_height / 4), w * 2 / 4);
@@ -351,6 +351,7 @@ function drawStateWidget(geometry, min, max, vector, colour, prediction, class_s
         .attr("stroke", light_grey)
         .attr("stroke-width", 1)
         .attr("fill", "none");
+    // Chip's colour & magnitude.
     svg.selectAll(".chip")
         .data(vector)
         .enter()
@@ -365,18 +366,27 @@ function drawStateWidget(geometry, min, max, vector, colour, prediction, class_s
                     return base_x + (macro_x.bandwidth() - magnitude(d.value));
                 }
             })
-            .attr("y", function (d) {
-                return y(d.position);
-            })
-            .attr("width", function (d) {
-                return magnitude(d.value);
-            })
+            .attr("y", function (d) { return y(d.position); })
+            .attr("width", function (d) { return magnitude(d.value); })
             .attr("height", macro_y.bandwidth())
             .attr("stroke", "none")
-            .attr("stroke-width", stroke_width)
             .attr("fill", function(d) {
                 return colour == "none" ? light_grey : colour;
             });
+    // Chip's scaling box.
+    svg.selectAll(".chip")
+        .data(vector)
+        .enter()
+            .append("rect")
+            .attr("class", "timestep-" + geometry.timestep + " " + class_suffix)
+            .attr("x", function (d) { return x(d.position); })
+            .attr("y", function (d) { return y(d.position); })
+            .attr("width", macro_x.bandwidth())
+            .attr("height", macro_y.bandwidth())
+            .attr("stroke", light_grey)
+            .attr("stroke-width", stroke_width)
+            .attr("fill", "none");
+    // Chip's direction line.
     svg.selectAll(".chip")
         .data(vector)
         .enter()
@@ -403,7 +413,7 @@ function drawStateWidget(geometry, min, max, vector, colour, prediction, class_s
             })
             .attr("y2", function(d) { return y(d.position) + macro_y.bandwidth() + 1; })
             .attr("stroke", black)
-            .attr("stroke-width", stroke_width);
+            .attr("stroke-width", stroke_width * 1.5);
     /*if (class_suffix == null) {
         svg.selectAll(".bar")
             .data(vector)
@@ -420,13 +430,13 @@ function drawStateWidget(geometry, min, max, vector, colour, prediction, class_s
                 .attr("fill", colour == "none" ? "white" : colour)
                 .style("opacity", 0)
                 .on("mouseover", function(d) {
-                    if (geometry.name != "embedding" && (geometry.timestep > 0 || !geometry.name.startsWith("cell_previous_hat"))) {
+                    if (geometry.name != "embedding" && (geometry.timestep > 0 || !geometry.name.startsWith("cell_previous"))) {
                         d3.select("#hoverbar-" + geometry.timestep + "-" + geometry.name + "-" + d.position)
                             .style("opacity", 0.5);
                     }
                 })
                 .on("mouseout", function(d) {
-                    if (geometry.name != "embedding" && (geometry.timestep > 0 || !geometry.name.startsWith("cell_previous_hat"))) {
+                    if (geometry.name != "embedding" && (geometry.timestep > 0 || !geometry.name.startsWith("cell_previous"))) {
                         d3.select("#hoverbar-" + geometry.timestep + "-" + geometry.name + "-" + d.position)
                             .style("opacity", 0);
                     }
@@ -438,7 +448,7 @@ function drawStateWidget(geometry, min, max, vector, colour, prediction, class_s
                         width: geometry.width - 2,
                         height: y.bandwidth() - 2,
                     }
-                    if (geometry.name != "embedding" && (geometry.timestep > 0 || !geometry.name.startsWith("cell_previous_hat"))) {
+                    if (geometry.name != "embedding" && (geometry.timestep > 0 || !geometry.name.startsWith("cell_previous"))) {
                         var slice = sequence.slice(0, geometry.timestep + 1);
                         console.log(geometry.name);
                         d3.json("weight-explain?" + slice.map(s => "sequence=" + encodeURI(s)).join("&") + "&name=" + geometry.name + "&column=" + d.column)
@@ -541,13 +551,13 @@ function drawSoftmax(geometry, labelWeightVector) {
             .attr("stroke-width", 1)
             .style("opacity", 0)
             .on("mouseover", function(d) {
-                if (geometry.name != "embedding" && (geometry.timestep > 0 || !geometry.name.startsWith("cell_previous_hat"))) {
+                if (geometry.name != "embedding" && (geometry.timestep > 0 || !geometry.name.startsWith("cell_previous"))) {
                     d3.select("#hoverbar-" + geometry.timestep + "-" + geometry.name + "-" + d.position)
                         .style("opacity", 0.5);
                 }
             })
             .on("mouseout", function(d) {
-                if (geometry.name != "embedding" && (geometry.timestep > 0 || !geometry.name.startsWith("cell_previous_hat"))) {
+                if (geometry.name != "embedding" && (geometry.timestep > 0 || !geometry.name.startsWith("cell_previous"))) {
                     d3.select("#hoverbar-" + geometry.timestep + "-" + geometry.name + "-" + d.position)
                         .style("opacity", 0);
                 }
@@ -559,7 +569,7 @@ function drawSoftmax(geometry, labelWeightVector) {
                     width: geometry.width - 2,
                     height: y.bandwidth() - 2,
                 }
-                if (geometry.name != "embedding" && (geometry.timestep > 0 || !geometry.name.startsWith("cell_previous_hat"))) {
+                if (geometry.name != "embedding" && (geometry.timestep > 0 || !geometry.name.startsWith("cell_previous"))) {
                     var slice = sequence.slice(0, geometry.timestep + 1);
                     console.log(geometry.name);
                     d3.json("weight-explain?" + slice.map(s => "sequence=" + encodeURI(s)).join("&") + "&name=" + geometry.name + "&column=" + d.column)
@@ -1196,7 +1206,7 @@ function getGeometry(timestep, name, layer) {
         case "embedding":
             b = {x: x_offset + w, y: y_offset + (h / 2), height: h};
             break;
-        case "cell_previous_hat":
+        case "cell_previous":
             b = {x: x_offset + (w * 3) + (w / 2) + layer_offset, y: y_offset, height: h};
             break;
         case "forget_gate":

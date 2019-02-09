@@ -14,7 +14,7 @@ import threading
 from ml import base as mlbase
 from ml import nn as ffnn
 from nnwd import geometry
-from nnwd.models import Layer, Unit, WeightExplain, WeightVector, LabelWeightVector
+from nnwd.models import Layer, Unit, WeightExplain, HiddenState, LabelDistribution
 from nnwd import nlp
 from nnwd import rnn
 from pytils.log import setup_logging, user_log
@@ -60,7 +60,10 @@ class NeuralNetwork:
         "input_hat": "H",
         "softmax": "Y",
     }
-    MAPPED_KINDS = [
+    LSTM_PARTS = [
+        "remember_gates",
+        "forget_gates",
+        "output_gates",
         "input_hats",
         "remembers",
         "cell_previouses",
@@ -69,6 +72,18 @@ class NeuralNetwork:
         "cell_hats",
         "outputs",
     ]
+    SINGULAR = {
+        "remember_gates": "remember_gate",
+        "forget_gates": "forget_gate",
+        "output_gates": "output_gate",
+        "input_hats": "input_hat",
+        "remembers": "remember",
+        "cell_previouses": "cell_previous",
+        "forgets": "forget",
+        "cells": "cell",
+        "cell_hats": "cell_hat",
+        "outputs": "output",
+    }
 
     def __init__(self, words, xy_sequences, epoch_threshold):
         self.words = words
@@ -100,10 +115,10 @@ class NeuralNetwork:
         logging.debug("train fine %s" % loss)
 
     def _train_predictor(self):
-        kind_labels = mlbase.Labels(set(NeuralNetwork.MAPPED_KINDS))
+        part_labels = mlbase.Labels(set(NeuralNetwork.LSTM_PARTS))
         layer_labels = mlbase.Labels(set(range(NeuralNetwork.LAYERS)))
         activation_vector = mlbase.VectorField(NeuralNetwork.WIDTH)
-        predictor_input = mlbase.ConcatField([kind_labels, layer_labels, activation_vector])
+        predictor_input = mlbase.ConcatField([part_labels, layer_labels, activation_vector])
         predictor_output = mlbase.Labels(self.words.labels())
         hyper_parameters = ffnn.HyperParameters() \
             .width(max(1, int(len(predictor_input) * 0.8)))
@@ -116,10 +131,10 @@ class NeuralNetwork:
             for x in sequence.x:
                 result, instruments = stepwise_lstm.step(x, NeuralNetwork.INSTRUMENTS)
 
-                for kind in NeuralNetwork.MAPPED_KINDS:
+                for part in NeuralNetwork.LSTM_PARTS:
                     for layer in range(NeuralNetwork.LAYERS):
-                        point = tuple(instruments[kind][layer])
-                        train_xy = mlbase.Xy((kind, layer, point), result.distribution)
+                        point = tuple(instruments[part][layer])
+                        train_xy = mlbase.Xy((part, layer, point), result.distribution)
                         self.predictor_data += [train_xy]
 
         loss = self.predictor.train(self.predictor_data, mlbase.TrainingParameters().epochs(int(self.epoch_threshold / 2)))
@@ -190,11 +205,11 @@ class NeuralNetwork:
         embedding = self.colour_embeddings[self.words.decode(self.words.encode(word, True))]
         return "rgb(%d, %d, %d)" % embedding
 
-    def get_activation_prediction_encoding(self, points):
+    def compute_point_abstractions(self, points):
         if not self.is_setup():
-            predictions = {kind: {layer: (nlp.UNKNOWN, 1.0) for layer in range(NeuralNetwork.LAYERS)} for kind in NeuralNetwork.MAPPED_KINDS}
-            colours = {kind: {layer: "none" for layer in range(NeuralNetwork.LAYERS)} for kind in NeuralNetwork.MAPPED_KINDS}
-            return predictions, colours
+            colours = {part: {layer: "none" for layer in range(NeuralNetwork.LAYERS)} for part in NeuralNetwork.LSTM_PARTS}
+            predictions = {part: {layer: (nlp.UNKNOWN, 1.0) for layer in range(NeuralNetwork.LAYERS)} for part in NeuralNetwork.LSTM_PARTS}
+            return points, colours, predictions
 
         # Maps roughly:
         #   0.00 -> 0.5
@@ -203,16 +218,16 @@ class NeuralNetwork:
         #   0.20 -> 1.0
         #   1.00 -> 1.0
         likelyness_opacity = lambda x: min(1.0, math.sqrt(x) + 0.5)
-        xs = adjutant.flat_map([[(kind, layer, point) for layer, point in subd.items()] for kind, subd in points.items()])
+        xs = adjutant.flat_map([[(part, layer, point) for layer, point in subd.items()] for part, subd in points.items()])
         results = self.predictor.evaluate(xs)
-        point_data = {kind: {} for kind in NeuralNetwork.MAPPED_KINDS}
-        predictions = {kind: {} for kind in NeuralNetwork.MAPPED_KINDS}
+        point_data = {part: {} for part in NeuralNetwork.LSTM_PARTS}
+        predictions = {part: {} for part in NeuralNetwork.LSTM_PARTS}
 
         for i, x in enumerate(xs):
-            kind, layer, point = x
+            part, layer, point = x
             result = results[i]
-            predictions[kind][layer] = (result.prediction, likelyness_opacity(result.distribution[result.prediction]))
-            # Select the most likely several predictions for this activation vector (kind, layer, point).
+            predictions[part][layer] = (result.prediction, likelyness_opacity(result.distribution[result.prediction]))
+            # Select the most likely several predictions for this activation vector (part, layer, point).
             ordered_predictions = [item[0] for item in sorted(result.distribution.items(), key=lambda item: item[1], reverse=True)]
             likely_predictions = []
             proceed = True
@@ -228,20 +243,20 @@ class NeuralNetwork:
 
             top_predictions = {prediction: result.distribution[prediction] for prediction in likely_predictions}
             distro = {k: 1.0 - v for k, v in nlp.regmax(top_predictions).items()}
-            point_data[kind][layer] = [(self.colour_embeddings[k], v) for k, v in distro.items()]
+            point_data[part][layer] = [(self.colour_embeddings[k], v) for k, v in distro.items()]
 
         colours = {}
 
-        for kind, subd in point_data.items():
-            colours[kind] = {}
+        for part, subd in point_data.items():
+            colours[part] = {}
 
             for layer, data in subd.items():
                 # Make the maximum target distance (1.0) one quarter the length of a dimension in the colour space.
                 scaler = (255.0 / 4)
                 fit, _ = geometry.fit_point([item[0] for item in data], [scaler * item[1] for item in data], epsilon=0.1, visualize=False)
-                colours[kind][layer] = "rgb(%d, %d, %d)" % tuple([round(i) for i in fit])
+                colours[part][layer] = "rgb(%d, %d, %d)" % tuple([round(i) for i in fit])
 
-        return predictions, colours
+        return points, colours, predictions
 
     def weights(self, sequence):
         stepwise_lstm = self.lstm.stepwise()
@@ -252,31 +267,36 @@ class NeuralNetwork:
 
         points = {}
 
-        for kind in NeuralNetwork.MAPPED_KINDS:
-            points[kind] = {}
+        for part in NeuralNetwork.LSTM_PARTS:
+            points[part] = {}
 
             for layer in range(NeuralNetwork.LAYERS):
-                points[kind][layer] = instruments[kind][layer]
+                points[part][layer] = instruments[part][layer]
 
-        instrument_predictions, instrument_colours = self.get_activation_prediction_encoding(points)
-        embedding = WeightVector(instruments["embedding"], colour=self.word_colour(x))
+        point_reductions, point_colours, point_predictions = self.compute_point_abstractions(points)
+        embedding = HiddenState(instruments["embedding"], colour=self.word_colour(x))
         units = []
 
         for layer in range(NeuralNetwork.LAYERS):
-            remember_gate = WeightVector(instruments["remember_gates"][layer], 0, 1)
-            forget_gate = WeightVector(instruments["forget_gates"][layer], 0, 1)
-            output_gate = WeightVector(instruments["output_gates"][layer], 0, 1)
-            input_hat = WeightVector(instruments["input_hats"][layer], colour=instrument_colours["input_hats"][layer], prediction=instrument_predictions["input_hats"][layer])
-            remember = WeightVector(instruments["remembers"][layer], colour=instrument_colours["remembers"][layer], prediction=instrument_predictions["remembers"][layer])
-            cell_previous_hat = WeightVector(instruments["cell_previouses"][layer], colour=instrument_colours["cell_previouses"][layer], prediction=instrument_predictions["cell_previouses"][layer])
-            forget = WeightVector(instruments["forgets"][layer], colour=instrument_colours["forgets"][layer], prediction=instrument_predictions["forgets"][layer])
-            cell = WeightVector(instruments["cells"][layer], colour=instrument_colours["cells"][layer], prediction=instrument_predictions["cells"][layer])
-            cell_hat = WeightVector(instruments["cell_hats"][layer], colour=instrument_colours["cell_hats"][layer], prediction=instrument_predictions["cell_hats"][layer])
-            output = WeightVector(instruments["outputs"][layer], colour=instrument_colours["outputs"][layer], prediction=instrument_predictions["outputs"][layer])
-            units += [Unit(remember_gate, forget_gate, output_gate, input_hat, remember, cell_previous_hat, forget, cell, cell_hat, output)]
+            states = self.make_hidden_states(layer, point_reductions, point_colours, point_predictions)
+            units += [Unit(**states)]
 
-        softmax = LabelWeightVector(result.distribution, result.encoding, NeuralNetwork.OUTPUT_WIDTH, lambda word: self.word_colour(word))
+        softmax = LabelDistribution(result.distribution, result.encoding, NeuralNetwork.OUTPUT_WIDTH, lambda word: self.word_colour(word))
         return Layer(embedding, units, softmax, len(sequence) - 1, x_word, result.prediction)
+
+    def make_hidden_states(self, layer, point_reductions, point_colours, point_predictions):
+        states = {}
+
+        for part in NeuralNetwork.LSTM_PARTS:
+            if part.endswith("_gates"):
+                min_max = (0, 1)
+            else:
+                min_max = (None, None)
+
+            hidden_state = HiddenState(point_reductions[part][layer], min_max, point_colours[part][layer], point_predictions[part][layer])
+            states[NeuralNetwork.SINGULAR[part]] = hidden_state
+
+        return states
 
     def weight_explain(self, sequence, name, column):
         weights = self.weights(sequence)
@@ -286,7 +306,7 @@ class NeuralNetwork:
             embedding_previous = weights_previous.embedding
             outputs_previous = [unit.output for unit in weights_previous.units]
         else:
-            zeros = WeightVector([0] * NeuralNetwork.WIDTH)
+            zeros = HiddenState([0] * NeuralNetwork.WIDTH)
             embedding_previous = zeros
             outputs_previous = [zeros] * NeuralNetwork.LAYERS
 
@@ -336,8 +356,8 @@ class NeuralNetwork:
             return WeightExplain({left_feed: left, right_feed: right}, 0)
         elif name == "forget":
             explain = [0] * NeuralNetwork.WIDTH
-            explain[column] = weights.units[layer].cell_previous_hat.vector[column] * weights.units[layer].forget_gate.vector[column]
-            return WeightExplain({"cell_previous_hat-%d" % layer: explain}, 0)
+            explain[column] = weights.units[layer].cell_previous.vector[column] * weights.units[layer].forget_gate.vector[column]
+            return WeightExplain({"cell_previous-%d" % layer: explain}, 0)
         elif name == "remember":
             explain = [0] * NeuralNetwork.WIDTH
             explain[column] = weights.units[layer].input_hat.vector[column] * weights.units[layer].remember_gate.vector[column]
@@ -358,9 +378,9 @@ class NeuralNetwork:
             explain = [0] * NeuralNetwork.WIDTH
             explain[column] = weights.units[layer].cell.vector[column]
             return WeightExplain({"cell-%d" % layer: explain}, 0)
-        elif name == "cell_previous_hat":
+        elif name == "cell_previous":
             explain = [0] * NeuralNetwork.WIDTH
-            explain[column] = weights.units[layer].cell_previous_hat.vector[column]
+            explain[column] = weights.units[layer].cell_previous.vector[column]
             return WeightExplain({"cell_previous-%d" % layer: explain}, 0)
         else:
             raise ValueError("unknown: %s - %s" % (name, column))

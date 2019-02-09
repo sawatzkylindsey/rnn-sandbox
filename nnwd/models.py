@@ -6,9 +6,9 @@ from pytils import check
 
 class Layer:
     def __init__(self, embedding, units, softmax, timestep, x_word, y_word):
-        self.embedding = check.check_instance(embedding, WeightVector)
+        self.embedding = check.check_instance(embedding, HiddenState)
         self.units = check.check_list(units)
-        self.softmax = check.check_instance(softmax, LabelWeightVector)
+        self.softmax = check.check_instance(softmax, LabelDistribution)
         self.timestep = timestep
         self.x_word = x_word
         self.y_word = y_word
@@ -25,13 +25,13 @@ class Layer:
 
 
 class Unit:
-    def __init__(self, remember_gate, forget_gate, output_gate, input_hat, remember, cell_previous_hat, forget, cell, cell_hat, output):
+    def __init__(self, remember_gate, forget_gate, output_gate, input_hat, remember, cell_previous, forget, cell, cell_hat, output):
         self.remember_gate = remember_gate
         self.forget_gate = forget_gate
         self.output_gate = output_gate
         self.input_hat = input_hat
         self.remember = remember
-        self.cell_previous_hat = cell_previous_hat
+        self.cell_previous = cell_previous
         self.forget = forget
         self.cell = cell
         self.cell_hat = cell_hat
@@ -44,7 +44,7 @@ class Unit:
             "output_gate": self.output_gate.as_json(),
             "input_hat": self.input_hat.as_json(),
             "remember": self.remember.as_json(),
-            "cell_previous_hat": self.cell_previous_hat.as_json(),
+            "cell_previous": self.cell_previous.as_json(),
             "forget": self.forget.as_json(),
             "cell": self.cell.as_json(),
             "cell_hat": self.cell_hat.as_json(),
@@ -52,10 +52,10 @@ class Unit:
         }
 
 
-class WeightVector:
-    def __init__(self, vector, minimum=None, maximum=None, colour="none", prediction=(None, None)):
+class HiddenState:
+    def __init__(self, vector, min_max=(None, None), colour="none", prediction=(None, None)):
         self.vector = [float(value) for value in vector]
-        self.minimum, self.maximum = canonicalize_bounds(minimum, maximum, self.vector)
+        self.minimum, self.maximum = canonicalize_bounds(min_max, self.vector)
         self.colour = colour
         self.prediction = prediction
 
@@ -69,7 +69,7 @@ class WeightVector:
         }
 
 
-class LabelWeightVector:
+class LabelDistribution:
     def __init__(self, label_weights, encoding, top_k=None, colour_fn=lambda word: "none"):
         self.label_weights = [(str(item[0]), float(item[1])) for item in sorted(label_weights.items(), key=lambda item: item[1], reverse=True)[:len(label_weights) if top_k is None else top_k]]
         self.encoding = encoding
@@ -105,12 +105,16 @@ class WeightExplain:
         }
 
 
-def canonicalize_bounds(minimum, maximum, vector):
-    if minimum is None:
+def canonicalize_bounds(min_max, vector):
+    if min_max[0] is None:
         minimum = min(vector)
+    else:
+        minimum = min_max[0]
 
-    if maximum is None:
+    if min_max[1] is None:
         maximum = max(vector)
+    else:
+        maximum = min_max[1]
 
     if minimum > 0:
         minimum = 0
