@@ -191,7 +191,7 @@ class Rnn:
         shuffled_xys = xy_sequences.copy()
         slot_length = len(str(training_parameters.epochs())) - 1
         epoch_template = "Epoch training {:%dd}: {:f}" % slot_length
-        epochs_tenth = int(training_parameters.epochs() / 10)
+        epochs_tenth = max(1, int(training_parameters.epochs() / 10))
         losses = training_parameters.losses()
         finished = False
         epoch = -1

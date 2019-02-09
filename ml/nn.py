@@ -57,8 +57,8 @@ class Model:
 
         self.output_logit = tf.tanh(tf.matmul(hidden, self.Y) + self.Y_bias)
         mlbase.assert_shape(self.output_logit, [batch_size_dimension, len(self.output_labels)])
-        self.output_distribution = tf.nn.softmax(self.output_logit[0])
-        mlbase.assert_shape(self.output_distribution, [len(self.output_labels)])
+        self.output_distributions = tf.nn.softmax(self.output_logit)
+        mlbase.assert_shape(self.output_distributions, [batch_size_dimension, len(self.output_labels)])
         #expected_output = tf.reshape(self.output_label_p, [-1, len(self.output_labels)])
         #assert self.output_logit.shape.as_list() == expected_output.shape.as_list(), "%s != %s" % (self.output_logit.shape.as_list(), expected_output.shape.as_list())
 
@@ -89,7 +89,7 @@ class Model:
         slot_length = len(str(training_parameters.epochs())) - 1
         epoch_template = "[%s] Epoch {:%dd}: {:f}" % (self.scope, slot_length)
         final_loss = None
-        epochs_tenth = int(training_parameters.epochs() / 10)
+        epochs_tenth = max(1, int(training_parameters.epochs() / 10))
         losses = training_parameters.losses()
         finished = False
         epoch = -1
@@ -159,24 +159,20 @@ class Model:
         return correct / float(total)
 
     def evaluate(self, x):
+        if isinstance(x, list):
+            xs = [self.input_labels.vector_encode(i, True) for i in x]
+        else:
+            xs = [self.input_labels.vector_encode(x, True)]
+
         feed = {
-            self.input_p: np.array([self.input_labels.vector_encode(x, True)]),
+            self.input_p: np.array(xs),
         }
-        distribution = self.session.run(self.output_distribution, feed_dict=feed)
-        return mlbase.Result(self.output_labels.vector_decode(distribution), self.output_labels.vector_decode_distribution(distribution))
+        distributions = self.session.run(self.output_distributions, feed_dict=feed)
 
-    def stepwise(self, name=None):
-        return Stepwise(self, name)
-
-
-class Stepwise:
-    def __init__(self, nn, name=None):
-        self.nn = nn
-        self.name = name if name is not None else "".join(random.choices(string.ascii_lowercase, k=6))
-
-    def step(self, x):
-        result = self.nn.evaluate(x)
-        return result
+        if isinstance(x, list):
+            return [mlbase.Result(self.output_labels.vector_decode(distribution), self.output_labels.vector_decode_distribution(distribution)) for distribution in distributions]
+        else:
+            return mlbase.Result(self.output_labels.vector_decode(distributions[0]), self.output_labels.vector_decode_distribution(distributions[0]))
 
 
 class HyperParameters:

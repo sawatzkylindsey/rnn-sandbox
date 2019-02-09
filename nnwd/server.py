@@ -39,12 +39,10 @@ class ServerHandler(BaseHTTPRequestHandler):
 
             if hasattr(out, "as_json"):
                 out = out.as_json()
-                #logging.debug("as_json: %s" % out)
 
             self._write_content(json.dumps(out))
         else:
             file_path = os.path.join(".", "javascript", path)
-            logging.debug(file_path)
 
             # Some systems (like eccc-nll.bigdata.sfu.ca) allow for relative paths to pass through urllib.
             # I checked the versions of that library, and they are the same even though this problem doesn't exist on my osx.

@@ -81,12 +81,23 @@ class NeuralNetwork:
         self._background_setup.start()
 
     def _setup(self):
-        loss = self.lstm.train(self.xy_sequences, mlbase.TrainingParameters().epochs(self.epoch_threshold))
-        loss = self.lstm.train(self.xy_sequences, mlbase.TrainingParameters().epochs(int(self.epoch_threshold / 10)).batch(1))
-        logging.debug("train %s" % loss)
+        self._train_rnn()
         self._train_predictor()
         self._setup_colour_embeddings()
         user_log.info("Setup complete")
+
+    def _train_rnn(self):
+        training_coarse = mlbase.TrainingParameters() \
+            .epochs(self.epoch_threshold) \
+            .batch(16)
+        loss = self.lstm.train(self.xy_sequences, training_coarse)
+        logging.debug("train coarse %s" % loss)
+        training_fine = mlbase.TrainingParameters() \
+            .epochs(self.epoch_threshold) \
+            .absolute(loss * 0.75) \
+            .batch(1)
+        loss = self.lstm.train(self.xy_sequences, training_fine)
+        logging.debug("train fine %s" % loss)
 
     def _train_predictor(self):
         kind_labels = mlbase.Labels(set(NeuralNetwork.MAPPED_KINDS))
@@ -94,6 +105,8 @@ class NeuralNetwork:
         activation_vector = mlbase.VectorField(NeuralNetwork.WIDTH)
         predictor_input = mlbase.ConcatField([kind_labels, layer_labels, activation_vector])
         predictor_output = mlbase.Labels(self.words.labels())
+        hyper_parameters = ffnn.HyperParameters() \
+            .width(max(1, int(len(predictor_input) * 0.8)))
         self.predictor = ffnn.Model("predictor", ffnn.HyperParameters().width(int(len(predictor_input) * .8)), predictor_input, predictor_output, mlbase.SINGLE_LABEL)
         self.predictor_data = []
 
@@ -190,52 +203,32 @@ class NeuralNetwork:
         #   0.20 -> 1.0
         #   1.00 -> 1.0
         likelyness_opacity = lambda x: min(1.0, math.sqrt(x) + 0.5)
+        xs = adjutant.flat_map([[(kind, layer, point) for layer, point in subd.items()] for kind, subd in points.items()])
+        results = self.predictor.evaluate(xs)
         point_data = {kind: {} for kind in NeuralNetwork.MAPPED_KINDS}
-        predictions = {}
+        predictions = {kind: {} for kind in NeuralNetwork.MAPPED_KINDS}
 
-        for kind, subd in points.items():
-            predictions[kind] = {}
+        for i, x in enumerate(xs):
+            kind, layer, point = x
+            result = results[i]
+            predictions[kind][layer] = (result.prediction, likelyness_opacity(result.distribution[result.prediction]))
+            # Select the most likely several predictions for this activation vector (kind, layer, point).
+            ordered_predictions = [item[0] for item in sorted(result.distribution.items(), key=lambda item: item[1], reverse=True)]
+            likely_predictions = []
+            proceed = True
 
-            for layer, point in subd.items():
-                result = self.predictor.evaluate((kind, layer, point))
-                predictions[kind][layer] = (result.prediction, likelyness_opacity(result.distribution[result.prediction]))
-                distances = {}
-                minimum = None
-                maximum = None
+            while proceed:
+                likely_predictions += [ordered_predictions[len(likely_predictions)]]
 
-                for i, data in enumerate(self.predictor_data):
-                    if data.x[0] == kind and data.x[1] == layer:
-                        distance = geometry.distance(point, data.x[2])
-                        distances[i] = distance
+                if proceed and len(likely_predictions) >= 2:
+                    if len(likely_predictions) > min(5, len(ordered_predictions)):
+                        proceed = False
+                    else:
+                        proceed = result.distribution[likely_predictions[-2]] / 2.0 < result.distribution[likely_predictions[-1]]
 
-                        if minimum is None or distance < minimum:
-                            minimum = distance
-
-                        if maximum is None or distance > maximum:
-                            maximum = distance
-
-                half = minimum + ((maximum - minimum) / 2.0)
-
-                for item in filter(lambda item: item[1] < half, distances.items()):
-                    train_xy = self.predictor_data[item[0]]
-
-                # Select the most likely several predictions for this activation vector (kind, layer, point).
-                ordered_predictions = [item[0] for item in sorted(result.distribution.items(), key=lambda item: item[1], reverse=True)]
-                likely_predictions = []
-                proceed = True
-
-                while proceed:
-                    likely_predictions += [ordered_predictions[len(likely_predictions)]]
-
-                    if proceed and len(likely_predictions) >= 2:
-                        if len(likely_predictions) > min(5, len(ordered_predictions)):
-                            proceed = False
-                        else:
-                            proceed = result.distribution[likely_predictions[-2]] / 2.0 < result.distribution[likely_predictions[-1]]
-
-                top_predictions = {prediction: result.distribution[prediction] for prediction in likely_predictions}
-                distro = {k: 1.0 - v for k, v in nlp.regmax(top_predictions).items()}
-                point_data[kind][layer] = [(self.colour_embeddings[k], v) for k, v in distro.items()]
+            top_predictions = {prediction: result.distribution[prediction] for prediction in likely_predictions}
+            distro = {k: 1.0 - v for k, v in nlp.regmax(top_predictions).items()}
+            point_data[kind][layer] = [(self.colour_embeddings[k], v) for k, v in distro.items()]
 
         colours = {}
 
