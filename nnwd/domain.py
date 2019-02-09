@@ -21,10 +21,6 @@ from pytils.log import setup_logging, user_log
 from pytils import adjutant, check
 
 
-REFERENCES = 32
-SHORTLIST_REFERENCES = int(REFERENCES / 3)
-
-
 def create(corpus, epochs, verbose):
     words, xy_sequences = nlp.corpus_sequences(corpus)
 
@@ -37,9 +33,11 @@ def create(corpus, epochs, verbose):
 
 class NeuralNetwork:
     LAYERS = 2
-    WIDTH = 10
+    HIDDEN_WIDTH = 20
     EMBEDDING_WIDTH = 10
     OUTPUT_WIDTH = 7
+    HIDDEN_REDUCTION = 10
+    EMBEDDING_REDUCTION = EMBEDDING_WIDTH
     INSTRUMENTS = [
         "embedding",
         "remember_gates",
@@ -87,7 +85,7 @@ class NeuralNetwork:
 
     def __init__(self, words, xy_sequences, epoch_threshold):
         self.words = words
-        self.lstm = rnn.Rnn(NeuralNetwork.LAYERS, NeuralNetwork.WIDTH, NeuralNetwork.EMBEDDING_WIDTH, words)
+        self.lstm = rnn.Rnn(NeuralNetwork.LAYERS, NeuralNetwork.HIDDEN_WIDTH, NeuralNetwork.EMBEDDING_WIDTH, words)
         self.xy_sequences = [mlbase.Xy(sequence[:-1], sequence[1:]) for sequence in xy_sequences]
         self.epoch_threshold = epoch_threshold
         self.colour_embeddings = None
@@ -117,8 +115,8 @@ class NeuralNetwork:
     def _train_predictor(self):
         part_labels = mlbase.Labels(set(NeuralNetwork.LSTM_PARTS))
         layer_labels = mlbase.Labels(set(range(NeuralNetwork.LAYERS)))
-        activation_vector = mlbase.VectorField(NeuralNetwork.WIDTH)
-        predictor_input = mlbase.ConcatField([part_labels, layer_labels, activation_vector])
+        hidden_vector = mlbase.VectorField(NeuralNetwork.HIDDEN_WIDTH)
+        predictor_input = mlbase.ConcatField([part_labels, layer_labels, hidden_vector])
         predictor_output = mlbase.Labels(self.words.labels())
         hyper_parameters = ffnn.HyperParameters() \
             .width(max(1, int(len(predictor_input) * 0.8)))
@@ -143,21 +141,18 @@ class NeuralNetwork:
     def _setup_colour_embeddings(self):
         weights = []
         order = []
-        self.word_embeddings = {}
 
         for word in self.words.labels():
             weight = self.lstm.embed(word)
             weights += [weight]
             order += [word]
-            self.word_embeddings[word] = weight
 
-        assert len(self.word_embeddings) >= SHORTLIST_REFERENCES, "not enough words (%d < %d" % (len(self.word_embeddings), SHORTLIST_REFERENCES)
         self.colour_embeddings = self.find_colour_embeddings(weights, order)
 
     def find_colour_embeddings(self, weights, order):
         colour_embeddings = {}
 
-        for perplexity in [5, 10, 20, 30, 50]:
+        for perplexity in [50]:#[5, 10, 20, 30, 50]:
             tsne = TSNE(n_components=3, perplexity=perplexity)
             embeddings_3d = tsne.fit_transform(weights)
             minimum = [None, None, None]
@@ -192,8 +187,8 @@ class NeuralNetwork:
             else:
                 figure.savefig("word_colour_embedding-%d.png" % perplexity)
 
-        choice = input("choice (05, 10, 20, 30, 50): ")
-        return colour_embeddings[int(choice)]
+        #choice = input("choice (05, 10, 20, 30, 50): ")
+        return colour_embeddings[int(50)]
 
     def is_setup(self):
         return not self._background_setup.is_alive()
@@ -206,57 +201,65 @@ class NeuralNetwork:
         return "rgb(%d, %d, %d)" % embedding
 
     def compute_point_abstractions(self, points):
+        reductions = self.dimensionality_reduce(points, NeuralNetwork.HIDDEN_REDUCTION)
+
         if not self.is_setup():
             colours = {part: {layer: "none" for layer in range(NeuralNetwork.LAYERS)} for part in NeuralNetwork.LSTM_PARTS}
-            predictions = {part: {layer: (nlp.UNKNOWN, 1.0) for layer in range(NeuralNetwork.LAYERS)} for part in NeuralNetwork.LSTM_PARTS}
-            return points, colours, predictions
+            predictions = {part: {layer: None for layer in range(NeuralNetwork.LAYERS)} for part in NeuralNetwork.LSTM_PARTS}
+            return reductions, colours, predictions
 
-        # Maps roughly:
-        #   0.00 -> 0.5
-        #   0.05 -> 0.7
-        #   0.10 -> 0.8
-        #   0.20 -> 1.0
-        #   1.00 -> 1.0
-        likelyness_opacity = lambda x: min(1.0, math.sqrt(x) + 0.5)
+        predictions = self.predict_distributions(points)
+        colours = self.fit_colours(points, predictions)
+        return reductions, colours, predictions
+
+    def dimensionality_reduce(self, points, reduction_size):
+        reductions = {}
+
+        for part, subd in points.items():
+            reductions[part] = {}
+
+            for layer, point in subd.items():
+                bucket_size = math.ceil(len(point) / reduction_size)
+                reduction = []
+                offset = 0
+
+                while offset < len(point):
+                    bucket = point[offset:offset + bucket_size]
+                    average = sum(bucket) / float(len(bucket))
+                    reduction += [average]
+                    offset += bucket_size
+
+                reductions[part][layer] = reduction
+
+        return reductions
+
+    def predict_distributions(self, points):
         xs = adjutant.flat_map([[(part, layer, point) for layer, point in subd.items()] for part, subd in points.items()])
         results = self.predictor.evaluate(xs)
-        point_data = {part: {} for part in NeuralNetwork.LSTM_PARTS}
-        predictions = {part: {} for part in NeuralNetwork.LSTM_PARTS}
+        distribution_predictions = {part: {} for part in NeuralNetwork.LSTM_PARTS}
 
         for i, x in enumerate(xs):
-            part, layer, point = x
-            result = results[i]
-            predictions[part][layer] = (result.prediction, likelyness_opacity(result.distribution[result.prediction]))
-            # Select the most likely several predictions for this activation vector (part, layer, point).
-            ordered_predictions = [item[0] for item in sorted(result.distribution.items(), key=lambda item: item[1], reverse=True)]
-            likely_predictions = []
-            proceed = True
+            part, layer, _ = x
+            ordered_predictions = [item[0] for item in sorted(results[i].distribution.items(), key=lambda item: item[1], reverse=True)]
+            distribution_predictions[part][layer] = {prediction: results[i].distribution[prediction] for prediction in ordered_predictions[:3]}
 
-            while proceed:
-                likely_predictions += [ordered_predictions[len(likely_predictions)]]
+        return distribution_predictions
 
-                if proceed and len(likely_predictions) >= 2:
-                    if len(likely_predictions) > min(5, len(ordered_predictions)):
-                        proceed = False
-                    else:
-                        proceed = result.distribution[likely_predictions[-2]] / 2.0 < result.distribution[likely_predictions[-1]]
-
-            top_predictions = {prediction: result.distribution[prediction] for prediction in likely_predictions}
-            distro = {k: 1.0 - v for k, v in nlp.regmax(top_predictions).items()}
-            point_data[part][layer] = [(self.colour_embeddings[k], v) for k, v in distro.items()]
-
+    def fit_colours(self, points, predictions):
         colours = {}
+        # Make the maximum target distance (1.0) one quarter the length of a dimension in the colour space.
+        scaler = (255.0 / 4)
 
-        for part, subd in point_data.items():
+        for part in NeuralNetwork.LSTM_PARTS:
             colours[part] = {}
 
-            for layer, data in subd.items():
-                # Make the maximum target distance (1.0) one quarter the length of a dimension in the colour space.
-                scaler = (255.0 / 4)
-                fit, _ = geometry.fit_point([item[0] for item in data], [scaler * item[1] for item in data], epsilon=0.1, visualize=False)
+            for layer in range(NeuralNetwork.LAYERS):
+                invert_distribution = {k: 1.0 - v for k, v in predictions[part][layer].items()}
+                prediction_distances = [(k, v * scaler) for k, v in nlp.softmax(invert_distribution).items()]
+                fit, _ = geometry.fit_point([self.colour_embeddings[item[0]] for item in prediction_distances], [item[1] for item in prediction_distances], epsilon=0.1, visualize=False)
                 colours[part][layer] = "rgb(%d, %d, %d)" % tuple([round(i) for i in fit])
 
-        return points, colours, predictions
+        return colours
 
     def weights(self, sequence):
         stepwise_lstm = self.lstm.stepwise()
@@ -293,7 +296,14 @@ class NeuralNetwork:
             else:
                 min_max = (None, None)
 
-            hidden_state = HiddenState(point_reductions[part][layer], min_max, point_colours[part][layer], point_predictions[part][layer])
+            prediction = point_predictions[part][layer]
+
+            if prediction is None:
+                label_distribution = None
+            else:
+                label_distribution = LabelDistribution(prediction, {k: None for k, v in prediction.items()}, colour_fn=lambda word: self.word_colour(word))
+
+            hidden_state = HiddenState(point_reductions[part][layer], min_max, point_colours[part][layer], label_distribution)
             states[NeuralNetwork.SINGULAR[part]] = hidden_state
 
         return states
@@ -306,7 +316,7 @@ class NeuralNetwork:
             embedding_previous = weights_previous.embedding
             outputs_previous = [unit.output for unit in weights_previous.units]
         else:
-            zeros = HiddenState([0] * NeuralNetwork.WIDTH)
+            zeros = HiddenState([0] * NeuralNetwork.HIDDEN_WIDTH)
             embedding_previous = zeros
             outputs_previous = [zeros] * NeuralNetwork.LAYERS
 
@@ -339,47 +349,47 @@ class NeuralNetwork:
 
             explain = ((left + right) * matrix[:, column])
             vectors = {
-                right_feed: explain[NeuralNetwork.WIDTH:] if len(explain) > NeuralNetwork.WIDTH else explain
+                right_feed: explain[NeuralNetwork.HIDDEN_WIDTH:] if len(explain) > NeuralNetwork.HIDDEN_WIDTH else explain
             }
 
             if left_feed is not None:
-                vectors[left_feed] = explain[:NeuralNetwork.WIDTH]
+                vectors[left_feed] = explain[:NeuralNetwork.HIDDEN_WIDTH]
 
             return WeightExplain(vectors, bias[column])
         elif name == "cell":
-            left = [0] * NeuralNetwork.WIDTH
+            left = [0] * NeuralNetwork.HIDDEN_WIDTH
             left[column] = weights.units[layer].forget.vector[column]
             left_feed = "forget_hat-%d" % layer
-            right = [0] * NeuralNetwork.WIDTH
+            right = [0] * NeuralNetwork.HIDDEN_WIDTH
             right[column] = weights.units[layer].remember.vector[column]
             right_feed = "remember_hat-%d" % layer
             return WeightExplain({left_feed: left, right_feed: right}, 0)
         elif name == "forget":
-            explain = [0] * NeuralNetwork.WIDTH
+            explain = [0] * NeuralNetwork.HIDDEN_WIDTH
             explain[column] = weights.units[layer].cell_previous.vector[column] * weights.units[layer].forget_gate.vector[column]
             return WeightExplain({"cell_previous-%d" % layer: explain}, 0)
         elif name == "remember":
-            explain = [0] * NeuralNetwork.WIDTH
+            explain = [0] * NeuralNetwork.HIDDEN_WIDTH
             explain[column] = weights.units[layer].input_hat.vector[column] * weights.units[layer].remember_gate.vector[column]
             return WeightExplain({"input_hat-%d" % layer: explain}, 0)
         elif name == "output":
-            explain = [0] * NeuralNetwork.WIDTH
+            explain = [0] * NeuralNetwork.HIDDEN_WIDTH
             explain[column] = weights.units[layer].cell_hat.vector[column] * weights.units[layer].output_gate.vector[column]
             return WeightExplain({"cell_hat-%d" % layer: explain}, 0)
         elif name == "remember_hat":
-            explain = [0] * NeuralNetwork.WIDTH
+            explain = [0] * NeuralNetwork.HIDDEN_WIDTH
             explain[column] = weights.units[layer].remember.vector[column]
             return WeightExplain({"remember-%d" % layer: explain}, 0)
         elif name == "forget_hat":
-            explain = [0] * NeuralNetwork.WIDTH
+            explain = [0] * NeuralNetwork.HIDDEN_WIDTH
             explain[column] = weights.units[layer].forget.vector[column]
             return WeightExplain({"forget-%d" % layer: explain}, 0)
         elif name == "cell_hat":
-            explain = [0] * NeuralNetwork.WIDTH
+            explain = [0] * NeuralNetwork.HIDDEN_WIDTH
             explain[column] = weights.units[layer].cell.vector[column]
             return WeightExplain({"cell-%d" % layer: explain}, 0)
         elif name == "cell_previous":
-            explain = [0] * NeuralNetwork.WIDTH
+            explain = [0] * NeuralNetwork.HIDDEN_WIDTH
             explain[column] = weights.units[layer].cell_previous.vector[column]
             return WeightExplain({"cell_previous-%d" % layer: explain}, 0)
         else:

@@ -31,100 +31,7 @@ $(document).ready(function () {
         .style("width", total_width + (total_width / 5) - 10)
         .style('height', layer_height * 25);
 
-    svg.append("text")
-        .attr("x", x_margin + 28)
-        .attr("y", (y_margin / 2))
-        .style("font-size", "17px")
-        .style("font-weight", "bold")
-        .style("fill", black)
-        .text("Word In");
-    svg.append("text")
-        .attr("x", (x_margin * 2) + input_width + 5)
-        .attr("y", (y_margin / 2))
-        .style("font-size", "17px")
-        .style("font-weight", "bold")
-        .style("fill", black)
-        .text("Embedding");
-    svg.append("text")
-        .attr("x", (x_margin * 2) + input_width + (w * 3) + 15)
-        .attr("y", (y_margin / 2))
-        .style("font-size", "17px")
-        .style("font-weight", "bold")
-        .style("fill", black)
-        .text("Forget (1)");
-    svg.append("text")
-        .attr("x", (x_margin * 2) + input_width + (w * 7))
-        .attr("y", (y_margin / 2))
-        .style("font-size", "17px")
-        .style("font-weight", "bold")
-        .style("fill", black)
-        .text("Remember (1)");
-    svg.append("text")
-        .attr("x", (x_margin * 2) + input_width + (w * 11) + 22)
-        .attr("y", (y_margin / 2))
-        .style("font-size", "17px")
-        .style("font-weight", "bold")
-        .style("fill", black)
-        .text("Cell (1)");
-    svg.append("text")
-        .attr("x", (x_margin * 2) + input_width + (w * 15) + 15)
-        .attr("y", (y_margin / 2))
-        .style("font-size", "17px")
-        .style("font-weight", "bold")
-        .style("fill", black)
-        .text("Output (1)");
-    svg.append("text")
-        .attr("x", (x_margin * 2) + input_width + (w * 19) + 16)
-        .attr("y", (y_margin / 2))
-        .style("font-size", "17px")
-        .style("font-weight", "bold")
-        .style("fill", black)
-        .text("Forget (2)");
-    svg.append("text")
-        .attr("x", (x_margin * 2) + input_width + (w * 23) + 2)
-        .attr("y", (y_margin / 2))
-        .style("font-size", "17px")
-        .style("font-weight", "bold")
-        .style("fill", black)
-        .text("Remember (2)");
-    svg.append("text")
-        .attr("x", (x_margin * 2) + input_width + (w * 27) + 25)
-        .attr("y", (y_margin / 2))
-        .style("font-size", "17px")
-        .style("font-weight", "bold")
-        .style("fill", black)
-        .text("Cell (2)");
-    svg.append("text")
-        .attr("x", (x_margin * 2) + input_width + (w * 31) + 14)
-        .attr("y", (y_margin / 2))
-        .style("font-size", "17px")
-        .style("font-weight", "bold")
-        .style("fill", black)
-        .text("Output (2)");
-    svg.append("text")
-        .attr("x", (x_margin * 2) + input_width + (2 * w * 17) + w + 5)
-        .attr("y", (y_margin / 2))
-        .style("font-size", "17px")
-        .style("font-weight", "bold")
-        .style("fill", black)
-        .text("Softmax");
-    svg.append("text")
-        .attr("x", (x_margin * 2) + input_width + (2 * w * 19) + 28)
-        .attr("y", (y_margin / 2))
-        .style("font-size", "17px")
-        .style("font-weight", "bold")
-        .style("fill", black)
-        .text("Word Out");
-    svg.append("line")
-        .attr("x1", 0)
-        .attr("x2", total_width + (total_width / 5) - 10)
-        .attr("y1", (y_margin * 4 / 5) - 2)
-        .attr("y2", (y_margin * 4 / 5) - 2)
-        .attr("stroke", black)
-        .attr("stroke-width", 1);
-
     // arrow head definition
-
     svg.insert('defs', ':first-child')
         .append('marker')
         .attr('id', 'arrow')
@@ -252,7 +159,7 @@ function drawTimestep(fake_timestep, data) {
     // Draw softmax
     /*drawHline(timestep, x_offset + (data.units.length * w * 17), y_offset + (h * 2 / 2),
         x_offset + (data.units.length * w * 17) + (w * 3 / 2), y_offset + (h * 2 / 2));*/
-    drawSoftmax(getGeometry(timestep, "softmax"), data.softmax);
+    drawSoftmax(getGeometry(timestep, "softmax"), data.softmax, 1.0);
 
     svg.append("rect")
         .attr("class", "timestep-" + timestep)
@@ -272,10 +179,10 @@ function drawTimestep(fake_timestep, data) {
 }
 
 function drawHiddenState(geometry, wv, class_suffix) {
-    drawStateWidget(geometry, wv.minimum, wv.maximum, wv.vector, wv.colour, wv.prediction, class_suffix);
+    drawStateWidget(geometry, wv.minimum, wv.maximum, wv.vector, wv.colour, wv.predictions, class_suffix);
 }
 
-function drawStateWidget(geometry, min, max, vector, colour, prediction, class_suffix) {
+function drawStateWidget(geometry, min, max, vector, colour, predictions, class_suffix) {
     if (min >= max) {
         throw "min " + min + " cannot exceed max " + max;
     }
@@ -330,16 +237,14 @@ function drawStateWidget(geometry, min, max, vector, colour, prediction, class_s
             .text(geometry.name);
     }
 
-    /*if (prediction != null) {
-        svg.append("text")
-            .attr("class", "timestep-" + geometry.timestep + " " + class_suffix)
-            .attr("x", geometry.x + (geometry.width / 2.0) + 2.5)
-            .attr("y", geometry.y - 2)
-            .style("font-size", "12px")
-            .style("fill", "black")
-            .style("opacity", prediction[1])
-            .text(prediction[0]);
-    }*/
+    if (predictions != null) {
+        var predictionGeometry = Object.assign({}, geometry);
+        predictionGeometry.x += w + (w / 4);
+        predictionGeometry.y += (h * 1 / 4);
+        predictionGeometry.width = (w / 2);
+        predictionGeometry.height = (h / 2);
+        drawSoftmax(predictionGeometry, predictions, 0.5);
+    }
 
     // boundary box
     svg.append("rect")
@@ -413,7 +318,7 @@ function drawStateWidget(geometry, min, max, vector, colour, prediction, class_s
             })
             .attr("y2", function(d) { return y(d.position) + macro_y.bandwidth() + 1; })
             .attr("stroke", black)
-            .attr("stroke-width", stroke_width * 1.5);
+            .attr("stroke-width", stroke_width);
     /*if (class_suffix == null) {
         svg.selectAll(".bar")
             .data(vector)
@@ -460,7 +365,7 @@ function drawStateWidget(geometry, min, max, vector, colour, prediction, class_s
     }*/
 }
 
-function drawSoftmax(geometry, labelWeightVector) {
+function drawSoftmax(geometry, labelWeightVector, opacity) {
     var min = labelWeightVector.minimum;
     var max = labelWeightVector.maximum;
     var vector = labelWeightVector.vector;
@@ -492,6 +397,7 @@ function drawSoftmax(geometry, labelWeightVector) {
             .attr("y", geometry.y - 2)
             .style("font-size", "12px")
             .style("fill", "red")
+            .style("opacity", "opacity")
             .text(geometry.name);
     }
 
@@ -504,7 +410,8 @@ function drawSoftmax(geometry, labelWeightVector) {
         .attr("height", geometry.height - 1)
         .attr("stroke", light_grey)
         .attr("stroke-width", 1)
-        .attr("fill", "none");
+        .attr("fill", "none")
+        .style("opacity", opacity);
     svg.append("line")
         .attr("class", "timestep-" + geometry.timestep)
         .attr("x1", x(0))
@@ -512,7 +419,8 @@ function drawSoftmax(geometry, labelWeightVector) {
         .attr("x2", x(0))
         .attr("y2", y.range()[1] + 2)   // Make the center line stand out slightly by pushing it beyond the rectangle.
         .attr("stroke", black)
-        .attr("stroke-width", stroke_width);
+        .attr("stroke-width", stroke_width)
+        .style("opacity", opacity);
     svg.selectAll(".bar")
         .data(vector)
         .enter()
@@ -536,8 +444,23 @@ function drawSoftmax(geometry, labelWeightVector) {
                 }
 
                 return "none";
-            });
+            })
+            .style("opacity", opacity);
     svg.selectAll(".bar")
+        .data(vector)
+        .enter()
+            .append("text")
+            .attr("class", "timestep-" + geometry.timestep)
+            .attr("x", function (d) {
+                return geometry.x + Math.abs(x(d.value) - x(min)) + 5;
+            })
+            .attr("y", function (d) {
+                return y(d.position) + (y.step() / 2) + 4;
+            })
+            .style("font-size", "12px")
+            .style("opacity", opacity)
+            .text(function (d) { return d.label; });
+    /*svg.selectAll(".bar")
         .data(vector)
         .enter()
             .append("rect")
@@ -577,20 +500,7 @@ function drawSoftmax(geometry, labelWeightVector) {
                             drawExplain(geometry.timestep, source, we, null);
                         });
                 }
-            });
-    svg.selectAll(".bar")
-        .data(vector)
-        .enter()
-            .append("text")
-            .attr("class", "timestep-" + geometry.timestep)
-            .attr("x", function (d) {
-                return geometry.x + Math.abs(x(d.value) - x(min)) + 5;
-            })
-            .attr("y", function (d) {
-                return y(d.position) + (y.step() / 2) + 4;
-            })
-            .style("font-size", "12px")
-            .text(function (d) { return d.label; });
+            });*/
 }
 
 function drawExplain(timestep, source, we, colour) {
@@ -1198,33 +1108,33 @@ function drawWeightsFromSequence(timestep) {
 function getGeometry(timestep, name, layer) {
     var x_offset = (x_margin * 2) + input_width;
     var y_offset = y_margin + (timestep * layer_height);
-    var layer_offset = layer * w * 16;
+    var layer_offset = layer * w * 14;
     var a = {width: w, timestep: timestep, name: name + (layer == null ? "" : "-" + layer)};
     var b;
 
     switch (name) {
         case "embedding":
-            b = {x: x_offset + w, y: y_offset + (h / 2), height: h};
+            b = {x: x_offset + w, y: y_offset + (h * 3 / 4), height: h};
             break;
         case "cell_previous":
-            b = {x: x_offset + (w * 3) + (w / 2) + layer_offset, y: y_offset, height: h};
+            b = {x: x_offset + (w * 9 / 2) + layer_offset, y: y_offset, height: h};
             break;
-        case "forget_gate":
+        /*case "forget_gate":
             b = {x: x_offset + (w * 3) + (w / 2) + layer_offset, y: y_offset + (h * 1 / 2) + (operator_height / 2), height: operand_height};
-            break;
+            break;*/
         case "forget":
-            b = {x: x_offset + (w * 5) + layer_offset, y: y_offset, height: h};
+            b = {x: x_offset + (w * 8) + layer_offset, y: y_offset, height: h};
             break;
         case "input_hat":
-            b = {x: x_offset + (w * 7) + (w / 2) + layer_offset, y: y_offset + h, height: h};
+            b = {x: x_offset + (w * 9 / 2) + layer_offset, y: y_offset + (h * 3 / 2), height: h};
             break;
-        case "remember_gate":
+        /*case "remember_gate":
             b = {x: x_offset + (w * 7) + (w / 2) + layer_offset, y: y_offset + (h * 3 / 2) + (operator_height / 2), height: operand_height};
-            break;
+            break;*/
         case "remember":
-            b = {x: x_offset + (w * 9) + layer_offset, y: y_offset + h, height: h};
+            b = {x: x_offset + (w * 8) + layer_offset, y: y_offset + (h * 3 / 2), height: h};
             break;
-        case "forget_hat":
+        /*case "forget_hat":
             b = {x: x_offset + (w * 11) + (w / 2) + layer_offset, y: y_offset + (h * 1 / 2), height: operand_height};
             break;
         case "remember_hat":
@@ -1232,19 +1142,19 @@ function getGeometry(timestep, name, layer) {
             break;
         case "cell":
             b = {x: x_offset + (w * 13) + layer_offset, y: y_offset + (h * 1 / 2), height: h};
-            break;
+            break;*/
         case "cell_hat":
-            b = {x: x_offset + (w * 15) + (w / 2) + layer_offset, y: y_offset + (h / 2), height: h};
+            b = {x: x_offset + (w * 11) + (w / 2) + layer_offset, y: y_offset + (h * 3 / 4), height: h};
             break;
-        case "output_gate":
+        /*case "output_gate":
             b = {x: x_offset + (w * 15) + (w / 2) + layer_offset, y: y_offset + h + (operator_height / 2), height: operand_height};
-            break;
+            break;*/
         case "output":
-            b = {x: x_offset + (w * 17) + layer_offset, y: y_offset + (h / 2), height: h};
+            b = {x: x_offset + (w * 15) + layer_offset, y: y_offset + (h * 3 / 4), height: h};
             break;
         case "softmax":
             // For the 2 layers v
-            b = {x: x_offset + (2 * w * 17) + (w * 3 / 2), y: y_offset + (h / 2), height: h};
+            b = {x: x_offset + (2 * w * 17) + (w * 3 / 2), y: y_offset + (h * 3 / 4), height: h};
             break;
     }
 
