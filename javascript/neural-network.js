@@ -1,12 +1,17 @@
 
+var MEMORY_CHIP_HEIGHT = 5;
+var MEMORY_CHIP_WIDTH = 2;
 var total_width = 1200;
-var layer_height = 200;
+var layer_height = 225;
 var input_width = 100;
 var x_margin = 25;
 var y_margin = 50;
 var height = 20;
 var w = 30;
 var h = layer_height / 3.0;
+if ((h / MEMORY_CHIP_HEIGHT) != (w / MEMORY_CHIP_WIDTH)) {
+    throw "chips aren't square (" + (w / MEMORY_CHIP_WIDTH) + ", " + (h / MEMORY_CHIP_HEIGHT) + ")";
+}
 var operand_height = (h * 2.0 / 5.0);
 var operator_height = (h - (operand_height * 2));
 var black = "black";
@@ -186,68 +191,68 @@ function drawTimestep(fake_timestep, data) {
     }
 
     //draw embedding
-    drawWeightVector(getGeometry(timestep, "embedding"), data.embedding);
+    drawHiddenState(getGeometry(timestep, "embedding"), data.embedding);
 
     // Draw units
     for (var u = 0; u < data.units.length; u++) {
         var unit_offset = u * w * 16;
 
-        drawVline(timestep, x_offset + (w * 13) + (w / 2) + unit_offset, y_margin + (timestep * layer_height) + (h * 3 / 2),
-            x_offset + (w * 4) + unit_offset, y_offset + layer_height);
+        /*drawVline(timestep, x_offset + (w * 13) + (w / 2) + unit_offset, y_margin + (timestep * layer_height) + (h * 3 / 2),
+            x_offset + (w * 4) + unit_offset, y_offset + layer_height);*/
 
-        drawWeightVector(getGeometry(timestep, "cell_previous_hat", u), data.units[u].cell_previous_hat);
-        drawMultiplication(timestep, x_offset + (w * 3) + (w) - (operator_height / 2) + unit_offset, y_offset + (h * 1 / 2) - (operator_height / 2), operator_height,
+        drawHiddenState(getGeometry(timestep, "cell_previous_hat", u), data.units[u].cell_previous_hat);
+        /*drawMultiplication(timestep, x_offset + (w * 3) + (w) - (operator_height / 2) + unit_offset, y_offset + (h * 1 / 2) - (operator_height / 2), operator_height,
             [data.units[u].cell_previous_hat, data.units[u].forget_gate, data.units[u].forget], u, null);
         var forget_gate = getGeometry(timestep, "forget_gate", u);
-        drawWeightVector(forget_gate, data.units[u].forget_gate);
+        drawHiddenState(forget_gate, data.units[u].forget_gate);
         drawGate(timestep, forget_gate.x - w + 6, forget_gate.y + (operand_height / 4), w * 2 / 4);
         drawHline(timestep, x_offset + (w * 4) + (operator_height / 2) + unit_offset, y_offset + (h / 2),
-            x_offset + (w * 5) + unit_offset, y_offset + (h / 2));
-        drawWeightVector(getGeometry(timestep, "forget", u), data.units[u].forget);
-        drawHline(timestep, x_offset + (w * 2) + unit_offset, y_offset + h,
+            x_offset + (w * 5) + unit_offset, y_offset + (h / 2));*/
+        drawHiddenState(getGeometry(timestep, "forget", u), data.units[u].forget);
+        /*drawHline(timestep, x_offset + (w * 2) + unit_offset, y_offset + h,
             x_offset + (w * 7) + (w / 2) + unit_offset, y_offset + h + (operand_height / 2),
-            x_offset + (w * 2) + unit_offset + ((w * 3 / 2) / 2), y_offset + h + (operand_height / 4));
+            x_offset + (w * 2) + unit_offset + ((w * 3 / 2) / 2), y_offset + h + (operand_height / 4));*/
 
-        drawVline(timestep, x_offset + (w * 17) + (w / 2) + unit_offset, y_margin + (timestep * layer_height) + (h * 3 / 2),
-            x_offset + (w * 8) + unit_offset, y_offset + h + layer_height);
+        /*drawVline(timestep, x_offset + (w * 17) + (w / 2) + unit_offset, y_margin + (timestep * layer_height) + (h * 3 / 2),
+            x_offset + (w * 8) + unit_offset, y_offset + h + layer_height);*/
 
-        drawWeightVector(getGeometry(timestep, "input_hat", u), data.units[u].input_hat);
-        drawMultiplication(timestep, x_offset + (w * 7) + (w) - (operator_height / 2) + unit_offset, y_offset + (h * 3 / 2) - (operator_height / 2), operator_height,
+        drawHiddenState(getGeometry(timestep, "input_hat", u), data.units[u].input_hat);
+        /*drawMultiplication(timestep, x_offset + (w * 7) + (w) - (operator_height / 2) + unit_offset, y_offset + (h * 3 / 2) - (operator_height / 2), operator_height,
             [data.units[u].input_hat, data.units[u].remember_gate, data.units[u].remember], u, null);
         var remember_gate = getGeometry(timestep, "remember_gate", u);
-        drawWeightVector(remember_gate, data.units[u].remember_gate);
+        drawHiddenState(remember_gate, data.units[u].remember_gate);
         drawGate(timestep, remember_gate.x - w + 6, remember_gate.y + (operand_height / 4), w * 2 / 4);
         drawHline(timestep, x_offset + (w * 8) + (operator_height / 2) + unit_offset, y_offset + (h * 3 / 2),
-            x_offset + (w * 9) + unit_offset, y_offset + (h * 3 / 2));
-        drawWeightVector(getGeometry(timestep, "remember", u), data.units[u].remember);
-        drawHline(timestep, x_offset + (w * 6) + unit_offset, y_offset + (h / 2),
+            x_offset + (w * 9) + unit_offset, y_offset + (h * 3 / 2));*/
+        drawHiddenState(getGeometry(timestep, "remember", u), data.units[u].remember);
+        /*drawHline(timestep, x_offset + (w * 6) + unit_offset, y_offset + (h / 2),
             x_offset + (w * 11) + (w / 2) + unit_offset, y_offset + (h / 2) + (operand_height / 2));
-        drawWeightVector(getGeometry(timestep, "forget_hat", u), data.units[u].forget);
+        drawHiddenState(getGeometry(timestep, "forget_hat", u), data.units[u].forget);
         drawHline(timestep, x_offset + (w * 10) + unit_offset, y_offset + (h * 3 / 2),
             x_offset + (w * 11) + (w / 2) + unit_offset, y_offset + h + (operand_height / 2) + (operator_height / 2));
         drawAddition(timestep, x_offset + (w * 11) + (w) - (operator_height / 2) + unit_offset, y_offset + (h) - (operator_height / 2), operator_height,
             [data.units[u].forget, data.units[u].remember, data.units[u].cell], u, null);
-        drawWeightVector(getGeometry(timestep, "remember_hat", u), data.units[u].remember);
+        drawHiddenState(getGeometry(timestep, "remember_hat", u), data.units[u].remember);
         drawHline(timestep, x_offset + (w * 12) + (operator_height / 2) + unit_offset, y_offset + (h * 2 / 2),
             x_offset + (w * 13) + unit_offset, y_offset + (h * 2 / 2));
-        drawWeightVector(getGeometry(timestep, "cell", u), data.units[u].cell);
+        drawHiddenState(getGeometry(timestep, "cell", u), data.units[u].cell);
         drawHline(timestep, x_offset + (w * 14) + unit_offset, y_offset + h,
-            x_offset + (w * 15) + (w / 2) + unit_offset, y_offset + (h / 2) + (operand_height / 2));
-        drawWeightVector(getGeometry(timestep, "cell_hat", u), data.units[u].cell_hat);
-        drawMultiplication(timestep, x_offset + (w * 15) + (w) - (operator_height / 2) + unit_offset, y_offset + (h) - (operator_height / 2), operator_height,
+            x_offset + (w * 15) + (w / 2) + unit_offset, y_offset + (h / 2) + (operand_height / 2));*/
+        drawHiddenState(getGeometry(timestep, "cell_hat", u), data.units[u].cell_hat);
+        /*drawMultiplication(timestep, x_offset + (w * 15) + (w) - (operator_height / 2) + unit_offset, y_offset + (h) - (operator_height / 2), operator_height,
             [data.units[u].cell_hat, data.units[u].output_gate, data.units[u].output], u, null);
         var output_gate = getGeometry(timestep, "output_gate", u);
-        drawWeightVector(output_gate, data.units[u].output_gate);
+        drawHiddenState(output_gate, data.units[u].output_gate);
         drawGate(timestep, output_gate.x - w + 6, output_gate.y + (operand_height / 4), w * 2 / 4);
         drawHline(timestep, x_offset + (w * 16) + (operator_height / 2) + unit_offset, y_offset + (h * 2 / 2),
-            x_offset + (w * 17) + unit_offset, y_offset + (h * 2 / 2));
-        drawWeightVector(getGeometry(timestep, "output", u), data.units[u].output);
+            x_offset + (w * 17) + unit_offset, y_offset + (h * 2 / 2));*/
+        drawHiddenState(getGeometry(timestep, "output", u), data.units[u].output);
     }
 
     // Draw softmax
-    drawHline(timestep, x_offset + (data.units.length * w * 17), y_offset + (h * 2 / 2),
-        x_offset + (data.units.length * w * 17) + (w * 3 / 2), y_offset + (h * 2 / 2));
-    drawLabelWeightVector(getGeometry(timestep, "softmax"), data.softmax);
+    /*drawHline(timestep, x_offset + (data.units.length * w * 17), y_offset + (h * 2 / 2),
+        x_offset + (data.units.length * w * 17) + (w * 3 / 2), y_offset + (h * 2 / 2));*/
+    drawSoftmax(getGeometry(timestep, "softmax"), data.softmax);
 
     svg.append("rect")
         .attr("class", "timestep-" + timestep)
@@ -266,15 +271,11 @@ function drawTimestep(fake_timestep, data) {
         .text(data.y_word);
 }
 
-function drawWeightVector(geometry, wv, class_suffix) {
-    drawWeightWidget(geometry, wv.minimum, wv.maximum, wv.vector, wv.colour, wv.prediction, class_suffix);
+function drawHiddenState(geometry, wv, class_suffix) {
+    drawStateWidget(geometry, wv.minimum, wv.maximum, wv.vector, wv.colour, wv.prediction, class_suffix);
 }
 
-function drawLabelWeightVector(geometry, lwv) {
-    drawWeightWidget(geometry, lwv.minimum, lwv.maximum, lwv.vector, null, null, null);
-}
-
-function drawWeightWidget(geometry, min, max, vector, colour, prediction, class_suffix) {
+function drawStateWidget(geometry, min, max, vector, colour, prediction, class_suffix) {
     if (min >= max) {
         throw "min " + min + " cannot exceed max " + max;
     }
@@ -299,13 +300,25 @@ function drawWeightWidget(geometry, min, max, vector, colour, prediction, class_
 
     var stroke_width = 1;
 
-    var y = d3.scaleBand()
-        .domain(vector.map(function (d) { return d.position; }))
+    var macro_y = d3.scaleBand()
+        .padding(0.2)
+        .domain(Array.from(Array(MEMORY_CHIP_HEIGHT).keys()))
         .range([geometry.y + (stroke_width / 2.0), geometry.y + geometry.height - (stroke_width / 2.0)]);
+    function y(position) {
+        return macro_y(position % MEMORY_CHIP_HEIGHT);
+    }
 
-    var x = d3.scaleLinear()
-        .domain([min, max])
+    var macro_x = d3.scaleBand()
+        .padding(0.2)
+        .domain(Array.from(Array(MEMORY_CHIP_WIDTH).keys()))
         .range([geometry.x + (stroke_width / 2.0), geometry.x + geometry.width - (stroke_width / 2.0)]);
+    function x(position) {
+        return macro_x(Math.floor(position / MEMORY_CHIP_HEIGHT));
+    }
+
+    var magnitude = d3.scaleLinear()
+        .domain([min, max])
+        .range([0, macro_x.bandwidth()]);
 
     if (debug) {
         svg.append("text")
@@ -317,7 +330,7 @@ function drawWeightWidget(geometry, min, max, vector, colour, prediction, class_
             .text(geometry.name);
     }
 
-    if (prediction != null) {
+    /*if (prediction != null) {
         svg.append("text")
             .attr("class", "timestep-" + geometry.timestep + " " + class_suffix)
             .attr("x", geometry.x + (geometry.width / 2.0) + 2.5)
@@ -326,7 +339,7 @@ function drawWeightWidget(geometry, min, max, vector, colour, prediction, class_
             .style("fill", "black")
             .style("opacity", prediction[1])
             .text(prediction[0]);
-    }
+    }*/
 
     // boundary box
     svg.append("rect")
@@ -338,41 +351,60 @@ function drawWeightWidget(geometry, min, max, vector, colour, prediction, class_
         .attr("stroke", light_grey)
         .attr("stroke-width", 1)
         .attr("fill", "none");
-    svg.append("line")
-        .attr("class", "timestep-" + geometry.timestep + " " + class_suffix)
-        .attr("x1", x(0))
-        .attr("y1", y.range()[0] - 2)   // Make the center line stand out slightly by pushing it beyond the rectangle.
-        .attr("x2", x(0))
-        .attr("y2", y.range()[1] + 2)   // Make the center line stand out slightly by pushing it beyond the rectangle.
-        .attr("stroke", black)
-        .attr("stroke-width", stroke_width);
-    // append the rectangles for the bar chart
-    //var weights = "[" + vector.map(v => v.value).join(",") + "]";
-    svg.selectAll(".bar")
+    svg.selectAll(".chip")
         .data(vector)
         .enter()
             .append("rect")
             .attr("class", "timestep-" + geometry.timestep + " " + class_suffix)
             .attr("x", function (d) {
-                return x(Math.min(0, d.value));
+                var base_x = x(d.position);
+
+                if (d.value >= 0) {
+                    return base_x;
+                } else {
+                    return base_x + (macro_x.bandwidth() - magnitude(d.value));
+                }
             })
             .attr("y", function (d) {
                 return y(d.position);
             })
             .attr("width", function (d) {
-                return Math.abs(x(Math.min(0, d.value)) - x(Math.max(0, d.value)));
+                return magnitude(d.value);
             })
-            .attr("height", y.bandwidth())
-            .attr("stroke", black)
+            .attr("height", macro_y.bandwidth())
+            .attr("stroke", "none")
             .attr("stroke-width", stroke_width)
             .attr("fill", function(d) {
-                if ("colour" in d) {
-                    return d.colour;
-                }
-
-                return colour;
+                return colour == "none" ? light_grey : colour;
             });
-    if (class_suffix == null) {
+    svg.selectAll(".chip")
+        .data(vector)
+        .enter()
+            .append("line")
+            .attr("class", "timestep-" + geometry.timestep + " " + class_suffix)
+            .attr("x1", function(d) {
+                var base_x = x(d.position);
+
+                if (d.value >= 0) {
+                    return base_x;
+                } else {
+                    return base_x + macro_x.bandwidth();
+                }
+            })
+            .attr("y1", function(d) { return y(d.position) - 1; })
+            .attr("x2", function(d) {
+                var base_x = x(d.position);
+
+                if (d.value >= 0) {
+                    return base_x;
+                } else {
+                    return base_x + macro_x.bandwidth();
+                }
+            })
+            .attr("y2", function(d) { return y(d.position) + macro_y.bandwidth() + 1; })
+            .attr("stroke", black)
+            .attr("stroke-width", stroke_width);
+    /*if (class_suffix == null) {
         svg.selectAll(".bar")
             .data(vector)
             .enter()
@@ -415,12 +447,132 @@ function drawWeightWidget(geometry, min, max, vector, colour, prediction, class_
                             });
                     }
                 });
+    }*/
+}
+
+function drawSoftmax(geometry, labelWeightVector) {
+    var min = labelWeightVector.minimum;
+    var max = labelWeightVector.maximum;
+    var vector = labelWeightVector.vector;
+
+    var found_min = d3.min(vector, function(d) { return d.value; });
+    if (found_min < min) {
+        throw "found value " + found_min + " exceeding min " + min;
     }
+
+    var found_max = d3.max(vector, function(d) { return d.value; });
+    if (found_max > max) {
+        throw "found value " + found_max + " exceeding max " + max;
+    }
+
+    var stroke_width = 1;
+
+    var y = d3.scaleBand()
+        .domain(vector.map(function (d) { return d.position; }))
+        .range([geometry.y + (stroke_width / 2.0), geometry.y + geometry.height - (stroke_width / 2.0)]);
+
+    var x = d3.scaleLinear()
+        .domain([min, max])
+        .range([geometry.x + (stroke_width / 2.0), geometry.x + geometry.width - (stroke_width / 2.0)]);
+
+    if (debug) {
+        svg.append("text")
+            .attr("class", "timestep-" + geometry.timestep)
+            .attr("x", geometry.x)
+            .attr("y", geometry.y - 2)
+            .style("font-size", "12px")
+            .style("fill", "red")
+            .text(geometry.name);
+    }
+
+    // boundary box
+    svg.append("rect")
+        .attr("class", "timestep-" + geometry.timestep)
+        .attr("x", geometry.x + 0.5)
+        .attr("y", geometry.y + 0.5)
+        .attr("width", geometry.width - 1)
+        .attr("height", geometry.height - 1)
+        .attr("stroke", light_grey)
+        .attr("stroke-width", 1)
+        .attr("fill", "none");
+    svg.append("line")
+        .attr("class", "timestep-" + geometry.timestep)
+        .attr("x1", x(0))
+        .attr("y1", y.range()[0] - 2)   // Make the center line stand out slightly by pushing it beyond the rectangle.
+        .attr("x2", x(0))
+        .attr("y2", y.range()[1] + 2)   // Make the center line stand out slightly by pushing it beyond the rectangle.
+        .attr("stroke", black)
+        .attr("stroke-width", stroke_width);
+    svg.selectAll(".bar")
+        .data(vector)
+        .enter()
+            .append("rect")
+            .attr("class", "timestep-" + geometry.timestep)
+            .attr("x", function (d) {
+                return x(Math.min(0, d.value));
+            })
+            .attr("y", function (d) {
+                return y(d.position);
+            })
+            .attr("width", function (d) {
+                return Math.abs(x(Math.min(0, d.value)) - x(Math.max(0, d.value)));
+            })
+            .attr("height", y.bandwidth())
+            .attr("stroke", black)
+            .attr("stroke-width", stroke_width)
+            .attr("fill", function(d) {
+                if ("colour" in d) {
+                    return d.colour;
+                }
+
+                return "none";
+            });
+    svg.selectAll(".bar")
+        .data(vector)
+        .enter()
+            .append("rect")
+            .attr("id", function(d) { return "hoverbar-" + geometry.timestep + "-" + geometry.name + "-" + d.position; })
+            .attr("class", "timestep-" + geometry.timestep)
+            .attr("x", geometry.x + 1.5)
+            .attr("y", function(d) { return y(d.position) + 1; })
+            .attr("width", geometry.width - 3)
+            .attr("height", y.bandwidth() - 2)
+            .attr("stroke", black)
+            .attr("stroke-width", 1)
+            .style("opacity", 0)
+            .on("mouseover", function(d) {
+                if (geometry.name != "embedding" && (geometry.timestep > 0 || !geometry.name.startsWith("cell_previous_hat"))) {
+                    d3.select("#hoverbar-" + geometry.timestep + "-" + geometry.name + "-" + d.position)
+                        .style("opacity", 0.5);
+                }
+            })
+            .on("mouseout", function(d) {
+                if (geometry.name != "embedding" && (geometry.timestep > 0 || !geometry.name.startsWith("cell_previous_hat"))) {
+                    d3.select("#hoverbar-" + geometry.timestep + "-" + geometry.name + "-" + d.position)
+                        .style("opacity", 0);
+                }
+            })
+            .on("click", function(d) {
+                var source = {
+                    x: geometry.x + 1,
+                    y: y(d.position) + 1,
+                    width: geometry.width - 2,
+                    height: y.bandwidth() - 2,
+                }
+                if (geometry.name != "embedding" && (geometry.timestep > 0 || !geometry.name.startsWith("cell_previous_hat"))) {
+                    var slice = sequence.slice(0, geometry.timestep + 1);
+                    console.log(geometry.name);
+                    d3.json("weight-explain?" + slice.map(s => "sequence=" + encodeURI(s)).join("&") + "&name=" + geometry.name + "&column=" + d.column)
+                        .get(function (error, we) {
+                            drawExplain(geometry.timestep, source, we, null);
+                        });
+                }
+            });
     svg.selectAll(".bar")
         .data(vector)
         .enter()
             .append("text")
-            .attr("class", "timestep-" + geometry.timestep + " " + class_suffix)
+            .attr("class", "timestep-" + geometry.timestep)
             .attr("x", function (d) {
                 return geometry.x + Math.abs(x(d.value) - x(min)) + 5;
             })
@@ -900,7 +1052,7 @@ function drawZoom(timestep, x_middle, addition, parts) {
         .attr("stroke", black)
         .attr("stroke-width", stroke_width);
     var geometry = {width: w * 1.5, timestep: timestep, x: x_offset + operator_height - 2, y: y_offset + (h * 0.25), height: h * 1.5};
-    drawWeightVector(geometry, parts[0], zoom_class);
+    drawHiddenState(geometry, parts[0], zoom_class);
 
     if (addition) {
         drawAddition(timestep, geometry.x + (w * 1.5) + 1, y_offset + (h) - (operator_height / 2), operator_height, null, zoom_class);
@@ -909,10 +1061,10 @@ function drawZoom(timestep, x_middle, addition, parts) {
     }
 
     geometry.x += (w * 1.5) + operator_height + 2;
-    drawWeightVector(geometry, parts[1], zoom_class);
+    drawHiddenState(geometry, parts[1], zoom_class);
     drawEquals(timestep, geometry.x + (w * 1.5) + 1, y_offset + (h) - (operator_height / 2), operator_height, zoom_class);
     geometry.x += (w * 1.5) + operator_height + 2;
-    drawWeightVector(geometry, parts[2], zoom_class);
+    drawHiddenState(geometry, parts[2], zoom_class);
 }
 
 function drawAutocomplete(timestep, words) {
@@ -1045,7 +1197,7 @@ function getGeometry(timestep, name, layer) {
             b = {x: x_offset + w, y: y_offset + (h / 2), height: h};
             break;
         case "cell_previous_hat":
-            b = {x: x_offset + (w * 3) + (w / 2) + layer_offset, y: y_offset, height: operand_height};
+            b = {x: x_offset + (w * 3) + (w / 2) + layer_offset, y: y_offset, height: h};
             break;
         case "forget_gate":
             b = {x: x_offset + (w * 3) + (w / 2) + layer_offset, y: y_offset + (h * 1 / 2) + (operator_height / 2), height: operand_height};
@@ -1054,7 +1206,7 @@ function getGeometry(timestep, name, layer) {
             b = {x: x_offset + (w * 5) + layer_offset, y: y_offset, height: h};
             break;
         case "input_hat":
-            b = {x: x_offset + (w * 7) + (w / 2) + layer_offset, y: y_offset + h, height: operand_height};
+            b = {x: x_offset + (w * 7) + (w / 2) + layer_offset, y: y_offset + h, height: h};
             break;
         case "remember_gate":
             b = {x: x_offset + (w * 7) + (w / 2) + layer_offset, y: y_offset + (h * 3 / 2) + (operator_height / 2), height: operand_height};
@@ -1072,7 +1224,7 @@ function getGeometry(timestep, name, layer) {
             b = {x: x_offset + (w * 13) + layer_offset, y: y_offset + (h * 1 / 2), height: h};
             break;
         case "cell_hat":
-            b = {x: x_offset + (w * 15) + (w / 2) + layer_offset, y: y_offset + (h / 2), height: operand_height};
+            b = {x: x_offset + (w * 15) + (w / 2) + layer_offset, y: y_offset + (h / 2), height: h};
             break;
         case "output_gate":
             b = {x: x_offset + (w * 15) + (w / 2) + layer_offset, y: y_offset + h + (operator_height / 2), height: operand_height};

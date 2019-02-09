@@ -38,7 +38,7 @@ def create(corpus, epochs, verbose):
 class NeuralNetwork:
     LAYERS = 2
     WIDTH = 10
-    EMBEDDING_WIDTH = 5
+    EMBEDDING_WIDTH = 10
     OUTPUT_WIDTH = 7
     INSTRUMENTS = [
         "embedding",
