@@ -14,9 +14,9 @@ if ((h / MEMORY_CHIP_HEIGHT) != (w / MEMORY_CHIP_WIDTH)) {
 }
 var operand_height = (h * 2.0 / 5.0);
 var operator_height = (h - (operand_height * 2));
-var black = "black";
-var dark_grey = "#c8c8c8";
-var light_grey = "#e1e1e1";
+var black = "#3f3f3f";
+var dark_grey = "#7e7e7e";
+var light_grey = "#bdbdbd";
 var dark_red = "#e60000";
 var light_red = "#ff1919";
 var debug = window.location.hash.substring(1) == "debug";
@@ -55,6 +55,10 @@ function drawTimestep(fake_timestep, data) {
     console.log(data);
     var timestep = data.timestep;
     $(".timestep-" + timestep).remove();
+
+    for (var t=0; t < sequence.length - 1; t++) {
+        $(".timestep-" + t + ".softmax").remove();
+    }
 
     if (data.x_word != sequence[timestep]) {
         svg.append("text")
@@ -159,7 +163,9 @@ function drawTimestep(fake_timestep, data) {
     // Draw softmax
     /*drawHline(timestep, x_offset + (data.units.length * w * 17), y_offset + (h * 2 / 2),
         x_offset + (data.units.length * w * 17) + (w * 3 / 2), y_offset + (h * 2 / 2));*/
-    drawSoftmax(getGeometry(timestep, "softmax"), data.softmax, 1.0);
+    if (timestep == sequence.length - 1) {
+        drawSoftmax(getGeometry(timestep, "softmax"), data.softmax, 1.0);
+    }
 
     svg.append("rect")
         .attr("class", "timestep-" + timestep)
@@ -239,22 +245,34 @@ function drawStateWidget(geometry, min, max, vector, colour, predictions, class_
 
     if (predictions != null) {
         var predictionGeometry = Object.assign({}, geometry);
-        predictionGeometry.x += w + (w / 4);
-        predictionGeometry.y += (h * 1 / 4);
-        predictionGeometry.width = (w / 2);
-        predictionGeometry.height = (h / 2);
-        drawSoftmax(predictionGeometry, predictions, 0.5);
+        var margin = (w / 6);
+        predictionGeometry.x += w + (w / 3) + margin;
+        predictionGeometry.y += (h * 1 / 3);
+        predictionGeometry.width = (w / 3);
+        predictionGeometry.height = (h / 3);
+        drawSoftmax(predictionGeometry, predictions, 0.1);
+        // Draw colour prediction.
+        svg.append("rect")
+            .attr("class", "timestep-" + geometry.timestep + " " + class_suffix)
+            .attr("x", geometry.x + w + margin - (stroke_width / 2))
+            .attr("y", geometry.y + (h * 1 / 4))
+            .attr("width", (w / 3))
+            .attr("height", (h / 2))
+            .attr("stroke", "none")
+            .attr("stroke-width", stroke_width)
+            .attr("fill", colour)
+            .style("opacity", 1.0);
     }
 
     // boundary box
     svg.append("rect")
         .attr("class", "timestep-" + geometry.timestep + " " + class_suffix)
-        .attr("x", geometry.x + 0.5)
-        .attr("y", geometry.y + 0.5)
-        .attr("width", geometry.width - 1)
-        .attr("height", geometry.height - 1)
+        .attr("x", geometry.x + (stroke_width / 2.0))
+        .attr("y", geometry.y + (stroke_width / 2.0))
+        .attr("width", geometry.width - stroke_width)
+        .attr("height", geometry.height - stroke_width)
         .attr("stroke", light_grey)
-        .attr("stroke-width", 1)
+        .attr("stroke-width", stroke_width)
         .attr("fill", "none");
     // Chip's colour & magnitude.
     svg.selectAll(".chip")
@@ -275,9 +293,9 @@ function drawStateWidget(geometry, min, max, vector, colour, predictions, class_
             .attr("width", function (d) { return magnitude(d.value); })
             .attr("height", macro_y.bandwidth())
             .attr("stroke", "none")
-            .attr("fill", function(d) {
-                return colour == "none" ? light_grey : colour;
-            });
+            .attr("fill", dark_grey);
+            //    return colour == "none" ? light_grey : colour;
+            //});
     // Chip's scaling box.
     svg.selectAll(".chip")
         .data(vector)
@@ -390,20 +408,9 @@ function drawSoftmax(geometry, labelWeightVector, opacity) {
         .domain([min, max])
         .range([geometry.x + (stroke_width / 2.0), geometry.x + geometry.width - (stroke_width / 2.0)]);
 
-    if (debug) {
-        svg.append("text")
-            .attr("class", "timestep-" + geometry.timestep)
-            .attr("x", geometry.x)
-            .attr("y", geometry.y - 2)
-            .style("font-size", "12px")
-            .style("fill", "red")
-            .style("opacity", "opacity")
-            .text(geometry.name);
-    }
-
     // boundary box
     svg.append("rect")
-        .attr("class", "timestep-" + geometry.timestep)
+        .attr("class", "timestep-" + geometry.timestep + (opacity == 1.0 ? " softmax" : ""))
         .attr("x", geometry.x + 0.5)
         .attr("y", geometry.y + 0.5)
         .attr("width", geometry.width - 1)
@@ -413,7 +420,7 @@ function drawSoftmax(geometry, labelWeightVector, opacity) {
         .attr("fill", "none")
         .style("opacity", opacity);
     svg.append("line")
-        .attr("class", "timestep-" + geometry.timestep)
+        .attr("class", "timestep-" + geometry.timestep + (opacity == 1.0 ? " softmax" : ""))
         .attr("x1", x(0))
         .attr("y1", y.range()[0] - 2)   // Make the center line stand out slightly by pushing it beyond the rectangle.
         .attr("x2", x(0))
@@ -425,7 +432,7 @@ function drawSoftmax(geometry, labelWeightVector, opacity) {
         .data(vector)
         .enter()
             .append("rect")
-            .attr("class", "timestep-" + geometry.timestep)
+            .attr("class", "timestep-" + geometry.timestep + (opacity == 1.0 ? " softmax" : ""))
             .attr("x", function (d) {
                 return x(Math.min(0, d.value));
             })
@@ -450,7 +457,7 @@ function drawSoftmax(geometry, labelWeightVector, opacity) {
         .data(vector)
         .enter()
             .append("text")
-            .attr("class", "timestep-" + geometry.timestep)
+            .attr("class", "timestep-" + geometry.timestep + (opacity == 1.0 ? " softmax" : ""))
             .attr("x", function (d) {
                 return geometry.x + Math.abs(x(d.value) - x(min)) + 5;
             })
@@ -1028,7 +1035,7 @@ function drawAutocomplete(timestep, words) {
                 sequence[timestep] = textContent;
             }
 
-            drawWeightsFromSequence(timestep);
+            drawWeightsFromSequence(0);
         });
     })
     .on("keydown", function(e) {
@@ -1080,9 +1087,9 @@ function drawAutocomplete(timestep, words) {
                     } else {
                         sequence[timestep] = textContent;
                     }
-
-                    drawWeightsFromSequence(timestep);
                 }
+
+                drawWeightsFromSequence(0);
             }
         }
 
@@ -1099,8 +1106,9 @@ function drawWeightsFromSequence(timestep) {
 
     for (var s = timestep; s < sequence.length; s++) {
         var slice = sequence.slice(0, s + 1);
-        console.log("Drawing sequence for " + (slice.length - 1) + ": " + slice);
-        d3.json("weights?" + slice.map(s => "sequence=" + encodeURI(s)).join("&"))
+        var distance = sequence.length - s - 1;
+        console.log("Drawing sequence for " + (slice.length - 1) + " @" + distance + ": " + slice);
+        d3.json("weights?distance=" + distance + "&" + slice.map(s => "sequence=" + encodeURI(s)).join("&"))
             .get(function (error, data) { drawTimestep(slice.length - 1, data); });
     }
 }

@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import collections
+import math
 import numpy as np
 import pdb
 
@@ -16,12 +17,16 @@ SINGLE_LABEL = "single-label"
 BLANK = "<blank>"
 
 
-def as_time_major(xys):
+def as_time_major(xys, y_is_sequence=True):
     check.check_iterable_of_instances(xys, Xy)
     maximum_length_x = max([len(xy.x) for xy in xys])
-    maximum_length_y = max([len(xy.y) for xy in xys])
     data_x = [[] for i in range(maximum_length_x)]
-    data_y = [[] for i in range(maximum_length_y)]
+
+    if y_is_sequence:
+        maximum_length_y = max([len(xy.y) for xy in xys])
+        data_y = [[] for i in range(maximum_length_y)]
+    else:
+        data_y = []
 
     for j, xy in enumerate(xys):
         for i in range(maximum_length_x):
@@ -30,11 +35,14 @@ def as_time_major(xys):
             else:
                 data_x[i] += [None]
 
-        for i in range(maximum_length_y):
-            if i < len(xy.y):
-                data_y[i] += [xy.y[i]]
-            else:
-                data_y[i] += [None]
+        if y_is_sequence:
+            for i in range(maximum_length_y):
+                if i < len(xy.y):
+                    data_y[i] += [xy.y[i]]
+                else:
+                    data_y[i] += [None]
+        else:
+            data_y += [xy.y]
 
     return data_x, data_y
 
@@ -258,8 +266,8 @@ class Labels(Field):
     def __len__(self):
         return len(self._encoding)
 
-    def encodings(self):
-        return {k: self._encoding[k] for k in sorted(self._encoding.keys())}
+    def encoding(self):
+        return {k: v for k, v in self._encoding.items()}
 
     def labels(self):
         return self._labels
@@ -347,6 +355,32 @@ class VectorField(Field):
         raise TypeError()
 
 
+class IntegerField(Field):
+    def __init__(self):
+        super(IntegerField, self).__init__()
+
+    def __repr__(self):
+        return "IntegerField"
+
+    def __len__(self):
+        return 1
+
+    def encode(self, value, handle_unknown=False):
+        raise TypeError()
+
+    def vector_encode(self, value, handle_unknown=False):
+        if not isinstance(value, int):
+            raise ValueError("value '%s' isn't an integer" % value)
+
+        return [value]
+
+    def decode(self, value):
+        raise TypeError()
+
+    def vector_decode(self, array):
+        raise TypeError()
+
+
 class MergeLabels(Labels):
     def __init__(self, labels):
         super(MergeLabels, self).__init__(labels)
@@ -358,7 +392,7 @@ class MergeLabels(Labels):
     def __len__(self):
         return len(self.labels)
 
-    def encodings(self):
+    def encoding(self):
         raise TypeError()
 
     def labels(self):
@@ -399,7 +433,7 @@ class ConcatField(Field):
     def __len__(self):
         return self._length
 
-    def encodings(self):
+    def encoding(self):
         raise TypeError()
 
     def labels(self):
@@ -450,4 +484,28 @@ def vector_max(vectors):
     out = np.array([_max([ook[i] for ook in vectors]) for i in range(length)])
     assert len(out) == length, "%d != %d" % (len(out), length)
     return out
+
+
+def softmax(distribution):
+    total = 0.0
+    output = {}
+
+    for k, v in distribution.items():
+        value = math.exp(v)
+        output[k] = value
+        total += value
+
+    return {k: v / total for k, v in output.items()}
+
+
+def regmax(distribution):
+    total = 0.0
+    output = {}
+
+    for k, v in distribution.items():
+        value = v
+        output[k] = value
+        total += value
+
+    return {k: v / total for k, v in output.items()}
 

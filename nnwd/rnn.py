@@ -23,11 +23,12 @@ class Rnn:
     # we track all the other intermediate gates/states for the weight instrumentation.
     SCAN_STATES = 10
 
-    def __init__(self, layers, width, embedding_width, word_labels, scope="rnn"):
+    def __init__(self, layers, width, embedding_width, word_labels, sentiment_labels, scope="rnn"):
         self.layers = layers
         self.width = width
         self.embedding_width = embedding_width
         self.word_labels = word_labels
+        self.sentiment_labels = sentiment_labels
         self.scope = scope
 
         self.time_dimension = None
@@ -37,8 +38,8 @@ class Rnn:
         #   _c      constant
 
         self.unrolled_inputs_p = self.placeholder("unrolled_inputs_p", [self.time_dimension, self.batch_dimension], tf.int32)
-        self.input_lengths_p = self.placeholder("input_lengths_p", [self.batch_dimension], tf.int32)
-        self.unrolled_outputs_p = self.placeholder("unrolled_outputs_p", [self.time_dimension, self.batch_dimension], tf.int32)
+        self.input_gathers_p = self.placeholder("input_gathers_p", [self.batch_dimension, 2], tf.int32)
+        self.output_p = self.placeholder("output_p", [self.batch_dimension], tf.int32)
 
         self.initial_state_p = self.placeholder("initial_state_p", [Rnn.SCAN_STATES, self.layers, self.batch_dimension, self.width])
 
@@ -59,9 +60,9 @@ class Rnn:
         self.H_bias = self.variable("H_bias", [self.layers, self.width], initial=0.0)
         tf.identity(tf.reshape(self.H_bias, [-1, self.width]), name="H_bias")
 
-        self.Y = self.variable("Y", [self.width, len(self.word_labels)])
-        self.Y_bias = self.variable("Y_bias", [1, len(self.word_labels)], initial=0.0)
-        tf.identity(tf.reshape(self.Y_bias, [len(self.word_labels)]), name="Y_bias")
+        self.Y = self.variable("Y", [self.width, len(self.sentiment_labels)])
+        self.Y_bias = self.variable("Y_bias", [1, len(self.sentiment_labels)], initial=0.0)
+        tf.identity(tf.reshape(self.Y_bias, [len(self.sentiment_labels)]), name="Y_bias")
 
         self.unrolled_embedded_inputs = tf.nn.embedding_lookup(self.E, self.unrolled_inputs_p)
         assert_shape(self.unrolled_embedded_inputs, [self.time_dimension, self.batch_dimension, self.embedding_width])
@@ -156,14 +157,15 @@ class Rnn:
         assert_shape(final_state_for_matmul, [self.combine_dimensions(), self.width])
 
         self.output_logits = tf.matmul(final_state_for_matmul, self.Y) + self.Y_bias
-        assert_shape(self.output_logits, [self.combine_dimensions(), len(self.word_labels)])
+        assert_shape(self.output_logits, [self.combine_dimensions(), len(self.sentiment_labels)])
 
         self.output_distribution = tf.nn.softmax(self.output_logits[0])
-        assert_shape(self.output_distribution, [len(self.word_labels)])
+        assert_shape(self.output_distribution, [len(self.sentiment_labels)])
 
-        expected_outputs = tf.reshape(self.output_logits, [max_time, batch_size, len(self.word_labels)])
-        mask = tf.sequence_mask(self.input_lengths_p, dtype=tf.float32)
-        self.cost = tf.contrib.seq2seq.sequence_loss(logits=expected_outputs, targets=self.unrolled_outputs_p, weights=mask)
+        unrolled_outputs = tf.reshape(self.output_logits, [max_time, batch_size, len(self.sentiment_labels)])
+        assert_shape(unrolled_outputs, [self.time_dimension, self.batch_dimension, len(self.sentiment_labels)])
+        expected_outputs = tf.gather_nd(unrolled_outputs, self.input_gathers_p)
+        self.cost = tf.reduce_sum(tf.nn.softmax_cross_entropy_with_logits_v2(logits=expected_outputs, labels=tf.one_hot(self.output_p, len(self.sentiment_labels))))
         self.updates = tf.train.AdamOptimizer().minimize(self.cost)
 
         self.session = tf.Session()
@@ -206,15 +208,17 @@ class Rnn:
             while offset < len(shuffled_xys):
                 batch = shuffled_xys[offset:offset + training_parameters.batch()]
                 offset += training_parameters.batch()
-                data_x, data_y = mlbase.as_time_major(batch)
+                data_x, data_y = mlbase.as_time_major(batch, False)
                 input_labels = [[self.word_labels.encode(word if word is not None else mlbase.BLANK) for word in timespot] for timespot in data_x]
-                input_lengths = [len(sequence.x) for sequence in batch]
-                output_labels = [[self.word_labels.encode(word if word is not None else mlbase.BLANK) for word in timespot] for timespot in data_y]
+                # Gathers are indexes, not lengths.
+                #                                 vvv
+                input_gathers = [[len(sequence.x) - 1, i] for i, sequence in enumerate(batch)]
+                output_labels = [self.sentiment_labels.encode(word if word is not None else mlbase.BLANK) for word in data_y]
                 parameters = {
                     self.unrolled_inputs_p: np.array(input_labels),
-                    self.input_lengths_p: np.array(input_lengths),
+                    self.input_gathers_p: np.array(input_gathers),
                     self.initial_state_p: self.initial_state(len(batch)),
-                    self.unrolled_outputs_p: np.array(output_labels),
+                    self.output_p: np.array(output_labels),
                 }
                 _, total_cost = self.session.run([self.updates, self.cost], feed_dict=parameters)
                 epoch_loss += total_cost
@@ -272,14 +276,14 @@ class Rnn:
 
         return correct / float(total)
 
-    def evaluate(self, x, state=None, instrument_names=[]):
+    def evaluate(self, x, handle_unknown=False, state=None, instrument_names=[]):
         parameters = {
-            self.unrolled_inputs_p: np.array([np.array([self.word_labels.encode(x, True)])]),
+            self.unrolled_inputs_p: np.array([np.array([self.word_labels.encode(x, handle_unknown)])]),
             self.initial_state_p: state if state is not None else self.initial_state(1)
         }
         instruments = [self.session.graph.get_tensor_by_name("%s:0" % name) for name in instrument_names]
         distribution, next_state, *instrument_values = self.session.run([self.output_distribution, self.state] + instruments, feed_dict=parameters)
-        result = Result(self.word_labels.ook_decode(distribution), self.word_labels.ook_decode_distribution(distribution), self.word_labels.encoding())
+        result = Result(self.sentiment_labels.vector_decode(distribution), self.sentiment_labels.vector_decode_distribution(distribution), self.sentiment_labels.encoding())
         return result, next_state, {name: instrument_values[i] for i, name in enumerate(instrument_names)}
 
     def probe(self, name, layer):
@@ -293,8 +297,8 @@ class Rnn:
         else:
             return result[layer]
 
-    def stepwise(self, name=None):
-        return Stepwise(self, name)
+    def stepwise(self, name=None, handle_unknown=False):
+        return Stepwise(self, name, handle_unknown)
 
     def embed(self, x):
         parameters = {
@@ -305,14 +309,15 @@ class Rnn:
 
 
 class Stepwise:
-    def __init__(self, rnn, name=None):
+    def __init__(self, rnn, name=None, handle_unknown=False):
+        self.name = name if name is not None else "".join(random.choices(string.ascii_lowercase, k=6))
+        self.handle_unknown = handle_unknown
         self.rnn = rnn
         self.state = None
-        self.name = name if name is not None else "".join(random.choices(string.ascii_lowercase, k=6))
         self.t = 0
 
     def step(self, x, instrument_names=[]):
-        result, self.state, instruments = self.rnn.evaluate(x, self.state, instrument_names)
+        result, self.state, instruments = self.rnn.evaluate(x, self.handle_unknown, self.state, instrument_names)
         self.t += 1
         return result, instruments
 

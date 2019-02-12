@@ -7,7 +7,6 @@ import os
 import sys
 
 from nnwd import domain
-from nnwd import nlp
 from nnwd import rnn
 from pytils.log import setup_logging, user_log
 

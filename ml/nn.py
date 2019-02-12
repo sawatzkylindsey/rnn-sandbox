@@ -38,20 +38,21 @@ class Model:
         self.E = self.variable("E", [len(self.input_labels), self.hyper.width()])
         self.E_bias = self.variable("E_bias", [1, self.hyper.width()], 0.)
 
-        if self.hyper.layers() > 0:
-            self.H = self.variable("H", [self.hyper.layers(), self.hyper.width(), self.hyper.width()])
-            self.H_bias = self.variable("H_bias", [self.hyper.layers(), 1, self.hyper.width()], 0.)
+        # The E layer is the first layer.
+        if self.hyper.layers() - 1 > 0:
+            self.H = self.variable("H", [self.hyper.layers() - 1, self.hyper.width(), self.hyper.width()])
+            self.H_bias = self.variable("H_bias", [self.hyper.layers() - 1, 1, self.hyper.width()], 0.)
 
         self.Y = self.variable("Y", [self.hyper.width(), len(self.output_labels)])
         self.Y_bias = self.variable("Y_bias", [1, len(self.output_labels)], 0.)
 
         # Computational graph encoding
-        self.embedded_input = tf.matmul(self.input_p, self.E) + self.E_bias
+        self.embedded_input = tf.tanh(tf.matmul(self.input_p, self.E) + self.E_bias)
         mlbase.assert_shape(self.embedded_input, [batch_size_dimension, self.hyper.width()])
         hidden = self.embedded_input
         mlbase.assert_shape(hidden, [batch_size_dimension, self.hyper.width()])
 
-        for l in range(self.hyper.layers()):
+        for l in range(self.hyper.layers() - 1):
             hidden = tf.tanh(tf.matmul(hidden, self.H[l]) + self.H_bias[l])
             mlbase.assert_shape(hidden, [batch_size_dimension, self.hyper.width()])
 
@@ -158,11 +159,11 @@ class Model:
 
         return correct / float(total)
 
-    def evaluate(self, x):
+    def evaluate(self, x, handle_unknown=False):
         if isinstance(x, list):
-            xs = [self.input_labels.vector_encode(i, True) for i in x]
+            xs = [self.input_labels.vector_encode(i, handle_unknown) for i in x]
         else:
-            xs = [self.input_labels.vector_encode(x, True)]
+            xs = [self.input_labels.vector_encode(x, handle_unknown)]
 
         feed = {
             self.input_p: np.array(xs),
@@ -194,7 +195,7 @@ class HyperParameters:
         if l is None:
             return self._layers
 
-        self._layers = check.check_gte(l, 0)
+        self._layers = check.check_gte(l, 1)
         return self
 
     def __repr__(self):

@@ -18,7 +18,6 @@ from nnwd import domain
 from nnwd import errorhandler
 from nnwd import errors
 from nnwd import handlers
-from nnwd import nlp
 from pytils.log import setup_logging, user_log
 
 
@@ -113,13 +112,22 @@ def main(argv):
                     action="store_true",
                     help="Turn on verbose logging.")
     ap.add_argument("-p", "--port", default=8888, type=int)
-    ap.add_argument("--corpus", default="corpus.txt")
+    ap.add_argument("--reviews", default="yelp/review.json")
     ap.add_argument("--epochs", default=1000, type=int)
-    args = ap.parse_args(argv)
-    setup_logging(".%s.log" % os.path.splitext(os.path.basename(__file__))[0], args.verbose, False, True, True)
-    logging.debug(args)
-    words, neural_network = domain.create(args.corpus, args.epochs, args.verbose)
-    run(args.port, words, neural_network)
+    aargs = ap.parse_args(argv)
+    setup_logging(".%s.log" % os.path.splitext(os.path.basename(__file__))[0], aargs.verbose, False, True, True)
+    logging.debug(aargs)
+    reviews = []
+
+    with open(aargs.reviews, "r") as fh:
+        lines = fh.readlines()
+
+        for line in lines:
+            review = json.loads(line)
+            reviews += [review]
+
+    words, neural_network = domain.create(reviews, aargs.epochs, aargs.verbose)
+    run(aargs.port, words, neural_network)
 
 
 def patch_Thread_for_profiling():

@@ -5,6 +5,7 @@ import logging
 import math
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
+from nltk.tokenize import word_tokenize
 import numpy as np
 import pdb
 from random import randint
@@ -12,23 +13,40 @@ from sklearn.manifold import TSNE
 import threading
 
 from ml import base as mlbase
+from ml import nlp
 from ml import nn as ffnn
 from nnwd import geometry
 from nnwd.models import Layer, Unit, WeightExplain, HiddenState, LabelDistribution
-from nnwd import nlp
 from nnwd import rnn
 from pytils.log import setup_logging, user_log
 from pytils import adjutant, check
 
 
-def create(corpus, epochs, verbose):
-    words, xy_sequences = nlp.corpus_sequences(corpus)
+def create(reviews, epochs, verbose):
+    xys = []
+    vocabulary = set()
+    classes = set()
+
+    for review in reviews:
+        text = word_tokenize(review["text"])
+
+        if len(text) <= 100:
+            stars = int(review["stars"])
+            assert stars == review["stars"], "%s != %s" % (stars, review["stars"])
+            stars = str(stars)
+            xys.append((text, stars))
+            classes.add(stars)
+
+            for word in text:
+                vocabulary.add(word)
 
     if verbose:
-        for sequence in xy_sequences:
-            logging.debug(sequence)
+        for xy in xys:
+            logging.debug(xy)
 
-    return words, NeuralNetwork(words, xy_sequences, epochs)
+    words = mlbase.Labels(vocabulary.union(set([mlbase.BLANK])), unknown=nlp.UNKNOWN)
+    sentiments = mlbase.Labels(classes)
+    return words, NeuralNetwork(words, sentiments, xys, epochs)
 
 
 class NeuralNetwork:
@@ -38,6 +56,7 @@ class NeuralNetwork:
     OUTPUT_WIDTH = 7
     HIDDEN_REDUCTION = 10
     EMBEDDING_REDUCTION = EMBEDDING_WIDTH
+    TOP_PREDICTIONS = 2
     INSTRUMENTS = [
         "embedding",
         "remember_gates",
@@ -83,124 +102,109 @@ class NeuralNetwork:
         "outputs": "output",
     }
 
-    def __init__(self, words, xy_sequences, epoch_threshold):
-        self.words = words
-        self.lstm = rnn.Rnn(NeuralNetwork.LAYERS, NeuralNetwork.HIDDEN_WIDTH, NeuralNetwork.EMBEDDING_WIDTH, words)
-        self.xy_sequences = [mlbase.Xy(sequence[:-1], sequence[1:]) for sequence in xy_sequences]
+    def __init__(self, words, sentiments, xys, epoch_threshold):
+        self.words = check.check_instance(words, mlbase.Labels)
+        self.sentiments = check.check_instance(sentiments, mlbase.Labels)
+        self.lstm = rnn.Rnn(NeuralNetwork.LAYERS, NeuralNetwork.HIDDEN_WIDTH, NeuralNetwork.EMBEDDING_WIDTH, words, sentiments)
+        self.xys = [mlbase.Xy(*pair) for pair in xys]
         self.epoch_threshold = epoch_threshold
-        self.colour_embeddings = None
         self._background_setup = threading.Thread(target=self._setup)
         self._background_setup.daemon = True
         self._background_setup.start()
 
     def _setup(self):
         self._train_rnn()
-        self._train_predictor()
         self._setup_colour_embeddings()
+        self._train_predictor()
+        # Also set inside self._train_predictor().
+        self.setup_complete = True
         user_log.info("Setup complete")
+
+    def is_setup(self):
+        return self.setup_complete
+        #return not self._background_setup.is_alive()
 
     def _train_rnn(self):
         training_coarse = mlbase.TrainingParameters() \
             .epochs(self.epoch_threshold) \
             .batch(16)
-        loss = self.lstm.train(self.xy_sequences, training_coarse)
-        logging.debug("train coarse %s" % loss)
+        loss = self.lstm.train(self.xys, training_coarse)
+        logging.debug("train lstm coarse %s" % loss)
         training_fine = mlbase.TrainingParameters() \
             .epochs(self.epoch_threshold) \
-            .absolute(loss * 0.75) \
-            .batch(1)
-        loss = self.lstm.train(self.xy_sequences, training_fine)
-        logging.debug("train fine %s" % loss)
+            .absolute(loss * 0.5) \
+            .batch(2)
+        loss = self.lstm.train(self.xys, training_fine)
+        logging.debug("train lstm fine %s" % loss)
 
     def _train_predictor(self):
         part_labels = mlbase.Labels(set(NeuralNetwork.LSTM_PARTS))
         layer_labels = mlbase.Labels(set(range(NeuralNetwork.LAYERS)))
+        #distance_field = mlbase.IntegerField()
         hidden_vector = mlbase.VectorField(NeuralNetwork.HIDDEN_WIDTH)
         predictor_input = mlbase.ConcatField([part_labels, layer_labels, hidden_vector])
-        predictor_output = mlbase.Labels(self.words.labels())
+        #predictor_input = mlbase.ConcatField([part_labels, layer_labels, distance_field, hidden_vector])
+        predictor_output = mlbase.Labels(set(self.sentiments.labels()))
         hyper_parameters = ffnn.HyperParameters() \
-            .width(max(1, int(len(predictor_input) * 0.8)))
-        self.predictor = ffnn.Model("predictor", ffnn.HyperParameters().width(int(len(predictor_input) * .8)), predictor_input, predictor_output, mlbase.SINGLE_LABEL)
+            .width(max(1, int(len(predictor_input) * 0.75)))
+        self.predictor = ffnn.Model("predictor", hyper_parameters, predictor_input, predictor_output, mlbase.SINGLE_LABEL)
         self.predictor_data = []
 
-        for sequence in self.xy_sequences:
-            stepwise_lstm = self.lstm.stepwise()
+        for xy in self.xys:
+            stepwise_lstm = self.lstm.stepwise(False)
+            #xs = []
 
-            for x in sequence.x:
-                result, instruments = stepwise_lstm.step(x, NeuralNetwork.INSTRUMENTS)
+            for i, word in enumerate(xy.x):
+                result, instruments = stepwise_lstm.step(word, NeuralNetwork.INSTRUMENTS)
+                #xs_next = []
+                #distance = len(xy.x) - i - 1
+
+                #for x in xs:
+                #    x_moved = (x[0], x[1], x[2] + 1, x[3])
+                #    xs_next += [x_moved]
+                #    train_xy = mlbase.Xy(x_moved, result.distribution)
+                #    self.predictor_data += [train_xy]
 
                 for part in NeuralNetwork.LSTM_PARTS:
                     for layer in range(NeuralNetwork.LAYERS):
                         point = tuple(instruments[part][layer])
-                        train_xy = mlbase.Xy((part, layer, point), result.distribution)
+                        x = (part, layer, point)
+                        #x = (part, layer, distance, point)
+                        #xs_next += [x]
+                        train_xy = mlbase.Xy(x, result.distribution)
                         self.predictor_data += [train_xy]
 
-        loss = self.predictor.train(self.predictor_data, mlbase.TrainingParameters().epochs(int(self.epoch_threshold / 2)))
-        logging.debug("train predictor %s" % loss)
+                #xs = xs_next
+
+            #for x in xs:
+            #    train_xy = mlbase.Xy(x, result.distribution)
+            #    self.predictor_data += [train_xy]
+
+        self.setup_complete = True
+        training_coarse = mlbase.TrainingParameters() \
+            .epochs(max(1, int(self.epoch_threshold / 2))) \
+            .batch(16)
+        loss = self.predictor.train(self.predictor_data, training_coarse)
+        logging.debug("train predictor coarse %s" % loss)
 
     def _setup_colour_embeddings(self):
-        weights = []
-        order = []
+        self.colour_embeddings = self.find_colour_embeddings()
 
-        for word in self.words.labels():
-            weight = self.lstm.embed(word)
-            weights += [weight]
-            order += [word]
+    def find_colour_embeddings(self):
+        red_green_line = lambda x: -x + 255
+        ordered_sentiments = sorted([int(s) for s in self.sentiments.labels()])
+        scaler = 255.0 / (len(self.sentiments) - 1)
+        #                 RED                      GREEN    BLUE
+        return {pair[0]: (red_green_line(pair[1]), pair[1], 0) for pair in [(str(sentiment), i * scaler) for i, sentiment in enumerate(ordered_sentiments)]}
 
-        self.colour_embeddings = self.find_colour_embeddings(weights, order)
-
-    def find_colour_embeddings(self, weights, order):
-        colour_embeddings = {}
-
-        for perplexity in [50]:#[5, 10, 20, 30, 50]:
-            tsne = TSNE(n_components=3, perplexity=perplexity)
-            embeddings_3d = tsne.fit_transform(weights)
-            minimum = [None, None, None]
-            maximum = [None, None, None]
-
-            for embedding in embeddings_3d:
-                for i, point in enumerate(embedding):
-                    if minimum[i] is None or point < minimum[i]:
-                        minimum[i] = point
-
-                    if maximum[i] is None or point > maximum[i]:
-                        maximum[i] = point
-
-            delta = [maximum[i] - minimum[i] for i in range(0, 3)]
-            slope = [255.0 / delta[i] for i in range(0, 3)]
-            m = lambda i, x: round((slope[i] * x) - (slope[i] * minimum[i]))
-            colour_embeddings[perplexity] = {order[j]: tuple([m(i, embedding[i]) for i in range(0, 3)]) for j, embedding in enumerate(embeddings_3d)}
-            figure = plt.figure()
-            axis = figure.add_subplot(111, projection="3d")
-
-            for word, colour_embedding in colour_embeddings[perplexity].items():
-                x, y, z = colour_embedding
-                axis.scatter(x, y, z, c=[[c / 255.0 for c in colour_embedding]])
-                axis.text(x, y, z, word, zorder=1)
-
-            axis.set_xlabel("Red")
-            axis.set_ylabel("Green")
-            axis.set_zlabel("Blue")
-
-            if perplexity < 10:
-                figure.savefig("word_colour_embedding-0%d.png" % perplexity)
-            else:
-                figure.savefig("word_colour_embedding-%d.png" % perplexity)
-
-        #choice = input("choice (05, 10, 20, 30, 50): ")
-        return colour_embeddings[int(50)]
-
-    def is_setup(self):
-        return not self._background_setup.is_alive()
-
-    def word_colour(self, word):
+    def sentiment_colour(self, sentiment):
         if not self.is_setup():
             return "none"
 
-        embedding = self.colour_embeddings[self.words.decode(self.words.encode(word, True))]
+        embedding = self.colour_embeddings[sentiment]
         return "rgb(%d, %d, %d)" % embedding
 
-    def compute_point_abstractions(self, points):
+    def compute_point_abstractions(self, distance, points):
         reductions = self.dimensionality_reduce(points, NeuralNetwork.HIDDEN_REDUCTION)
 
         if not self.is_setup():
@@ -208,7 +212,7 @@ class NeuralNetwork:
             predictions = {part: {layer: None for layer in range(NeuralNetwork.LAYERS)} for part in NeuralNetwork.LSTM_PARTS}
             return reductions, colours, predictions
 
-        predictions = self.predict_distributions(points)
+        predictions = self.predict_distributions(distance, points)
         colours = self.fit_colours(points, predictions)
         return reductions, colours, predictions
 
@@ -233,15 +237,17 @@ class NeuralNetwork:
 
         return reductions
 
-    def predict_distributions(self, points):
+    def predict_distributions(self, distance, points):
         xs = adjutant.flat_map([[(part, layer, point) for layer, point in subd.items()] for part, subd in points.items()])
+        #xs = adjutant.flat_map([[(part, layer, distance, point) for layer, point in subd.items()] for part, subd in points.items()])
         results = self.predictor.evaluate(xs)
         distribution_predictions = {part: {} for part in NeuralNetwork.LSTM_PARTS}
 
         for i, x in enumerate(xs):
-            part, layer, _ = x
+            part, layer, tmp_point = x
+            #part, layer, tmp_distance, tmp_point = x
             ordered_predictions = [item[0] for item in sorted(results[i].distribution.items(), key=lambda item: item[1], reverse=True)]
-            distribution_predictions[part][layer] = {prediction: results[i].distribution[prediction] for prediction in ordered_predictions[:3]}
+            distribution_predictions[part][layer] = {prediction: results[i].distribution[prediction] for prediction in ordered_predictions[:NeuralNetwork.TOP_PREDICTIONS]}
 
         return distribution_predictions
 
@@ -255,14 +261,14 @@ class NeuralNetwork:
 
             for layer in range(NeuralNetwork.LAYERS):
                 invert_distribution = {k: 1.0 - v for k, v in predictions[part][layer].items()}
-                prediction_distances = [(k, v * scaler) for k, v in nlp.softmax(invert_distribution).items()]
+                prediction_distances = [(k, v * scaler) for k, v in mlbase.softmax(invert_distribution).items()]
                 fit, _ = geometry.fit_point([self.colour_embeddings[item[0]] for item in prediction_distances], [item[1] for item in prediction_distances], epsilon=0.1, visualize=False)
                 colours[part][layer] = "rgb(%d, %d, %d)" % tuple([round(i) for i in fit])
 
         return colours
 
-    def weights(self, sequence):
-        stepwise_lstm = self.lstm.stepwise()
+    def weights(self, sequence, distance):
+        stepwise_lstm = self.lstm.stepwise(True)
 
         for x in sequence:
             x_word = self.words.decode(self.words.encode(x, True))
@@ -276,15 +282,15 @@ class NeuralNetwork:
             for layer in range(NeuralNetwork.LAYERS):
                 points[part][layer] = instruments[part][layer]
 
-        point_reductions, point_colours, point_predictions = self.compute_point_abstractions(points)
-        embedding = HiddenState(instruments["embedding"], colour=self.word_colour(x))
+        point_reductions, point_colours, point_predictions = self.compute_point_abstractions(distance, points)
+        embedding = HiddenState(instruments["embedding"], colour="none")
         units = []
 
         for layer in range(NeuralNetwork.LAYERS):
             states = self.make_hidden_states(layer, point_reductions, point_colours, point_predictions)
             units += [Unit(**states)]
 
-        softmax = LabelDistribution(result.distribution, result.encoding, NeuralNetwork.OUTPUT_WIDTH, lambda word: self.word_colour(word))
+        softmax = LabelDistribution(result.distribution, result.encoding, NeuralNetwork.OUTPUT_WIDTH, lambda word: self.sentiment_colour(word))
         return Layer(embedding, units, softmax, len(sequence) - 1, x_word, result.prediction)
 
     def make_hidden_states(self, layer, point_reductions, point_colours, point_predictions):
@@ -301,7 +307,7 @@ class NeuralNetwork:
             if prediction is None:
                 label_distribution = None
             else:
-                label_distribution = LabelDistribution(prediction, {k: None for k, v in prediction.items()}, colour_fn=lambda word: self.word_colour(word))
+                label_distribution = LabelDistribution(prediction, {k: None for k, v in prediction.items()}, colour_fn=lambda word: self.sentiment_colour(word))
 
             hidden_state = HiddenState(point_reductions[part][layer], min_max, point_colours[part][layer], label_distribution)
             states[NeuralNetwork.SINGULAR[part]] = hidden_state

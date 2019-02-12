@@ -4,6 +4,7 @@ import logging
 import pdb
 import threading
 
+from pytils import check
 from pytils.log import setup_logging, user_log
 
 
@@ -27,7 +28,8 @@ class Weights:
 
     def get(self, data):
         sequence = data["sequence"]
-        return self.neural_network.weights(sequence)
+        distance = check.check_gte(int(data["distance"][0]), 0)
+        return self.neural_network.weights(sequence, distance)
 
 
 class WeightExplain:
