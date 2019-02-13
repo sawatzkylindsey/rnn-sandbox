@@ -3,12 +3,12 @@ import itertools
 import json
 import logging
 import math
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from nltk.tokenize import word_tokenize
 import numpy as np
 import pdb
-from random import randint
+import random
 from sklearn.manifold import TSNE
 import threading
 
@@ -44,18 +44,26 @@ def create(reviews, epochs, verbose):
         for xy in xys:
             logging.debug(xy)
 
+    random.shuffle(xys)
+    split_1 = int(len(xys) * 0.8)
+    split_2 = split_1 + int(len(xys) * 0.1)
+    logging.debug("data splits: 0,%d,%d,%d" % (split_1, split_2, len(xys)))
+    train_xys = xys[:split_1]
+    validation_xys = xys[split_1:split_2]
+    test_xys = xys[split_2:]
+    logging.debug("datas (train, validation, test): %d, %d, %d" % (len(train_xys), len(validation_xys), len(test_xys)))
     words = mlbase.Labels(vocabulary.union(set([mlbase.BLANK])), unknown=nlp.UNKNOWN)
     sentiments = mlbase.Labels(classes)
-    return words, NeuralNetwork(words, sentiments, xys, epochs)
+    return words, NeuralNetwork(words, sentiments, train_xys, epochs, validation_xys, test_xys)
 
 
 class NeuralNetwork:
     LAYERS = 2
-    HIDDEN_WIDTH = 20
-    EMBEDDING_WIDTH = 10
+    HIDDEN_WIDTH = 50
+    EMBEDDING_WIDTH = 50
     OUTPUT_WIDTH = 7
     HIDDEN_REDUCTION = 10
-    EMBEDDING_REDUCTION = EMBEDDING_WIDTH
+    EMBEDDING_REDUCTION = 10
     TOP_PREDICTIONS = 2
     INSTRUMENTS = [
         "embedding",
@@ -102,11 +110,13 @@ class NeuralNetwork:
         "outputs": "output",
     }
 
-    def __init__(self, words, sentiments, xys, epoch_threshold):
+    def __init__(self, words, sentiments, train_xys, epoch_threshold, validation_xys, test_xys):
         self.words = check.check_instance(words, mlbase.Labels)
         self.sentiments = check.check_instance(sentiments, mlbase.Labels)
         self.lstm = rnn.Rnn(NeuralNetwork.LAYERS, NeuralNetwork.HIDDEN_WIDTH, NeuralNetwork.EMBEDDING_WIDTH, words, sentiments)
-        self.xys = [mlbase.Xy(*pair) for pair in xys]
+        self.train_xys = [mlbase.Xy(*pair) for pair in train_xys]
+        self.validation_xys = [mlbase.Xy(*pair) for pair in validation_xys]
+        self.test_xys = [mlbase.Xy(*pair) for pair in test_xys]
         self.epoch_threshold = epoch_threshold
         self._background_setup = threading.Thread(target=self._setup)
         self._background_setup.daemon = True
@@ -125,17 +135,28 @@ class NeuralNetwork:
         #return not self._background_setup.is_alive()
 
     def _train_rnn(self):
-        training_coarse = mlbase.TrainingParameters() \
-            .epochs(self.epoch_threshold) \
-            .batch(16)
-        loss = self.lstm.train(self.xys, training_coarse)
-        logging.debug("train lstm coarse %s" % loss)
-        training_fine = mlbase.TrainingParameters() \
-            .epochs(self.epoch_threshold) \
-            .absolute(loss * 0.5) \
-            .batch(2)
-        loss = self.lstm.train(self.xys, training_fine)
-        logging.debug("train lstm fine %s" % loss)
+        accuracy_validation = 0.0
+        batch = 256
+        arc = 0
+
+        while accuracy_validation < 0.8 and arc < 20:
+            arc += 1
+            training_coarse = mlbase.TrainingParameters() \
+                .batch(max(8, int(batch / arc))) \
+                .epochs(self.epoch_threshold) \
+                .convergence(False)
+            loss = self.lstm.train(self.train_xys, training_coarse)
+            accuracy_validation = self.lstm.test(self.validation_xys)
+            logging.debug("train lstm arc %d: (loss, accuracy) (%s, %s)" % (arc, loss, accuracy_validation))
+
+        accuracy_test = self.lstm.test(self.test_xys)
+        logging.debug("(v, t): (%s, %s)" % (accuracy_validation, accuracy_test))
+        #training_fine = mlbase.TrainingParameters() \
+        #    .epochs(self.epoch_threshold) \
+        #    .absolute(loss * 0.5) \
+        #    .batch(2)
+        #loss = self.lstm.train(self.train_xys, training_fine)
+        #logging.debug("train lstm fine %s" % loss)
 
     def _train_predictor(self):
         part_labels = mlbase.Labels(set(NeuralNetwork.LSTM_PARTS))
@@ -150,7 +171,7 @@ class NeuralNetwork:
         self.predictor = ffnn.Model("predictor", hyper_parameters, predictor_input, predictor_output, mlbase.SINGLE_LABEL)
         self.predictor_data = []
 
-        for xy in self.xys:
+        for xy in self.train_xys:
             stepwise_lstm = self.lstm.stepwise(False)
             #xs = []
 
@@ -283,7 +304,8 @@ class NeuralNetwork:
                 points[part][layer] = instruments[part][layer]
 
         point_reductions, point_colours, point_predictions = self.compute_point_abstractions(distance, points)
-        embedding = HiddenState(instruments["embedding"], colour="none")
+        embedding_reduction = self.dimensionality_reduce({"a": {"b": instruments["embedding"]}}, NeuralNetwork.EMBEDDING_REDUCTION)["a"]["b"]
+        embedding = HiddenState(embedding_reduction, colour="none")
         units = []
 
         for layer in range(NeuralNetwork.LAYERS):

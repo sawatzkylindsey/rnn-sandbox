@@ -123,8 +123,9 @@ def main(argv):
         lines = fh.readlines()
 
         for line in lines:
-            review = json.loads(line)
-            reviews += [review]
+            if line.strip() != "":
+                review = json.loads(line)
+                reviews += [review]
 
     words, neural_network = domain.create(reviews, aargs.epochs, aargs.verbose)
     run(aargs.port, words, neural_network)

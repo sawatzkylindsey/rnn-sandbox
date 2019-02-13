@@ -159,11 +159,12 @@ class Rnn:
         self.output_logits = tf.matmul(final_state_for_matmul, self.Y) + self.Y_bias
         assert_shape(self.output_logits, [self.combine_dimensions(), len(self.sentiment_labels)])
 
-        self.output_distribution = tf.nn.softmax(self.output_logits[0])
-        assert_shape(self.output_distribution, [len(self.sentiment_labels)])
-
         unrolled_outputs = tf.reshape(self.output_logits, [max_time, batch_size, len(self.sentiment_labels)])
         assert_shape(unrolled_outputs, [self.time_dimension, self.batch_dimension, len(self.sentiment_labels)])
+
+        self.output_distributions = tf.nn.softmax(unrolled_outputs[-1])
+        assert_shape(self.output_distributions, [self.batch_dimension, len(self.sentiment_labels)])
+
         expected_outputs = tf.gather_nd(unrolled_outputs, self.input_gathers_p)
         self.cost = tf.reduce_sum(tf.nn.softmax_cross_entropy_with_logits_v2(logits=expected_outputs, labels=tf.one_hot(self.output_p, len(self.sentiment_labels))))
         self.updates = tf.train.AdamOptimizer().minimize(self.cost)
@@ -236,45 +237,34 @@ class Rnn:
     def test(self, xy_sequences, debug=False):
         assert len(xy_sequences) > 0
         correct = 0
-        total = 0
         case_slot_length = len(str(len(xy_sequences)))
         case_template = "{{Case {:%dd}}}" % case_slot_length
+        offset = 0
 
-        for case, sequence in enumerate(xy_sequences):
-            state = None
-            distributions = []
-            predictions = []
-            test_pass = True
+        while offset < len(xy_sequences):
+            batch = xy_sequences[offset:offset + 32]
+            offset += 32
+            data_x, data_y = mlbase.as_time_major(batch, False)
+            input_labels = [[self.word_labels.encode(word if word is not None else mlbase.BLANK) for word in timespot] for timespot in data_x]
+            parameters = {
+                self.unrolled_inputs_p: np.array(input_labels),
+                self.initial_state_p: self.initial_state(len(batch)),
+            }
+            distributions = self.session.run(self.output_distributions, feed_dict=parameters)
 
-            for xy in sequence:
-                result, state, _ = self.evaluate(xy.x, state)
-                distributions.append(result.distribution)
-                predictions.append(result.prediction)
+            for i, distribution in enumerate(distributions):
+                prediction = self.sentiment_labels.vector_decode(distribution)
 
-                if result.prediction != xy.expected():
-                    test_pass = False
-                    break
+                if prediction == batch[i].y:
+                    correct += 1
 
-            if test_pass:
-                correct += 1
+                    if debug:
+                        logging.debug("%s passed!\n  Full correctly predicted output: '%s'." % (case_template.format(case), prediction))
+                else:
+                    logging.debug("%s failed!\n  Expected: %s\n  Predicted: %s" % \
+                        (case_template.format(case), batch[i].y, prediction))
 
-                if debug:
-                    logging.debug("%s passed!\n  Full correctly predicted output: '%s'." % (case_template.format(case), predictions))
-            else:
-                suffix = " ..." if len(sequence) > len(predictions) else ""
-                logging.debug("%s failed!\n  Expected: %s%s\n  Predicted: %s" % \
-                    (case_template.format(case), " ".join([str(xy.expected()) for xy in sequence[:len(predictions)]]), suffix, " ".join([str(p) for p in predictions])))
-
-            if debug:
-                step_slot_length = len(str(len(distributions))) - 1
-                output_template = "{:s} probability distribution at step {:%dd}: {:s}" % step_slot_length
-
-                for t, distribution in enumerate(distributions):
-                    logging.debug(output_template.format(case_template.format(case), t, adjutant.dict_as_str(distribution, False, True)))
-
-            total += 1
-
-        return correct / float(total)
+        return correct / float(len(xy_sequences))
 
     def evaluate(self, x, handle_unknown=False, state=None, instrument_names=[]):
         parameters = {
@@ -282,7 +272,8 @@ class Rnn:
             self.initial_state_p: state if state is not None else self.initial_state(1)
         }
         instruments = [self.session.graph.get_tensor_by_name("%s:0" % name) for name in instrument_names]
-        distribution, next_state, *instrument_values = self.session.run([self.output_distribution, self.state] + instruments, feed_dict=parameters)
+        distributions, next_state, *instrument_values = self.session.run([self.output_distributions, self.state] + instruments, feed_dict=parameters)
+        distribution = distributions[0]
         result = Result(self.sentiment_labels.vector_decode(distribution), self.sentiment_labels.vector_decode_distribution(distribution), self.sentiment_labels.encoding())
         return result, next_state, {name: instrument_values[i] for i, name in enumerate(instrument_names)}
 
