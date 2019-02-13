@@ -54,11 +54,19 @@ def create(reviews_stream, epochs, verbose):
     random.shuffle(xys)
     split_1 = int(len(xys) * 0.8)
     split_2 = split_1 + int(len(xys) * 0.1)
-    logging.debug("data splits: 0,%d,%d,%d" % (split_1, split_2, len(xys)))
     train_xys = xys[:split_1]
     validation_xys = xys[split_1:split_2]
     test_xys = xys[split_2:]
-    logging.debug("datas (train, validation, test): %d, %d, %d" % (len(train_xys), len(validation_xys), len(test_xys)))
+    logging.debug("data sets (train, validation, test): %d, %d, %d" % (len(train_xys), len(validation_xys), len(test_xys)))
+
+    for data_set in [train_xys, validation_xys, test_xys]:
+        histogram = {1: 0, 2: 0, 4: 0, 5: 0}
+
+        for xy in data_set:
+            histogram[int(xy[1])] += 1
+
+        logging.debug("data set histogram: %s" % histogram)
+
     words = mlbase.Labels(vocabulary.union(set([mlbase.BLANK])), unknown=nlp.UNKNOWN)
     sentiments = mlbase.Labels(classes)
     return words, NeuralNetwork(words, sentiments, train_xys, epochs, validation_xys, test_xys)
