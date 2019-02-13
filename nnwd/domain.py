@@ -22,28 +22,35 @@ from pytils.log import setup_logging, user_log
 from pytils import adjutant, check
 
 
-def create(reviews, epochs, verbose):
+def create(reviews_stream, epochs, verbose):
     xys = []
     vocabulary = set()
     classes = set()
+    histogram = {1: 0, 2: 0, 4: 0, 5: 0}
 
-    for review in reviews:
+    for review in reviews_stream:
         text = word_tokenize(review["text"])
 
-        if len(text) <= 100:
+        if len(text) <= 25:
             stars = int(review["stars"])
             assert stars == review["stars"], "%s != %s" % (stars, review["stars"])
-            stars = str(stars)
-            xys.append((text, stars))
-            classes.add(stars)
 
-            for word in text:
-                vocabulary.add(word)
+            if stars != 3:
+                histogram[stars] += 1
+                stars = str(stars)
+                xys.append((text, stars))
+                classes.add(stars)
 
-    if verbose:
-        for xy in xys:
-            logging.debug(xy)
+                for word in text:
+                    vocabulary.add(word)
 
+                if len(xys) > 20000:
+                    break
+
+    #if verbose:
+    #    for xy in xys:
+    #        logging.debug(xy)
+    logging.debug("histogram: %s" % histogram)
     random.shuffle(xys)
     split_1 = int(len(xys) * 0.8)
     split_2 = split_1 + int(len(xys) * 0.1)

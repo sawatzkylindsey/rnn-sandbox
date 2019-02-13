@@ -117,18 +117,15 @@ def main(argv):
     aargs = ap.parse_args(argv)
     setup_logging(".%s.log" % os.path.splitext(os.path.basename(__file__))[0], aargs.verbose, False, True, True)
     logging.debug(aargs)
-    reviews = []
-
-    with open(aargs.reviews, "r") as fh:
-        lines = fh.readlines()
-
-        for line in lines:
-            if line.strip() != "":
-                review = json.loads(line)
-                reviews += [review]
-
-    words, neural_network = domain.create(reviews, aargs.epochs, aargs.verbose)
+    words, neural_network = domain.create(stream_input(aargs.reviews), aargs.epochs, aargs.verbose)
     run(aargs.port, words, neural_network)
+
+
+def stream_input(input_file):
+    with open(input_file, "r") as fh:
+        for line in fh.readlines():
+            if line.strip() != "":
+                yield json.loads(line)
 
 
 def patch_Thread_for_profiling():
