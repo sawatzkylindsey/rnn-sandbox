@@ -156,6 +156,8 @@ class TrainingParameters:
                     if losses[i] >= losses[i + 1]:
                         return True, TrainingParameters.REASON_DEGRADING
 
+                logging.debug("Training experienced %d recovery (%s)." % (TrainingParameters.REASON_DEGRADING, losses))
+
         return False, None
 
     def batch(self, value=None):
