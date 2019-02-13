@@ -4,7 +4,7 @@ import json
 import logging
 import math
 #import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
+#from mpl_toolkits.mplot3d import Axes3D
 from nltk.tokenize import word_tokenize
 import numpy as np
 import pdb
@@ -156,7 +156,7 @@ class NeuralNetwork:
             accuracy_validation = self.lstm.test(self.validation_xys)
             logging.debug("train lstm arc %d: (loss, accuracy) (%s, %s)" % (arc, loss, accuracy_validation))
 
-        accuracy_test = self.lstm.test(self.test_xys)
+        accuracy_test = self.lstm.test(self.test_xys, True)
         logging.debug("(v, t): (%s, %s)" % (accuracy_validation, accuracy_test))
         #training_fine = mlbase.TrainingParameters() \
         #    .epochs(self.epoch_threshold) \

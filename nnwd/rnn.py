@@ -252,17 +252,17 @@ class Rnn:
             }
             distributions = self.session.run(self.output_distributions, feed_dict=parameters)
 
-            for i, distribution in enumerate(distributions):
+            for case, distribution in enumerate(distributions):
                 prediction = self.sentiment_labels.vector_decode(distribution)
 
-                if prediction == batch[i].y:
+                if prediction == batch[case].y:
                     correct += 1
 
-                    if debug:
-                        logging.debug("%s passed!\n  Full correctly predicted output: '%s'." % (case_template.format(case), prediction))
-                else:
-                    logging.debug("%s failed!\n  Expected: %s\n  Predicted: %s" % \
-                        (case_template.format(case), batch[i].y, prediction))
+                    #if debug:
+                    #    logging.debug("%s passed!\n  Full correctly predicted output: '%s'." % (case_template.format(case), prediction))
+                elif debug:
+                    logging.debug("%s failed!\n   Sequence: %s\n   Expected: %s\n  Predicted: %s" % \
+                        (case_template.format(case), " ".join(batch[case].x), batch[case].y, prediction))
 
         return correct / float(len(xy_sequences))
 

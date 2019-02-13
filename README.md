@@ -12,6 +12,7 @@ Requirements:
     source ./p3/bin/activate
     # Libraries (pip based)
     pip install matplotlib
+    pip install nltk
     pip install numpy
     pip install sklearn
     pip install tensorflow==1.9.0
