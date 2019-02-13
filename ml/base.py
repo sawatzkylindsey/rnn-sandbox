@@ -132,23 +132,29 @@ class TrainingParameters:
             return True, TrainingParameters.REASON_EPOCHS
 
         if len(losses) == self._window:
-            deltas = [losses[i] - losses[i + 1] for i in range(len(losses) - 1)]
-            maximum_loss = max(losses)
+            if self._convergence:
+                sliding_deltas = [losses[i] - losses[i + 1] for i in range(len(losses) - 1)]
+                maximum_loss = max(losses)
 
-            if self._convergence and all([d > 0.0 for d in deltas]):
-                if all([loss <= self._absolute for loss in losses]):
-                    return True, TrainingParameters.REASON_ABSOLUTE
+                if all([d > 0.0 for d in sliding_deltas]):
+                    if all([loss <= self._absolute for loss in losses]):
+                        return True, TrainingParameters.REASON_ABSOLUTE
 
-                relative_threshold = maximum_loss * self._relative
+                    relative_threshold = maximum_loss * self._relative
 
-                if all([d <= relative_threshold for d in deltas]):
-                    return True, TrainingParameters.REASON_RELATIVE
+                    if all([d <= relative_threshold for d in sliding_deltas]):
+                        return True, TrainingParameters.REASON_RELATIVE
 
-            slopes = [losses[i] - losses[0] for i in range(1, len(losses))]
+            first_deltas = [losses[0] - losses[i] for i in range(1, len(losses))]
             degradation_threshold = losses[0] * self._degradation
 
-            if all([slope >= degradation_threshold for slope in slopes]):
-                return True, TrainingParameters.REASON_DEGRADING
+            # If the deltas between the first loss and the rest are all negative and exceeding the threshold, then maybe we're degraded.
+            if all([delta <= -degradation_threshold for delta in first_deltas]):
+                # If it looks like the degradation is recovering, then its OK.
+                # That is, if the last 1/4 of the deltas are monotonically getting smaller then it seems to be recovering.
+                for i in range(int(len(losses) * 0.75), len(losses) - 1):
+                    if losses[i] >= losses[i + 1]:
+                        return True, TrainingParameters.REASON_DEGRADING
 
         return False, None
 

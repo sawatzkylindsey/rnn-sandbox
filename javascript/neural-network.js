@@ -260,7 +260,7 @@ function drawStateWidget(geometry, min, max, vector, colour, predictions, class_
             .attr("height", (h / 2))
             .attr("stroke", "none")
             .attr("stroke-width", stroke_width)
-            .attr("fill", colour)
+            .attr("fill", colour == null ? "none" : colour)
             .style("opacity", 1.0);
     }
 
@@ -294,7 +294,6 @@ function drawStateWidget(geometry, min, max, vector, colour, predictions, class_
             .attr("height", macro_y.bandwidth())
             .attr("stroke", "none")
             .attr("fill", dark_grey);
-            //    return colour == "none" ? light_grey : colour;
             //});
     // Chip's scaling box.
     svg.selectAll(".chip")
@@ -447,7 +446,7 @@ function drawSoftmax(geometry, labelWeightVector, opacity) {
             .attr("stroke-width", stroke_width)
             .attr("fill", function(d) {
                 if ("colour" in d) {
-                    return d.colour;
+                    return d.colour == null ? "none" : d.colour;
                 }
 
                 return "none";
@@ -521,7 +520,7 @@ function drawExplain(timestep, source, we, colour) {
         .attr("height", source.height + 2)
         .attr("stroke-width", 1)
         .attr("stroke", black)
-        .attr("fill", colour)
+        .attr("fill", colour == null ? "none" : colour)
         .style("opacity", 0.5);
 
     for (var key in we.vectors) {

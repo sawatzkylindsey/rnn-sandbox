@@ -125,6 +125,7 @@ class NeuralNetwork:
         self.validation_xys = [mlbase.Xy(*pair) for pair in validation_xys]
         self.test_xys = [mlbase.Xy(*pair) for pair in test_xys]
         self.epoch_threshold = epoch_threshold
+        self.setup_complete = False
         self._background_setup = threading.Thread(target=self._setup)
         self._background_setup.daemon = True
         self._background_setup.start()
@@ -143,18 +144,22 @@ class NeuralNetwork:
 
     def _train_rnn(self):
         accuracy_validation = 0.0
-        batch = 256
-        arc = 0
+        batch = 512
+        arc = -1
 
-        while accuracy_validation < 0.8 and arc < 20:
+        while accuracy_validation < 0.8 and arc < 12:
             arc += 1
+
+            if arc % 2 == 0:
+                batch = max(8, int(batch / 2))
+
             training_coarse = mlbase.TrainingParameters() \
-                .batch(max(8, int(batch / arc))) \
+                .batch(batch) \
                 .epochs(self.epoch_threshold) \
                 .convergence(False)
             loss = self.lstm.train(self.train_xys, training_coarse)
             accuracy_validation = self.lstm.test(self.validation_xys)
-            logging.debug("train lstm arc %d: (loss, accuracy) (%s, %s)" % (arc, loss, accuracy_validation))
+            logging.debug("train lstm arc %d (batch %d): (loss, accuracy) (%s, %s)" % (arc, batch, loss, accuracy_validation))
 
         accuracy_test = self.lstm.test(self.test_xys, True)
         logging.debug("(v, t): (%s, %s)" % (accuracy_validation, accuracy_test))
@@ -166,7 +171,7 @@ class NeuralNetwork:
         #logging.debug("train lstm fine %s" % loss)
 
     def _train_predictor(self):
-        part_labels = mlbase.Labels(set(NeuralNetwork.LSTM_PARTS))
+        part_labels = mlbase.Labels(set(NeuralNetwork.INSTRUMENTS))
         layer_labels = mlbase.Labels(set(range(NeuralNetwork.LAYERS)))
         #distance_field = mlbase.IntegerField()
         hidden_vector = mlbase.VectorField(NeuralNetwork.HIDDEN_WIDTH)
@@ -192,6 +197,12 @@ class NeuralNetwork:
                 #    xs_next += [x_moved]
                 #    train_xy = mlbase.Xy(x_moved, result.distribution)
                 #    self.predictor_data += [train_xy]
+
+                x = ("embedding", 0, tuple(instruments["embedding"]))
+                #x = ("embedding", 0, distance, tuple(instruments["embedding"]))
+                #xs_next += [x]
+                train_xy = mlbase.Xy(x, result.distribution)
+                self.predictor_data += [train_xy]
 
                 for part in NeuralNetwork.LSTM_PARTS:
                     for layer in range(NeuralNetwork.LAYERS):
@@ -227,7 +238,7 @@ class NeuralNetwork:
 
     def sentiment_colour(self, sentiment):
         if not self.is_setup():
-            return "none"
+            return None
 
         embedding = self.colour_embeddings[sentiment]
         return "rgb(%d, %d, %d)" % embedding
@@ -236,8 +247,8 @@ class NeuralNetwork:
         reductions = self.dimensionality_reduce(points, NeuralNetwork.HIDDEN_REDUCTION)
 
         if not self.is_setup():
-            colours = {part: {layer: "none" for layer in range(NeuralNetwork.LAYERS)} for part in NeuralNetwork.LSTM_PARTS}
-            predictions = {part: {layer: None for layer in range(NeuralNetwork.LAYERS)} for part in NeuralNetwork.LSTM_PARTS}
+            colours = {key: None for key, point in points.items()}
+            predictions = {key: None for key, point in points.items()}
             return reductions, colours, predictions
 
         predictions = self.predict_distributions(distance, points)
@@ -247,35 +258,32 @@ class NeuralNetwork:
     def dimensionality_reduce(self, points, reduction_size):
         reductions = {}
 
-        for part, subd in points.items():
-            reductions[part] = {}
+        for key, point in points.items():
+            bucket_size = math.ceil(len(point) / reduction_size)
+            reduction = []
+            offset = 0
 
-            for layer, point in subd.items():
-                bucket_size = math.ceil(len(point) / reduction_size)
-                reduction = []
-                offset = 0
+            while offset < len(point):
+                bucket = point[offset:offset + bucket_size]
+                average = sum(bucket) / float(len(bucket))
+                reduction += [average]
+                offset += bucket_size
 
-                while offset < len(point):
-                    bucket = point[offset:offset + bucket_size]
-                    average = sum(bucket) / float(len(bucket))
-                    reduction += [average]
-                    offset += bucket_size
-
-                reductions[part][layer] = reduction
+            reductions[key] = reduction
 
         return reductions
 
     def predict_distributions(self, distance, points):
-        xs = adjutant.flat_map([[(part, layer, point) for layer, point in subd.items()] for part, subd in points.items()])
+        xs = [self.decode_key(key) + (point,) for key, point in points.items()]
         #xs = adjutant.flat_map([[(part, layer, distance, point) for layer, point in subd.items()] for part, subd in points.items()])
         results = self.predictor.evaluate(xs)
-        distribution_predictions = {part: {} for part in NeuralNetwork.LSTM_PARTS}
+        distribution_predictions = {}
 
         for i, x in enumerate(xs):
-            part, layer, tmp_point = x
-            #part, layer, tmp_distance, tmp_point = x
+            part, layer, _ = x
+            #part, layer, tmp_distance, _ = x
             ordered_predictions = [item[0] for item in sorted(results[i].distribution.items(), key=lambda item: item[1], reverse=True)]
-            distribution_predictions[part][layer] = {prediction: results[i].distribution[prediction] for prediction in ordered_predictions[:NeuralNetwork.TOP_PREDICTIONS]}
+            distribution_predictions[self.encode_key(part, layer)] = {prediction: results[i].distribution[prediction] for prediction in ordered_predictions[:NeuralNetwork.TOP_PREDICTIONS]}
 
         return distribution_predictions
 
@@ -284,43 +292,57 @@ class NeuralNetwork:
         # Make the maximum target distance (1.0) one quarter the length of a dimension in the colour space.
         scaler = (255.0 / 4)
 
-        for part in NeuralNetwork.LSTM_PARTS:
-            colours[part] = {}
-
-            for layer in range(NeuralNetwork.LAYERS):
-                invert_distribution = {k: 1.0 - v for k, v in predictions[part][layer].items()}
-                prediction_distances = [(k, v * scaler) for k, v in mlbase.softmax(invert_distribution).items()]
-                fit, _ = geometry.fit_point([self.colour_embeddings[item[0]] for item in prediction_distances], [item[1] for item in prediction_distances], epsilon=0.1, visualize=False)
-                colours[part][layer] = "rgb(%d, %d, %d)" % tuple([round(i) for i in fit])
+        for key, point in points.items():
+            invert_distribution = {k: 1.0 - v for k, v in predictions[key].items()}
+            prediction_distances = [(k, v * scaler) for k, v in mlbase.softmax(invert_distribution).items()]
+            fit, _ = geometry.fit_point([self.colour_embeddings[item[0]] for item in prediction_distances], [item[1] for item in prediction_distances], epsilon=0.1, visualize=False)
+            colours[key] = "rgb(%d, %d, %d)" % tuple([round(i) for i in fit])
 
         return colours
 
     def weights(self, sequence, distance):
-        stepwise_lstm = self.lstm.stepwise(True)
+        stepwise_lstm = self.lstm.stepwise(handle_unknown=True)
 
         for x in sequence:
             x_word = self.words.decode(self.words.encode(x, True))
             result, instruments = stepwise_lstm.step(x, NeuralNetwork.INSTRUMENTS)
 
-        points = {}
+        embedding_key = self.encode_key("embedding")
+        points = {
+            embedding_key: instruments["embedding"]
+        }
 
         for part in NeuralNetwork.LSTM_PARTS:
-            points[part] = {}
-
             for layer in range(NeuralNetwork.LAYERS):
-                points[part][layer] = instruments[part][layer]
+                points[self.encode_key(part, layer)] = instruments[part][layer]
 
         point_reductions, point_colours, point_predictions = self.compute_point_abstractions(distance, points)
-        embedding_reduction = self.dimensionality_reduce({"a": {"b": instruments["embedding"]}}, NeuralNetwork.EMBEDDING_REDUCTION)["a"]["b"]
-        embedding = HiddenState(embedding_reduction, colour="none")
+        embedding = HiddenState(point_reductions[embedding_key], colour=point_colours[embedding_key], predictions=self.prediction_distribution(point_predictions[embedding_key]))
         units = []
 
         for layer in range(NeuralNetwork.LAYERS):
             states = self.make_hidden_states(layer, point_reductions, point_colours, point_predictions)
             units += [Unit(**states)]
 
-        softmax = LabelDistribution(result.distribution, result.encoding, NeuralNetwork.OUTPUT_WIDTH, lambda word: self.sentiment_colour(word))
+        softmax = LabelDistribution(result.distribution, NeuralNetwork.OUTPUT_WIDTH, lambda sentiment: self.sentiment_colour(sentiment))
         return Layer(embedding, units, softmax, len(sequence) - 1, x_word, result.prediction)
+
+    def encode_key(self, part, layer=0):
+        return "%s-%d" % (part, layer)
+
+    def decode_key(self, key):
+        result = key.split("-")
+
+        if len(result) == 2:
+            return (result[0], int(result[1]))
+        else:
+            raise ValueError("invalid decode of '%s': %s" % (key, result))
+
+    def prediction_distribution(self, prediction):
+        if prediction is None:
+            return None
+
+        return LabelDistribution(prediction, colour_fn=lambda sentiment: self.sentiment_colour(sentiment))
 
     def make_hidden_states(self, layer, point_reductions, point_colours, point_predictions):
         states = {}
@@ -331,14 +353,8 @@ class NeuralNetwork:
             else:
                 min_max = (None, None)
 
-            prediction = point_predictions[part][layer]
-
-            if prediction is None:
-                label_distribution = None
-            else:
-                label_distribution = LabelDistribution(prediction, {k: None for k, v in prediction.items()}, colour_fn=lambda word: self.sentiment_colour(word))
-
-            hidden_state = HiddenState(point_reductions[part][layer], min_max, point_colours[part][layer], label_distribution)
+            key = self.encode_key(part, layer)
+            hidden_state = HiddenState(point_reductions[key], min_max, point_colours[key], self.prediction_distribution(point_predictions[key]))
             states[NeuralNetwork.SINGULAR[part]] = hidden_state
 
         return states
