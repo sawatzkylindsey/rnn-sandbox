@@ -317,7 +317,9 @@ class Rnn:
 
 class Stepwise:
     def __init__(self, rnn, name=None, handle_unknown=False):
-        self.name = name if name is not None else "".join(random.choices(string.ascii_lowercase, k=6))
+        # Amazingly, python on our servers doesn't have random.choices.
+        # We can do the same thing manually.              vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
+        self.name = name if name is not None else "".join([random.choice(string.ascii_lowercase) for i in range(6)])
         self.handle_unknown = handle_unknown
         self.rnn = rnn
         self.state = None

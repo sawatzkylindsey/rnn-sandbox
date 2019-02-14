@@ -34,13 +34,18 @@ def create(reviews_stream, epochs, verbose):
             xys = pickle.load(fh)
     else:
         for review in reviews_stream:
-            text = word_tokenize(review["text"])
+            text = [word.lower() for word in word_tokenize(review["text"])]
 
             if len(text) <= 25:
                 stars = int(review["stars"])
                 assert stars == review["stars"], "%s != %s" % (stars, review["stars"])
 
                 if stars != 3:
+                    if stars == 2:
+                        stars = 1
+                    elif stars == 4:
+                        stars = 5
+
                     stars = str(stars)
                     xys.append((text, stars))
 
