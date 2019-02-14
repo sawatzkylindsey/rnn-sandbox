@@ -7,7 +7,6 @@ from nltk.tokenize import word_tokenize
 import numpy as np
 import os
 import pdb
-import pickle
 import random
 from sklearn.manifold import TSNE
 import threading
@@ -17,6 +16,7 @@ from ml import nlp
 from ml import nn as ffnn
 from nnwd import geometry
 from nnwd.models import Layer, Unit, WeightExplain, HiddenState, LabelDistribution
+from nnwd import pickler
 from nnwd import rnn
 from pytils.log import setup_logging, user_log
 from pytils import adjutant, check
@@ -30,8 +30,7 @@ def create(reviews_stream, epochs, verbose):
     xys_file = os.path.join(RESUME_DIR, "xys.pickle")
 
     if os.path.exists(xys_file):
-        with open(xys_file, "rb") as fh:
-            xys = pickle.load(fh)
+        xys = pickler.load(xys_file)
     else:
         for review in reviews_stream:
             text = [word.lower() for word in word_tokenize(review["text"])]
@@ -52,10 +51,7 @@ def create(reviews_stream, epochs, verbose):
                     if len(xys) > 20000:
                         break
 
-        os.makedirs(RESUME_DIR, exist_ok=True)
-
-        with open(xys_file, "wb") as fh:
-            pickle.dump(xys, fh)
+        pickler.dump(xys, xys_file)
 
     random.shuffle(xys)
     split_1 = int(len(xys) * 0.8)
@@ -184,11 +180,11 @@ class NeuralNetwork:
                 if arc % 2 == 0:
                     batch = max(8, int(batch / 2))
 
-                training_coarse = mlbase.TrainingParameters() \
+                training_parameters = mlbase.TrainingParameters() \
                     .batch(batch) \
                     .epochs(self.epoch_threshold) \
                     .convergence(False)
-                loss = self.lstm.train(self.train_xys, training_coarse)
+                loss = self.lstm.train(self.train_xys, training_parameters)
                 accuracy_validation = self.lstm.test(self.validation_xys)
                 logging.debug("train lstm arc %d (batch %d): (loss, accuracy) (%s, %s)" % (arc, batch, loss, accuracy_validation))
 
@@ -203,58 +199,60 @@ class NeuralNetwork:
     def _train_predictor(self):
         part_labels = mlbase.Labels(set(NeuralNetwork.INSTRUMENTS))
         layer_labels = mlbase.Labels(set(range(NeuralNetwork.LAYERS)))
-        #distance_field = mlbase.IntegerField()
+        distance_field = mlbase.IntegerField()
         hidden_vector = mlbase.VectorField(NeuralNetwork.HIDDEN_WIDTH)
-        predictor_input = mlbase.ConcatField([part_labels, layer_labels, hidden_vector])
-        #predictor_input = mlbase.ConcatField([part_labels, layer_labels, distance_field, hidden_vector])
+        #predictor_input = mlbase.ConcatField([part_labels, layer_labels, hidden_vector])
+        predictor_input = mlbase.ConcatField([part_labels, layer_labels, distance_field, hidden_vector])
         predictor_output = mlbase.Labels(set(self.sentiments.labels()))
         hyper_parameters = ffnn.HyperParameters() \
             .width(len(predictor_input))
         self.predictor = ffnn.Model("predictor", hyper_parameters, predictor_input, predictor_output, mlbase.SINGLE_LABEL)
-        self.predictor_data = []
+        self.predictor_xys = []
+        predictor_xys_file = os.path.join(RESUME_DIR, "predictor_xys.pickle")
 
-        for xy in self.train_xys:
-            stepwise_lstm = self.lstm.stepwise(False)
-            #xs = []
+        if os.path.exists(predictor_xys_file):
+            self.predictor_xys = pickler.load(predictor_xys_file)
+        else:
+            for xy in self.train_xys:
+                stepwise_lstm = self.lstm.stepwise(False)
+                xs = []
+                final_distribution = None
 
-            for i, word in enumerate(xy.x):
-                result, instruments = stepwise_lstm.step(word, NeuralNetwork.INSTRUMENTS)
-                #xs_next = []
-                #distance = len(xy.x) - i - 1
+                for i, word in enumerate(xy.x):
+                    result, instruments = stepwise_lstm.step(word, NeuralNetwork.INSTRUMENTS)
+                    distance = len(xy.x) - i - 1
 
-                #for x in xs:
-                #    x_moved = (x[0], x[1], x[2] + 1, x[3])
-                #    xs_next += [x_moved]
-                #    train_xy = mlbase.Xy(x_moved, result.distribution)
-                #    self.predictor_data += [train_xy]
+                    if distance == 0:
+                        final_distribution = result.distribution
 
-                x = ("embedding", 0, tuple(instruments["embedding"]))
-                #x = ("embedding", 0, distance, tuple(instruments["embedding"]))
-                #xs_next += [x]
-                train_xy = mlbase.Xy(x, result.distribution)
-                self.predictor_data += [train_xy]
+                    #x = ("embedding", 0, tuple(instruments["embedding"]))
+                    x = ("embedding", 0, distance, tuple(instruments["embedding"]))
+                    xs += [x]
+                    #train_xy = mlbase.Xy(x, result.distribution)
+                    #self.predictor_xys += [train_xy]
 
-                for part in NeuralNetwork.LSTM_PARTS:
-                    for layer in range(NeuralNetwork.LAYERS):
-                        point = tuple(instruments[part][layer])
-                        x = (part, layer, point)
-                        #x = (part, layer, distance, point)
-                        #xs_next += [x]
-                        train_xy = mlbase.Xy(x, result.distribution)
-                        self.predictor_data += [train_xy]
+                    for part in NeuralNetwork.LSTM_PARTS:
+                        for layer in range(NeuralNetwork.LAYERS):
+                            point = tuple(instruments[part][layer])
+                            #x = (part, layer, point)
+                            x = (part, layer, distance, point)
+                            xs += [x]
+                            #train_xy = mlbase.Xy(x, result.distribution)
+                            #self.predictor_xys += [train_xy]
 
-                #xs = xs_next
+                for x in xs:
+                    train_xy = mlbase.Xy(x, final_distribution)
+                    self.predictor_xys += [train_xy]
 
-            #for x in xs:
-            #    train_xy = mlbase.Xy(x, result.distribution)
-            #    self.predictor_data += [train_xy]
+            pickler.dump(self.predictor_xys, predictor_xys_file)
 
+        logging.debug("Predictor data (distance based): %d." % len(self.predictor_xys))
         self.setup_complete = True
-        training_coarse = mlbase.TrainingParameters() \
-            .epochs(max(1, int(self.epoch_threshold / 2))) \
-            .batch(16)
-        loss = self.predictor.train(self.predictor_data, training_coarse)
-        logging.debug("train predictor coarse %s" % loss)
+        training_parameters = mlbase.TrainingParameters() \
+            .epochs(self.epoch_threshold) \
+            .batch(32)
+        loss = self.predictor.train(self.predictor_xys, training_parameters)
+        logging.debug("train predictor %s" % loss)
 
     def _setup_colour_embeddings(self):
         self.colour_embeddings = self.find_colour_embeddings()
@@ -304,14 +302,14 @@ class NeuralNetwork:
         return reductions
 
     def predict_distributions(self, distance, points):
-        xs = [self.decode_key(key) + (point,) for key, point in points.items()]
-        #xs = adjutant.flat_map([[(part, layer, distance, point) for layer, point in subd.items()] for part, subd in points.items()])
+        #xs = [self.decode_key(key) + (point,) for key, point in points.items()]
+        xs = [self.decode_key(key) + (distance, point) for key, point in points.items()]
         results = self.predictor.evaluate(xs)
         distribution_predictions = {}
 
         for i, x in enumerate(xs):
-            part, layer, _ = x
-            #part, layer, tmp_distance, _ = x
+            #part, layer, _ = x
+            part, layer, distance, _ = x
             ordered_predictions = [item[0] for item in sorted(results[i].distribution.items(), key=lambda item: item[1], reverse=True)]
             distribution_predictions[self.encode_key(part, layer)] = {prediction: results[i].distribution[prediction] for prediction in ordered_predictions[:NeuralNetwork.TOP_PREDICTIONS]}
 
