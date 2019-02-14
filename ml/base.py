@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import collections
+import logging
 import math
 import numpy as np
 import pdb
@@ -154,9 +155,10 @@ class TrainingParameters:
                 # That is, if the last 1/4 of the deltas are monotonically getting smaller then it seems to be recovering.
                 for i in range(int(len(losses) * 0.75), len(losses) - 1):
                     if losses[i] >= losses[i + 1]:
+                        logging.debug("Training experienced %s non-recovery (%s >= %s)." % (TrainingParameters.REASON_DEGRADING, losses[i], losses[i + 1]))
                         return True, TrainingParameters.REASON_DEGRADING
 
-                logging.debug("Training experienced %d recovery (%s)." % (TrainingParameters.REASON_DEGRADING, losses))
+                logging.debug("Training experienced %s recovery (%s)." % (TrainingParameters.REASON_DEGRADING, losses))
 
         return False, None
 
@@ -252,29 +254,12 @@ class Labels(Field):
             self._decoding[0] = self.unknown
 
         i = len(self._encoding)
+        self._labels = sorted([label for label in values])
 
-        for value in values:
+        for value in self._labels:
             self._encoding[check.check_not_none(value)] = i
             self._decoding[i] = value
             i += 1
-
-        self._labels = sorted([label for label in self._encoding.keys()])
-
-    def with_labels(self, values):
-        new_labels = Labels.__new__(Labels)
-        new_labels.unknown = self.unknown
-        new_labels._empty = self._empty
-        new_labels._encoding = self._encoding
-        new_labels._decoding = self._decoding
-        i = len(new_labels._encoding)
-
-        for value in values:
-            new_labels._encoding[check.check_not_none(value)] = i
-            new_labels._decoding[i] = value
-            i += 1
-
-        new_labels._labels = sorted([label for label in new_labels._encoding.keys()])
-        return new_labels
 
     def __repr__(self):
         return "Labels{%s}" % self._encoding

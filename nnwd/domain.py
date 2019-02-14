@@ -3,11 +3,11 @@ import itertools
 import json
 import logging
 import math
-#import matplotlib.pyplot as plt
-#from mpl_toolkits.mplot3d import Axes3D
 from nltk.tokenize import word_tokenize
 import numpy as np
+import os
 import pdb
+import pickle
 import random
 from sklearn.manifold import TSNE
 import threading
@@ -22,35 +22,36 @@ from pytils.log import setup_logging, user_log
 from pytils import adjutant, check
 
 
+RESUME_DIR = ".resume"
+
+
 def create(reviews_stream, epochs, verbose):
     xys = []
-    vocabulary = set()
-    classes = set()
-    histogram = {1: 0, 2: 0, 4: 0, 5: 0}
+    xys_file = os.path.join(RESUME_DIR, "xys.pickle")
 
-    for review in reviews_stream:
-        text = word_tokenize(review["text"])
+    if os.path.exists(xys_file):
+        with open(xys_file, "rb") as fh:
+            xys = pickle.load(fh)
+    else:
+        for review in reviews_stream:
+            text = word_tokenize(review["text"])
 
-        if len(text) <= 25:
-            stars = int(review["stars"])
-            assert stars == review["stars"], "%s != %s" % (stars, review["stars"])
+            if len(text) <= 25:
+                stars = int(review["stars"])
+                assert stars == review["stars"], "%s != %s" % (stars, review["stars"])
 
-            if stars != 3:
-                histogram[stars] += 1
-                stars = str(stars)
-                xys.append((text, stars))
-                classes.add(stars)
+                if stars != 3:
+                    stars = str(stars)
+                    xys.append((text, stars))
 
-                for word in text:
-                    vocabulary.add(word)
+                    if len(xys) > 20000:
+                        break
 
-                if len(xys) > 20000:
-                    break
+        os.makedirs(RESUME_DIR, exist_ok=True)
 
-    #if verbose:
-    #    for xy in xys:
-    #        logging.debug(xy)
-    logging.debug("histogram: %s" % histogram)
+        with open(xys_file, "wb") as fh:
+            pickle.dump(xys, fh)
+
     random.shuffle(xys)
     split_1 = int(len(xys) * 0.8)
     split_2 = split_1 + int(len(xys) * 0.1)
@@ -60,14 +61,26 @@ def create(reviews_stream, epochs, verbose):
     logging.debug("data sets (train, validation, test): %d, %d, %d" % (len(train_xys), len(validation_xys), len(test_xys)))
 
     for data_set in [train_xys, validation_xys, test_xys]:
-        histogram = {1: 0, 2: 0, 4: 0, 5: 0}
+        histogram = {}
 
         for xy in data_set:
-            histogram[int(xy[1])] += 1
+            if xy[1] not in histogram:
+                histogram[xy[1]] = 0
+
+            histogram[xy[1]] += 1
 
         logging.debug("data set histogram: %s" % histogram)
 
-    words = mlbase.Labels(vocabulary.union(set([mlbase.BLANK])), unknown=nlp.UNKNOWN)
+    vocabulary = set([mlbase.BLANK])
+    classes = set()
+
+    for xy in xys:
+        for word in xy[0]:
+            vocabulary.add(word)
+
+        classes.add(xy[1])
+
+    words = mlbase.Labels(vocabulary, unknown=nlp.UNKNOWN)
     sentiments = mlbase.Labels(classes)
     return words, NeuralNetwork(words, sentiments, train_xys, epochs, validation_xys, test_xys)
 
@@ -128,7 +141,6 @@ class NeuralNetwork:
     def __init__(self, words, sentiments, train_xys, epoch_threshold, validation_xys, test_xys):
         self.words = check.check_instance(words, mlbase.Labels)
         self.sentiments = check.check_instance(sentiments, mlbase.Labels)
-        self.lstm = rnn.Rnn(NeuralNetwork.LAYERS, NeuralNetwork.HIDDEN_WIDTH, NeuralNetwork.EMBEDDING_WIDTH, words, sentiments)
         self.train_xys = [mlbase.Xy(*pair) for pair in train_xys]
         self.validation_xys = [mlbase.Xy(*pair) for pair in validation_xys]
         self.test_xys = [mlbase.Xy(*pair) for pair in test_xys]
@@ -151,32 +163,37 @@ class NeuralNetwork:
         #return not self._background_setup.is_alive()
 
     def _train_rnn(self):
-        accuracy_validation = 0.0
-        batch = 512
-        arc = -1
+        self.lstm = rnn.Rnn(NeuralNetwork.LAYERS, NeuralNetwork.HIDDEN_WIDTH, NeuralNetwork.EMBEDDING_WIDTH, self.words, self.sentiments)
+        lstm_dir = os.path.join(RESUME_DIR, "lstm")
 
-        while accuracy_validation < 0.8 and arc < 12:
-            arc += 1
+        if os.path.exists(lstm_dir):
+            self.lstm.load(lstm_dir)
+        else:
+            accuracy_validation = 0.0
+            batch = 512
+            arc = -1
 
-            if arc % 2 == 0:
-                batch = max(8, int(batch / 2))
+            while accuracy_validation < 0.8 and arc < 12:
+                arc += 1
 
-            training_coarse = mlbase.TrainingParameters() \
-                .batch(batch) \
-                .epochs(self.epoch_threshold) \
-                .convergence(False)
-            loss = self.lstm.train(self.train_xys, training_coarse)
-            accuracy_validation = self.lstm.test(self.validation_xys)
-            logging.debug("train lstm arc %d (batch %d): (loss, accuracy) (%s, %s)" % (arc, batch, loss, accuracy_validation))
+                if arc % 2 == 0:
+                    batch = max(8, int(batch / 2))
 
+                training_coarse = mlbase.TrainingParameters() \
+                    .batch(batch) \
+                    .epochs(self.epoch_threshold) \
+                    .convergence(False)
+                loss = self.lstm.train(self.train_xys, training_coarse)
+                accuracy_validation = self.lstm.test(self.validation_xys)
+                logging.debug("train lstm arc %d (batch %d): (loss, accuracy) (%s, %s)" % (arc, batch, loss, accuracy_validation))
+
+            self.lstm.save(lstm_dir)
+
+        logging.debug("Calculating final validation accuracy.")
+        accuracy_validation = self.lstm.test(self.validation_xys, True)
+        logging.debug("Calculating final test accuracy.")
         accuracy_test = self.lstm.test(self.test_xys, True)
         logging.debug("(v, t): (%s, %s)" % (accuracy_validation, accuracy_test))
-        #training_fine = mlbase.TrainingParameters() \
-        #    .epochs(self.epoch_threshold) \
-        #    .absolute(loss * 0.5) \
-        #    .batch(2)
-        #loss = self.lstm.train(self.train_xys, training_fine)
-        #logging.debug("train lstm fine %s" % loss)
 
     def _train_predictor(self):
         part_labels = mlbase.Labels(set(NeuralNetwork.INSTRUMENTS))
@@ -187,7 +204,7 @@ class NeuralNetwork:
         #predictor_input = mlbase.ConcatField([part_labels, layer_labels, distance_field, hidden_vector])
         predictor_output = mlbase.Labels(set(self.sentiments.labels()))
         hyper_parameters = ffnn.HyperParameters() \
-            .width(max(1, int(len(predictor_input) * 0.75)))
+            .width(len(predictor_input))
         self.predictor = ffnn.Model("predictor", hyper_parameters, predictor_input, predictor_output, mlbase.SINGLE_LABEL)
         self.predictor_data = []
 

@@ -258,8 +258,9 @@ class Rnn:
                 if prediction == batch[case].y:
                     correct += 1
 
-                    #if debug:
-                    #    logging.debug("%s passed!\n  Full correctly predicted output: '%s'." % (case_template.format(case), prediction))
+                    if debug:
+                        logging.debug("%s passed!\n   Sequence: %s\n   Expected: %s" % \
+                            (case_template.format(case), " ".join(batch[case].x), batch[case].y))
                 elif debug:
                     logging.debug("%s failed!\n   Sequence: %s\n   Expected: %s\n  Predicted: %s" % \
                         (case_template.format(case), " ".join(batch[case].x), batch[case].y, prediction))
@@ -297,6 +298,21 @@ class Rnn:
             self.initial_state_p: self.initial_state(1)
         }
         return self.session.run([self.session.graph.get_tensor_by_name("embedding:0")], feed_dict=parameters)[0].tolist()
+
+    def load(self, model_dir):
+        model = tf.train.get_checkpoint_state(model_dir)
+        assert model is not None, "No saved model in '%s'." % model_dir
+        saver = tf.train.Saver(tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=self.scope))
+        saver.restore(self.session, model.model_checkpoint_path)
+
+    def save(self, model_dir):
+        if os.path.isfile(model_dir) or (model_dir.endswith("/") and os.path.isfile(os.path.dirname(model_dir))):
+            raise ValueError("model_dir '%s' must not be a file." % model_dir)
+
+        os.makedirs(model_dir, exist_ok=True)
+        model_file = os.path.join(model_dir, "basename")
+        saver = tf.train.Saver(tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=self.scope))
+        saver.save(self.session, model_file)
 
 
 class Stepwise:
