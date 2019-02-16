@@ -207,11 +207,28 @@ class NeuralNetwork:
         hyper_parameters = ffnn.HyperParameters() \
             .width(len(predictor_input))
         self.predictor = ffnn.Model("predictor", hyper_parameters, predictor_input, predictor_output, mlbase.SINGLE_LABEL)
-        self.predictor_xys = []
+        predictor_dir = os.path.join(RESUME_DIR, "predictor")
+
+        if os.path.exists(predictor_dir):
+            self.predictor.load(predictor_dir)
+            self.setup_complete = True
+        else:
+            self.predictor_xys = self._get_predictor_data()
+            training_parameters = mlbase.TrainingParameters() \
+                .epochs(self.epoch_threshold) \
+                .batch(32)
+            # Technically not complete yet, but with the predictor setup it can start answering queries.
+            self.setup_complete = True
+            loss = self.predictor.train(self.predictor_xys, training_parameters)
+            logging.debug("train predictor %s" % loss)
+            self.predictor.save(predictor_dir)
+
+    def _get_predictor_data(self):
+        predictor_xys = []
         predictor_xys_file = os.path.join(RESUME_DIR, "predictor_xys.pickle")
 
         if os.path.exists(predictor_xys_file):
-            self.predictor_xys = pickler.load(predictor_xys_file)
+            predictor_xys = pickler.load(predictor_xys_file)
         else:
             for xy in self.train_xys:
                 stepwise_lstm = self.lstm.stepwise(False)
@@ -229,7 +246,7 @@ class NeuralNetwork:
                     x = ("embedding", 0, distance, tuple(instruments["embedding"]))
                     xs += [x]
                     #train_xy = mlbase.Xy(x, result.distribution)
-                    #self.predictor_xys += [train_xy]
+                    #predictor_xys += [train_xy]
 
                     for part in NeuralNetwork.LSTM_PARTS:
                         for layer in range(NeuralNetwork.LAYERS):
@@ -238,21 +255,16 @@ class NeuralNetwork:
                             x = (part, layer, distance, point)
                             xs += [x]
                             #train_xy = mlbase.Xy(x, result.distribution)
-                            #self.predictor_xys += [train_xy]
+                            #predictor_xys += [train_xy]
 
                 for x in xs:
                     train_xy = mlbase.Xy(x, final_distribution)
-                    self.predictor_xys += [train_xy]
+                    predictor_xys += [train_xy]
 
-            pickler.dump(self.predictor_xys, predictor_xys_file)
+            pickler.dump(predictor_xys, predictor_xys_file)
 
-        logging.debug("Predictor data (distance based): %d." % len(self.predictor_xys))
-        self.setup_complete = True
-        training_parameters = mlbase.TrainingParameters() \
-            .epochs(self.epoch_threshold) \
-            .batch(32)
-        loss = self.predictor.train(self.predictor_xys, training_parameters)
-        logging.debug("train predictor %s" % loss)
+        logging.debug("Predictor data (distance based): %d." % len(predictor_xys))
+        return predictor_xys
 
     def _setup_colour_embeddings(self):
         self.colour_embeddings = self.find_colour_embeddings()

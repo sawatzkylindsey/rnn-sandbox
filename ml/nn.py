@@ -175,6 +175,21 @@ class Model:
         else:
             return mlbase.Result(self.output_labels.vector_decode(distributions[0]), self.output_labels.vector_decode_distribution(distributions[0]))
 
+    def load(self, model_dir):
+        model = tf.train.get_checkpoint_state(model_dir)
+        assert model is not None, "No saved model in '%s'." % model_dir
+        saver = tf.train.Saver(tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=self.scope))
+        saver.restore(self.session, model.model_checkpoint_path)
+
+    def save(self, model_dir):
+        if os.path.isfile(model_dir) or (model_dir.endswith("/") and os.path.isfile(os.path.dirname(model_dir))):
+            raise ValueError("model_dir '%s' must not be a file." % model_dir)
+
+        os.makedirs(model_dir, exist_ok=True)
+        model_file = os.path.join(model_dir, "basename")
+        saver = tf.train.Saver(tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=self.scope))
+        saver.save(self.session, model_file)
+
 
 class HyperParameters:
     DEFAULT_WIDTH = 10
