@@ -15,7 +15,7 @@ from ml import base as mlbase
 from ml import nlp
 from ml import nn as ffnn
 from nnwd import geometry
-from nnwd.models import Layer, Unit, WeightExplain, HiddenState, LabelDistribution
+from nnwd.models import Timestep, WeightExplain, WeightDetail, HiddenState, LabelDistribution
 from nnwd import pickler
 from nnwd import rnn
 from pytils.log import setup_logging, user_log
@@ -298,20 +298,34 @@ class NeuralNetwork:
     def dimensionality_reduce(self, points, reduction_size):
         reductions = {}
 
-        for key, point in points.items():
-            bucket_size = math.ceil(len(point) / reduction_size)
+        for key, endpoints in self.dimensionality_reduce_mapping(points, reduction_size).items():
             reduction = []
-            offset = 0
 
-            while offset < len(point):
-                bucket = point[offset:offset + bucket_size]
-                average = sum(bucket) / float(len(bucket))
-                reduction += [average]
-                offset += bucket_size
+            for i, endpoint in sorted(endpoints.items()):
+                bucket = points[key][endpoint[0]:endpoint[1]]
+                reduction += [sum(bucket) / float(len(bucket))]
 
             reductions[key] = reduction
 
         return reductions
+
+    def dimensionality_reduce_mapping(self, points, reduction_size):
+        mappings = {}
+
+        for key, point in points.items():
+            bucket_size = math.ceil(len(point) / reduction_size)
+            endpoints = {}
+            offset = 0
+            i = 0
+
+            while offset < len(point):
+                endpoints[i] = (offset, min(offset + bucket_size, len(point)))
+                offset += bucket_size
+                i += 1
+
+            mappings[key] = endpoints
+
+        return mappings
 
     def predict_distributions(self, distance, points):
         #xs = [self.decode_key(key) + (point,) for key, point in points.items()]
@@ -358,14 +372,41 @@ class NeuralNetwork:
 
         point_reductions, point_colours, point_predictions = self.compute_point_abstractions(distance, points)
         embedding = HiddenState(point_reductions[embedding_key], colour=point_colours[embedding_key], predictions=self.prediction_distribution(point_predictions[embedding_key]))
-        units = []
-
-        for layer in range(NeuralNetwork.LAYERS):
-            states = self.make_hidden_states(layer, point_reductions, point_colours, point_predictions)
-            units += [Unit(**states)]
-
+        units = self.make_lstm_units(point_reductions, point_colours, point_predictions)
         softmax = LabelDistribution(result.distribution, NeuralNetwork.OUTPUT_WIDTH, lambda sentiment: self.sentiment_colour(sentiment))
-        return Layer(embedding, units, softmax, len(sequence) - 1, x_word, result.prediction)
+        return Timestep(embedding, units, softmax, len(sequence) - 1, x_word, result.prediction)
+
+    def weight_detail(self, sequence, distance, part, layer):
+        stepwise_lstm = self.lstm.stepwise(handle_unknown=True)
+
+        for x in sequence:
+            result, instruments = stepwise_lstm.step(x, [part])
+
+        point = instruments[part]
+
+        if layer is not None:
+            point = point[layer]
+
+        if part.endswith("_gates"):
+            min_max = (0, 1)
+        else:
+            min_max = (None, None)
+
+        # This is the regular process by which a hidden_state is served out with its various reductions/abstractions.
+        key = self.encode_key(part, layer)
+        keyed_point = {key: point}
+        reduction, colour, prediction = self.compute_point_abstractions(distance, keyed_point)
+        hidden_state = HiddenState(reduction[key], min_max, colour[key], self.prediction_distribution(prediction[key]))
+        # This is the full point.
+        full_hidden_state = HiddenState(point, min_max, None, None)
+        back_links = {}
+
+        for i, endpoint in self.dimensionality_reduce_mapping(keyed_point, NeuralNetwork.HIDDEN_REDUCTION)[key].items():
+            for j in range(endpoint[0], endpoint[1]):
+                assert j not in back_links, "%d already in %s" % (j, back_links)
+                back_links[j] = i
+
+        return WeightDetail(hidden_state, full_hidden_state, back_links)
 
     def encode_key(self, part, layer=0):
         return "%s-%d" % (part, layer)
@@ -384,20 +425,23 @@ class NeuralNetwork:
 
         return LabelDistribution(prediction, colour_fn=lambda sentiment: self.sentiment_colour(sentiment))
 
-    def make_hidden_states(self, layer, point_reductions, point_colours, point_predictions):
-        states = {}
+    def make_lstm_units(self, point_reductions, point_colours, point_predictions):
+        units = {}
 
         for part in NeuralNetwork.LSTM_PARTS:
-            if part.endswith("_gates"):
-                min_max = (0, 1)
-            else:
-                min_max = (None, None)
+            units[part] = {}
 
-            key = self.encode_key(part, layer)
-            hidden_state = HiddenState(point_reductions[key], min_max, point_colours[key], self.prediction_distribution(point_predictions[key]))
-            states[NeuralNetwork.SINGULAR[part]] = hidden_state
+            for layer in range(NeuralNetwork.LAYERS):
+                if part.endswith("_gates"):
+                    min_max = (0, 1)
+                else:
+                    min_max = (None, None)
 
-        return states
+                key = self.encode_key(part, layer)
+                hidden_state = HiddenState(point_reductions[key], min_max, point_colours[key], self.prediction_distribution(point_predictions[key]))
+                units[part][layer] = hidden_state
+
+        return units
 
     def weight_explain(self, sequence, name, column):
         weights = self.weights(sequence)

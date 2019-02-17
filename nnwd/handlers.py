@@ -32,6 +32,22 @@ class Weights:
         return self.neural_network.weights(sequence, distance)
 
 
+class WeightDetail:
+    def __init__(self, neural_network):
+        self.neural_network = neural_network
+
+    def get(self, data):
+        sequence = data["sequence"]
+        distance = check.check_gte(int(data["distance"][0]), 0)
+        part = data["part"][0]
+        layer = None
+
+        if "layer" in data:
+            layer = int(data["layer"][0])
+
+        return self.neural_network.weight_detail(sequence, distance, part, layer)
+
+
 class WeightExplain:
     def __init__(self, neural_network):
         self.neural_network = neural_network

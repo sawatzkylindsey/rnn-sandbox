@@ -99,6 +99,7 @@ def run(port, words, neural_network):
         "echo": handlers.Echo(),
         "weight-explain": handlers.WeightExplain(neural_network),
         "weights": handlers.Weights(neural_network),
+        "weight-detail": handlers.WeightDetail(neural_network),
         "words": handlers.Words(words.labels()),
     }
     user_log.info('Starting httpd %d...' % port)

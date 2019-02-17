@@ -4,10 +4,10 @@ import logging
 from pytils import check
 
 
-class Layer:
+class Timestep:
     def __init__(self, embedding, units, softmax, timestep, x_word, y_word):
         self.embedding = check.check_instance(embedding, HiddenState)
-        self.units = check.check_list(units)
+        self.units = check.check_dict(units)
         self.softmax = check.check_instance(softmax, LabelDistribution)
         self.timestep = timestep
         self.x_word = x_word
@@ -16,7 +16,7 @@ class Layer:
     def as_json(self):
         return {
             "embedding": self.embedding.as_json(),
-            "units": [u.as_json() for u in self.units],
+            "units": {k: {l: v.as_json() for l, v in subd.items()} for k, subd in self.units.items()},
             "softmax": self.softmax.as_json(),
             "timestep": self.timestep,
             "x_word": self.x_word,
@@ -26,29 +26,29 @@ class Layer:
 
 class Unit:
     def __init__(self, remember_gate, forget_gate, output_gate, input_hat, remember, cell_previous, forget, cell, cell_hat, output):
-        self.remember_gate = remember_gate
-        self.forget_gate = forget_gate
-        self.output_gate = output_gate
-        self.input_hat = input_hat
-        self.remember = remember
-        self.cell_previous = cell_previous
-        self.forget = forget
-        self.cell = cell
-        self.cell_hat = cell_hat
-        self.output = output
+        self.remember_gates = remember_gate
+        self.forget_gates = forget_gate
+        self.output_gates = output_gate
+        self.input_hats = input_hat
+        self.remembers = remember
+        self.cell_previouses = cell_previous
+        self.forgets = forget
+        self.cells = cell
+        self.cell_hats = cell_hat
+        self.outputs = output
 
     def as_json(self):
         return {
-            "remember_gate": self.remember_gate.as_json(),
-            "forget_gate": self.forget_gate.as_json(),
-            "output_gate": self.output_gate.as_json(),
-            "input_hat": self.input_hat.as_json(),
-            "remember": self.remember.as_json(),
-            "cell_previous": self.cell_previous.as_json(),
-            "forget": self.forget.as_json(),
-            "cell": self.cell.as_json(),
-            "cell_hat": self.cell_hat.as_json(),
-            "output": self.output.as_json(),
+            "remember_gates": self.remember_gates.as_json(),
+            "forget_gates": self.forget_gates.as_json(),
+            "output_gates": self.output_gates.as_json(),
+            "input_hats": self.input_hats.as_json(),
+            "remembers": self.remembers.as_json(),
+            "cell_previouses": self.cell_previouses.as_json(),
+            "forgets": self.forgets.as_json(),
+            "cells": self.cells.as_json(),
+            "cell_hats": self.cell_hats.as_json(),
+            "outputs": self.outputs.as_json(),
         }
 
 
@@ -101,6 +101,20 @@ class WeightExplain:
             "vectors": {name: [{"value": value, "position": i} for i, value in enumerate(vector)] for name, vector in self.vectors.items()},
             "bound": self.bound,
             "bias": self.bias,
+        }
+
+
+class WeightDetail:
+    def __init__(self, mini, full, back_links):
+        self.mini = mini
+        self.full = full
+        self.back_links = back_links
+
+    def as_json(self):
+        return {
+            "mini": self.mini.as_json(),
+            "full": self.full.as_json(),
+            "back_links": self.back_links
         }
 
 
