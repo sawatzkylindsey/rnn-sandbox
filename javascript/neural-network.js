@@ -23,7 +23,9 @@ var dark_red = "#e60000";
 var light_red = "#ff1919";
 var debug = window.location.hash.substring(1) == "debug";
 var svg = null;
-var input_sequence = [];
+var main_sequence = [];
+var main_timestep = null;
+var compare_sequence = [];
 var input_part = null;
 var input_layer = null;
 
@@ -57,14 +59,14 @@ $(document).ready(function () {
 function drawTimestep(fake_timestep, data) {
     console.log("Timestep (fake, actual): (" + fake_timestep + ", " + data.timestep + ")");
     console.log(data);
-    $("svg").height(layer_height * (input_sequence.length + 2));
+    $("svg").height(layer_height * (main_sequence.length + 2));
     $(".timestep-" + data.timestep).remove();
 
-    for (var t=0; t < input_sequence.length - 1; t++) {
+    for (var t=0; t < main_sequence.length - 1; t++) {
         $(".timestep-" + t + ".softmax").remove();
     }
 
-    if (data.x_word != input_sequence[data.timestep]) {
+    if (data.x_word != main_sequence[data.timestep]) {
         svg.append("text")
             .attr("class", "timestep-" + data.timestep)
             .attr("x", x_margin + (input_width * 2 / 3))
@@ -90,7 +92,7 @@ function drawTimestep(fake_timestep, data) {
                 .attr("x2", x_offset + x - 0.05)
                 .attr("y2", y_offset + layer_height)
                 .attr("stroke-dasharray", "5,5")
-                .attr("stroke", black)
+                .attr("stroke", "blue")
                 .attr("stroke-width", 0.1);
         }
         for (var y = 0; y <= layer_height; y += (state_height / 2.0)) {
@@ -101,7 +103,7 @@ function drawTimestep(fake_timestep, data) {
                 .attr("x2", x_offset + total_width)
                 .attr("y2", y_offset + y - 0.05)
                 .attr("stroke-dasharray", "5,5")
-                .attr("stroke", black)
+                .attr("stroke", "blue")
                 .attr("stroke-width", 0.1);
         }
     }
@@ -123,7 +125,7 @@ function drawTimestep(fake_timestep, data) {
     // Draw softmax
     /*drawHline(timestep, x_offset + (data.units.length * w * 17), y_offset + (h * 2 / 2),
         x_offset + (data.units.length * w * 17) + (w * 3 / 2), y_offset + (h * 2 / 2));*/
-    if (data.timestep == input_sequence.length - 1) {
+    if (data.timestep == main_sequence.length - 1) {
         drawSoftmax(data, "softmax");
     }
 
@@ -158,11 +160,11 @@ function drawHiddenState(data, part, layer) {
 
         var classes = "timestep-" + data.timestep;
         drawStateWidget(data.timestep, geometry, hiddenState.minimum, hiddenState.maximum, hiddenState.vector, hiddenState.colour, hiddenState.predictions, classes,
-            MEMORY_CHIP_WIDTH, MEMORY_CHIP_HEIGHT, part, layer, null);
+            MEMORY_CHIP_WIDTH, MEMORY_CHIP_HEIGHT, part, layer, null, null, null);
     }
 }
 
-function drawStateWidget(timestep, geometry, min, max, vector, colour, predictions, classes, chip_width, chip_height, part, layer, linker) {
+function drawStateWidget(timestep, geometry, min, max, vector, colour, predictions, classes, chip_width, chip_height, part, layer, linker, linker_suffix, placement) {
     if (min >= max) {
         throw "min " + min + " cannot exceed max " + max;
     }
@@ -213,7 +215,7 @@ function drawStateWidget(timestep, geometry, min, max, vector, colour, predictio
             .attr("x", geometry.x)
             .attr("y", geometry.y - 2)
             .style("font-size", "12px")
-            .style("fill", "red")
+            .style("fill", "blue")
             .text("TODO");
     }
 
@@ -242,15 +244,10 @@ function drawStateWidget(timestep, geometry, min, max, vector, colour, predictio
 
     if (timestep != null) {
         drawOpen(geometry.x + geometry.width + (margin * 2) - 0.5, geometry.y + margin, margin - 0.5, classes, function () {
+            main_timestep = timestep;
             input_part = part;
             input_layer = layer;
-            drawDetail(timestep);
-            /*var slice = input_sequence.slice(0, timestep + 1);
-            var distance = input_sequence.length - timestep - 1;
-            console.log("Drawing detail for " + (slice.length - 1) + " @" + distance + ": " + slice);
-            var layerParameter = layer == null ? "" : "&layer=" + layer;
-            d3.json("weight-detail?distance=" + distance + "&part=" + part + layerParameter + "&" + slice.map(s => "sequence=" + encodeURI(s)).join("&"))
-                .get(function (error, data) { drawDetail(data, timestep); });*/
+            drawDetail();
         });
     }
 
@@ -279,9 +276,21 @@ function drawStateWidget(timestep, geometry, min, max, vector, colour, predictio
                     return base_x + (macro_x.bandwidth() - magnitude(d.value));
                 }
             })
-            .attr("y", function (d) { return y(d.position); })
+            .attr("y", function (d) {
+                if (placement == null || placement == "top") {
+                    return y(d.position);
+                } else {
+                    return y(d.position) + (macro_y.bandwidth() / 2) + 0.5;
+                }
+            })
             .attr("width", function (d) { return magnitude(d.value); })
-            .attr("height", macro_y.bandwidth())
+            .attr("height", function (d) {
+                if (placement == null) {
+                    return macro_y.bandwidth();
+                } else {
+                    return (macro_y.bandwidth() / 2) - 1;
+                }
+            })
             .attr("stroke", "none")
             .attr("fill", dark_grey);
     // Chip's scaling box.
@@ -289,18 +298,30 @@ function drawStateWidget(timestep, geometry, min, max, vector, colour, predictio
         .data(vector)
         .enter()
             .append("rect")
-            .attr("class", function(d) { return classes + " linker-" + (linker == null ? d.position : linker[d.position]); })
+            .attr("class", function(d) { return classes + " linker-" + (linker == null ? d.position : linker[d.position]) + linker_suffix; })
             .attr("x", function (d) { return x(d.position); })
-            .attr("y", function (d) { return y(d.position); })
+            .attr("y", function (d) {
+                if (placement == null || placement == "top") {
+                    return y(d.position);
+                } else {
+                    return y(d.position) + (macro_y.bandwidth() / 2) + 0.5;
+                }
+            })
             .attr("width", macro_x.bandwidth())
-            .attr("height", macro_y.bandwidth())
+            .attr("height", function (d) {
+                if (placement == null) {
+                    return macro_y.bandwidth();
+                } else {
+                    return (macro_y.bandwidth() / 2) - 1;
+                }
+            })
             .attr("stroke", light_grey)
             .attr("stroke-width", stroke_width)
-            .attr("fill", "none")
+            .attr("fill", "transparent")
             .style("pointer-events", "bounding-box")
             .on("mouseover", function(d) {
                 if (timestep == null) {
-                    d3.selectAll(".linker-" + (linker == null ? d.position : linker[d.position]))
+                    d3.selectAll(".linker-" + (linker == null ? d.position : linker[d.position]) + linker_suffix)
                         .transition()
                         .duration(100)
                         .attr("stroke", black)
@@ -309,7 +330,7 @@ function drawStateWidget(timestep, geometry, min, max, vector, colour, predictio
             })
             .on("mouseout", function(d) {
                 if (timestep == null) {
-                    d3.selectAll(".linker-" + (linker == null ? d.position : linker[d.position]))
+                    d3.selectAll(".linker-" + (linker == null ? d.position : linker[d.position]) + linker_suffix)
                         .transition()
                         .duration(50)
                         .attr("stroke", light_grey)
@@ -331,7 +352,13 @@ function drawStateWidget(timestep, geometry, min, max, vector, colour, predictio
                     return base_x + macro_x.bandwidth();
                 }
             })
-            .attr("y1", function(d) { return y(d.position) - 1; })
+            .attr("y1", function (d) {
+                if (placement == null || placement == "top") {
+                    return y(d.position) - 1;
+                } else {
+                    return y(d.position) + (macro_y.bandwidth() / 2) - 0.5;
+                }
+            })
             .attr("x2", function(d) {
                 var base_x = x(d.position);
 
@@ -341,7 +368,16 @@ function drawStateWidget(timestep, geometry, min, max, vector, colour, predictio
                     return base_x + macro_x.bandwidth();
                 }
             })
-            .attr("y2", function(d) { return y(d.position) + macro_y.bandwidth() + 1; })
+            .attr("y2", function (d) {
+                if (placement == null) {
+                    return y(d.position) + macro_y.bandwidth() + 1;
+                } else if (placement == "bottom") {
+                    // Only necessary to manage rounding errors
+                    return y(d.position) + macro_y.bandwidth() + 0.5;
+                } else if (placement == "top") {
+                    return y(d.position) + (macro_y.bandwidth() / 2);
+                }
+            })
             .attr("stroke", black)
             .attr("stroke-width", stroke_width);
 }
@@ -489,7 +525,7 @@ function drawHline(timestep, x1, y1, x2, y2, x_midpoint) {
                 .attr("r", 2)
                 .attr("cx", line_data[i]["x"])
                 .attr("cy", line_data[i]["y"])
-                .style("fill", "red");
+                .style("fill", "blue");
         }
     }
 
@@ -549,7 +585,7 @@ function drawVline(timestep, x1, y1, x2, y2, y_midpoint) {
                 .attr("r", 2)
                 .attr("cx", line_data[i]["x"])
                 .attr("cy", line_data[i]["y"])
-                .style("fill", "red");
+                .style("fill", "blue");
         }
     }
 
@@ -765,10 +801,10 @@ function drawGate(timestep, x_offset, y_offset, size) {
         .attr("stroke-width", stroke_width);
 }
 
-function drawDetail(timestep) {
+function drawDetail() {
     svg.append("rect")
         .attr("id", "detail-box")
-        .attr("class", "details")
+        .attr("class", "detail")
         .attr("x", detail_margin)
         .attr("y", detail_margin)
         .attr("width", total_width - (detail_margin * 2))
@@ -777,52 +813,98 @@ function drawDetail(timestep) {
         .attr("stroke-width", 2)
         .attr("fill", "white");
     $("svg").height(total_height);
-    drawClose(total_width - detail_margin, detail_margin, (state_width / 4), "details", function () {
-        $(".details").remove();
+    drawClose(total_width - detail_margin, detail_margin, (state_width / 4), "detail", function () {
+        $(".detail").remove();
+        $(".modal").remove();
         input_part = null;
         input_layer = null;
         drawWeightsFromSequence(0);
     });
-    svg.append("line")
-        .attr("class", "details")
-        .attr("x1", (total_width / 2) - 0.5)
-        .attr("y1", detail_margin)
-        .attr("x2", (total_width / 2) - 0.5)
-        .attr("y2", total_height - (detail_margin * 2))
-        .attr("stroke", "blue")
-        .attr("stroke-width", 1);
-    svg.append("line")
-        .attr("class", "details")
-        .attr("x1", (total_width / 4) + (detail_margin / 2) - 0.5)
-        .attr("y1", detail_margin)
-        .attr("x2", (total_width / 4) + (detail_margin / 2) - 0.5)
-        .attr("y2", total_height - (detail_margin * 2))
-        .attr("stroke", "blue")
-        .attr("stroke-width", 1);
-    svg.append("line")
-        .attr("class", "details")
-        .attr("x1", detail_margin)
-        .attr("y1", (total_height / 2) - 0.5)
-        .attr("x2", total_width - (detail_margin * 2))
-        .attr("y2", (total_height / 2) - 0.5)
-        .attr("stroke", "blue")
-        .attr("stroke-width", 1);
-    /*svg.append("line")
-        .attr("class", "details")
-        .attr("x1", (detailWidth / 4) + 10 - 0.5 - 5)
-        .attr("y1", 30)
-        .attr("x2", (detailWidth / 4) + 10 - 0.5 + 5)
-        .attr("y2", 30)
-        .attr("stroke", "blue")
-        .attr("stroke-width", 1);*/
-    drawSequenceWheel("details", input_sequence, timestep);
+
+    if (debug) {
+        svg.append("line")
+            .attr("class", "detail")
+            .attr("x1", (total_width / 2) - 0.5)
+            .attr("y1", detail_margin)
+            .attr("x2", (total_width / 2) - 0.5)
+            .attr("y2", total_height - (detail_margin * 2))
+            .attr("stroke", "blue")
+            .attr("stroke-width", 1);
+        svg.append("line")
+            .attr("class", "detail")
+            .attr("x1", (detail_margin * 2) + (((total_width / 2) - (detail_margin * 3)) / 2))
+            .attr("y1", detail_margin)
+            .attr("x2", (total_width / 4) + (detail_margin / 2) - 0.5)
+            .attr("y2", total_height - (detail_margin * 2))
+            .attr("stroke", "blue")
+            .attr("stroke-width", 1);
+        svg.append("line")
+            .attr("class", "detail")
+            .attr("x1", detail_margin)
+            .attr("y1", (total_height / 2) - 0.5)
+            .attr("x2", total_width - (detail_margin * 2))
+            .attr("y2", (total_height / 2) - 0.5)
+            .attr("stroke", "blue")
+            .attr("stroke-width", 1);
+    }
+
+    drawSequenceWheel(true, main_sequence, main_timestep);
+    var compareWidth = textWidth("compared to..", 14);
+    svg.append("rect")
+        .attr("class", "detail compare-button")
+        .attr("x", (total_width / 4) + (detail_margin / 2) - (compareWidth / 2))
+        .attr("y", (detail_margin * 3) + HEIGHT)
+        .attr("width", compareWidth + 5)
+        .attr("height", HEIGHT)
+        .attr("rx", 5)
+        .attr("ry", 5)
+        .attr("stroke", "none")
+        .attr("fill", light_grey);
+    svg.append("text")
+        .attr("class", "detail compare-button")
+        .attr("x", (total_width / 4) + (detail_margin / 2) - (compareWidth / 2) + 2.5)
+        .attr("y", (detail_margin * 3) + HEIGHT + (HEIGHT * .7))
+        .style("font-size", "14px")
+        .style("fill", black)
+        .text("compared to..");
+    svg.append("rect")
+        .attr("class", "detail compare-button")
+        .attr("x", (total_width / 4) + (detail_margin / 2) - (compareWidth / 2))
+        .attr("y", (detail_margin * 3) + HEIGHT)
+        .attr("width", compareWidth + 5)
+        .attr("height", HEIGHT)
+        .attr("rx", 5)
+        .attr("ry", 5)
+        .attr("stroke", dark_grey)
+        .attr("stroke-width", 1)
+        .attr("fill", "transparent")
+        .style("pointer-events", "bounding-box")
+        .on("mouseover", function(d) {
+            d3.select(this)
+                .style("cursor", "pointer");
+            d3.select(this)
+                .transition()
+                .duration(100)
+                .attr("stroke-width", 2);
+        })
+        .on("mouseout", function(d) {
+            d3.select(this)
+                .style("cursor", "auto");
+            d3.select(this)
+                .transition()
+                .duration(50)
+                .attr("stroke-width", 1);
+        })
+        .on("click", function(d) {
+            drawInputModal();
+        });
 }
 
-function loadDetail(data) {
-    $(".details.load").remove();
+function loadDetail(data, placement) {
+    $(".detail.load" + (placement == null ? "" : "." + placement)).remove();
     var miniGeometry = {
         x: (total_width / 4) + (detail_margin / 2) - state_width,
-        y: (total_height / 2) - (state_height * 2) - detail_margin,
+        y: (total_height / 2) + (placement == "bottom" ? detail_margin : -((state_height * 2) + detail_margin)),
         width: state_width * 2,
         height: state_height * 2,
     };
@@ -838,32 +920,40 @@ function loadDetail(data) {
     if (data.full.vector.length % 2 != 0) {
         throw "vector length (" + data.full.vector.length + ") must be divisible by 2";
     }
-    drawStateWidget(null, miniGeometry, data.mini.minimum, data.mini.maximum, data.mini.vector, null, null, "details load", MEMORY_CHIP_WIDTH, MEMORY_CHIP_HEIGHT, null, null, null);
-    drawStateWidget(null, fullGeometry, data.full.minimum, data.full.maximum, data.full.vector, null, null, "details load", 2, data.full.vector.length / 2, null, null, data.back_links);
+    var classes = "detail load" + (placement == null ? "" : " " + placement);
+    var linker_suffix = placement == null ? "-top" : "-" + placement;
+    drawStateWidget(null, miniGeometry, data.mini.minimum, data.mini.maximum, data.mini.vector, data.mini.colour, data.mini.predictions, classes, MEMORY_CHIP_WIDTH, MEMORY_CHIP_HEIGHT, null, null, null, linker_suffix, null);
+    drawStateWidget(null, fullGeometry, data.full.minimum, data.full.maximum, data.full.vector, null, null, classes, 2, data.full.vector.length / 2, null, null, data.back_links, linker_suffix, placement);
 }
 
-function drawSequenceWheel(classes, sequence, timestep) {
+function drawSequenceWheel(main, sequence, timestep) {
     var x_offset = detail_margin * 2;
-    var y_offset = detail_margin * 2;
+    var y_offset = (detail_margin * 2) + (main ? 0 : HEIGHT + detail_margin);
     var width = (total_width / 2) - (detail_margin * 3);
     var height = HEIGHT;
-    svg.append("rect")
-        .attr("class", classes)
-        .attr("x", x_offset)
-        .attr("y", y_offset)
-        .attr("width", width)
-        .attr("height", height)
-        .attr("stroke", "blue")
-        .attr("stroke-width", 1)
-        .style("fill", "none");
+    var type_suffix = main ? "-main" : "-compare";
+    $(".wheel" + type_suffix).remove();
+
+    if (debug) {
+        svg.append("rect")
+            .attr("class", "detail")
+            .attr("x", x_offset)
+            .attr("y", y_offset)
+            .attr("width", width)
+            .attr("height", height)
+            .attr("stroke", "blue")
+            .attr("stroke-width", 1)
+            .style("fill", "none");
+    }
+
     var position = 0;
     var datums = sequence.map(word => ({position: position++, word: word}));
     svg.selectAll(".wheel")
         .data(datums)
         .enter()
             .append("text")
-            .attr("id", function (d) { return "position-" + d.position; })
-            .attr("class", classes)
+            .attr("id", function (d) { return "position-" + d.position + type_suffix; })
+            .attr("class", "detail wheel" + type_suffix)
             .attr("x", 0)
             .attr("y", -20)
             .style("font-size", "14px")
@@ -878,18 +968,31 @@ function drawSequenceWheel(classes, sequence, timestep) {
                     .style("cursor", "auto");
             })
             .on("click", function(d) {
-                drawSequenceWheel(classes, sequence, d.position);
+                if (main) {
+                    main_timestep = d.position;
+                }
+
+                drawSequenceWheel(main, sequence, d.position);
             });
     var center_item_width = textWidth(sequence[timestep], 14);
     var running_width = (center_item_width / 2);
-    $("#position-" + timestep)
+    $("#position-" + timestep + type_suffix)
         .attr("x", x_offset + (width / 2) - running_width)
         .attr("y", y_offset + (height / 2) + (height / 4));
-    var space_width = textWidth("&nbsp;", 14);
+    svg.append("rect")
+        .attr("class", "detail wheel" + type_suffix)
+        .attr("x", x_offset + (width / 2) - running_width - 2.5)
+        .attr("y", y_offset)
+        .attr("width", center_item_width + 5)
+        .attr("height", height)
+        .attr("stroke", "black")
+        .attr("stroke-width", 2)
+        .style("fill", "none");
+    var space_width = textWidth("&nbsp;", 14) + 1;
     for (var i = 1; i <= timestep; i++) {
         var item_width = textWidth(sequence[timestep - i], 14);
         running_width += item_width + space_width;
-        $("#position-" + (timestep - i))
+        $("#position-" + (timestep - i) + type_suffix)
             .attr("x", x_offset + (width / 2) - running_width)
             .attr("y", y_offset + (height / 2) + (height / 4))
             .css("opacity", 1.0 - (Math.max(i - 3, 0) * .2));
@@ -897,7 +1000,7 @@ function drawSequenceWheel(classes, sequence, timestep) {
     running_width = (center_item_width / 2);
     for (var i = 1; i <= sequence.length; i++) {
         running_width += space_width;
-        $("#position-" + (timestep + i))
+        $("#position-" + (timestep + i) + type_suffix)
             .attr("x", x_offset + (width / 2) + running_width)
             .attr("y", y_offset + (height / 2) + (height / 4))
             .css("opacity", 1.0 - (Math.max(i - 3, 0) * .2));
@@ -910,8 +1013,9 @@ function drawSequenceWheel(classes, sequence, timestep) {
     var distance = sequence.length - timestep - 1;
     console.log("Drawing detail for " + (slice.length - 1) + " @" + distance + ": " + slice);
     var layerParameter = input_layer == null ? "" : "&layer=" + input_layer;
+    var placement = main ? (compare_sequence.length == 0 ? null : "top") : "bottom";
     d3.json("weight-detail?distance=" + distance + "&part=" + input_part + layerParameter + "&" + slice.map(s => "sequence=" + encodeURI(s)).join("&"))
-        .get(function (error, data) { loadDetail(data); });
+        .get(function (error, data) { loadDetail(data, placement); });
 }
 
 function drawOpen(x_offset, y_offset, radius, items_class, callback) {
@@ -948,7 +1052,7 @@ function drawOpen(x_offset, y_offset, radius, items_class, callback) {
         .attr("r", radius)
         .attr("stroke", dark_grey)
         .attr("stroke-width", stroke_width)
-        .attr("fill", "none")
+        .attr("fill", "transparent")
         .style("pointer-events", "bounding-box")
         .on("mouseover", function(d) {
             d3.select(this)
@@ -997,7 +1101,7 @@ function drawClose(x_offset, y_offset, radius, items_class, callback) {
         .attr("r", radius)
         .attr("stroke", dark_grey)
         .attr("stroke-width", 1)
-        .attr("fill", "none")
+        .attr("fill", "transparent")
         .style("pointer-events", "bounding-box")
         .on("mouseover", function(d) {
             d3.select(this)
@@ -1032,7 +1136,8 @@ function drawAutocomplete(timestep, words) {
         .append("xhtml:div")
         .attr("id", "autocomplete-" + timestep);
     var autocomplete = $("#autocomplete-" + timestep);
-    autocomplete.append("<input/>");
+    autocomplete.append("<input class=':focus'/>");
+    autocomplete.find("input").focus();
     autocomplete.on("input", function() {
         autocomplete.find(".autocomplete-option").remove();
         focus = -1;
@@ -1053,12 +1158,12 @@ function drawAutocomplete(timestep, words) {
             var textContent = e.target.textContent.toLowerCase();
             autocomplete.find("input").val(textContent);
 
-            if (timestep >= input_sequence.length) {
-                input_sequence.push(textContent);
+            if (timestep >= main_sequence.length) {
+                main_sequence.push(textContent);
                 d3.json("words")
                     .get(function (error, data) { drawAutocomplete(timestep + 1, data); });
             } else {
-                input_sequence[timestep] = textContent;
+                main_sequence[timestep] = textContent;
             }
 
             drawWeightsFromSequence(0);
@@ -1095,8 +1200,8 @@ function drawAutocomplete(timestep, words) {
                 autocomplete.find("input").val(textContent);
 
                 if (textContent == "") {
-                    var tail = input_sequence.length;
-                    input_sequence = input_sequence.slice(0, timestep);
+                    var tail = main_sequence.length;
+                    main_sequence = main_sequence.slice(0, timestep);
 
                     for (var s = timestep; s <= tail; s++) {
                         if (s != timestep) {
@@ -1106,12 +1211,12 @@ function drawAutocomplete(timestep, words) {
                         $(".timestep-" + s).remove();
                     }
                 } else {
-                    if (timestep >= input_sequence.length) {
-                        input_sequence.push(textContent);
+                    if (timestep >= main_sequence.length) {
+                        main_sequence.push(textContent);
                         d3.json("words")
                             .get(function (error, data) { drawAutocomplete(timestep + 1, data); });
                     } else {
-                        input_sequence[timestep] = textContent;
+                        main_sequence[timestep] = textContent;
                     }
                 }
 
@@ -1128,15 +1233,59 @@ function drawAutocomplete(timestep, words) {
 }
 
 function drawWeightsFromSequence(timestep) {
-    console.log("Full sequence: " + input_sequence);
+    console.log("Full sequence: " + main_sequence);
 
-    for (var s = timestep; s < input_sequence.length; s++) {
-        var slice = input_sequence.slice(0, s + 1);
-        var distance = input_sequence.length - s - 1;
+    for (var s = timestep; s < main_sequence.length; s++) {
+        var slice = main_sequence.slice(0, s + 1);
+        var distance = main_sequence.length - s - 1;
         console.log("Drawing sequence for " + (slice.length - 1) + " @" + distance + ": " + slice);
         d3.json("weights?distance=" + distance + "&" + slice.map(s => "sequence=" + encodeURI(s)).join("&"))
             .get(function (error, data) { drawTimestep(slice.length - 1, data); });
     }
+}
+
+function drawInputModal() {
+    var width = (total_width / 2);
+    var height = (total_height / 2);
+    var x_offset = (total_width - width) / 2;
+    var y_offset = (total_height - height) / 2;
+    svg.append("rect")
+        .attr("class", "modal")
+        .attr("x", x_offset)
+        .attr("y", y_offset)
+        .attr("width", width)
+        .attr("height", height)
+        .attr("stroke", black)
+        .attr("stroke-width", 2)
+        .attr("fill", "white");
+    $("svg").height(total_height);
+    drawClose(x_offset + width, y_offset, (state_width / 4), "modal", function () {
+        $(".modal").remove();
+    });
+    svg.append("foreignObject")
+        .attr("class", "modal")
+        .attr("transform", "translate(" + (x_offset + detail_margin) + "," + (y_offset + detail_margin) + ")")
+        .attr("width", width - (detail_margin * 2))
+        .attr("height", HEIGHT)
+        .append("xhtml:div")
+        .attr("id", "sequence-inputter");
+    var sequenceInputter = $("#sequence-inputter");
+    sequenceInputter.append("<input class=':focus'/>");
+    sequenceInputter.on("keydown", function(e) {
+        // Enter key
+        if (e.keyCode == 13) {
+            compare_sequence = sequenceInputter.find("input")
+                .val()
+                .split(" ");
+            sequenceInputter.find("input")
+                .val("");
+            $(".modal").remove();
+            $(".compare-button").remove();
+            $(".detail.load").remove();
+            drawSequenceWheel(true, main_sequence, main_timestep);
+            drawSequenceWheel(false, compare_sequence, 0);
+        }
+    });
 }
 
 function getGeometry(timestep, part, layer) {

@@ -408,8 +408,8 @@ class NeuralNetwork:
 
         return WeightDetail(hidden_state, full_hidden_state, back_links)
 
-    def encode_key(self, part, layer=0):
-        return "%s-%d" % (part, layer)
+    def encode_key(self, part, layer=None):
+        return "%s-%d" % (part, 0 if layer is None else layer)
 
     def decode_key(self, key):
         result = key.split("-")
