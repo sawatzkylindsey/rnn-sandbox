@@ -1,19 +1,21 @@
 
 var MEMORY_CHIP_HEIGHT = 5;
 var MEMORY_CHIP_WIDTH = 2;
-var total_width = 1200;
+var total_width = 1400;
+var total_height = 700;
+var detail_margin = 10;
 var layer_height = 225;
 var input_width = 100;
 var x_margin = 25;
 var y_margin = 50;
-var height = 20;
-var w = 30;
-var h = layer_height / 3.0;
-if ((h / MEMORY_CHIP_HEIGHT) != (w / MEMORY_CHIP_WIDTH)) {
-    throw "chips aren't square (" + (w / MEMORY_CHIP_WIDTH) + ", " + (h / MEMORY_CHIP_HEIGHT) + ")";
+var HEIGHT = 20;
+var state_width = 30;
+var state_height = layer_height / 3.0;
+if ((state_height / MEMORY_CHIP_HEIGHT) != (state_width / MEMORY_CHIP_WIDTH)) {
+    throw "chips aren't square (" + (state_width / MEMORY_CHIP_WIDTH) + ", " + (state_height / MEMORY_CHIP_HEIGHT) + ")";
 }
-var operand_height = (h * 2.0 / 5.0);
-var operator_height = (h - (operand_height * 2));
+var operand_height = (state_height * 2.0 / 5.0);
+var operator_height = (state_height - (operand_height * 2));
 var black = "#3f3f3f";
 var dark_grey = "#7e7e7e";
 var light_grey = "#bdbdbd";
@@ -21,14 +23,16 @@ var dark_red = "#e60000";
 var light_red = "#ff1919";
 var debug = window.location.hash.substring(1) == "debug";
 var svg = null;
-var sequence = [];
+var input_sequence = [];
+var input_part = null;
+var input_layer = null;
 
 $(document).ready(function () {
     svg = d3.select('body').append('svg')
         .style('position', 'absolute')
         .style('top', 0)
         .style('left', 0)
-        .style("width", total_width + (total_width / 5) - 10)
+        .style("width", total_width)
         .style('height', layer_height * 2);
 
     // arrow head definition
@@ -53,18 +57,18 @@ $(document).ready(function () {
 function drawTimestep(fake_timestep, data) {
     console.log("Timestep (fake, actual): (" + fake_timestep + ", " + data.timestep + ")");
     console.log(data);
-    $("svg").height(layer_height * (sequence.length + 2));
+    $("svg").height(layer_height * (input_sequence.length + 2));
     $(".timestep-" + data.timestep).remove();
 
-    for (var t=0; t < sequence.length - 1; t++) {
+    for (var t=0; t < input_sequence.length - 1; t++) {
         $(".timestep-" + t + ".softmax").remove();
     }
 
-    if (data.x_word != sequence[data.timestep]) {
+    if (data.x_word != input_sequence[data.timestep]) {
         svg.append("text")
             .attr("class", "timestep-" + data.timestep)
             .attr("x", x_margin + (input_width * 2 / 3))
-            .attr("y", y_margin + (data.timestep * layer_height) + h + height + 5)
+            .attr("y", y_margin + (data.timestep * layer_height) + state_height + HEIGHT + 5)
             .style("font-size", "14px")
             .style("fill", black)
             .text(data.x_word);
@@ -73,12 +77,12 @@ function drawTimestep(fake_timestep, data) {
 
     var x_offset = (x_margin * 2) + input_width;
     var y_offset = y_margin + (data.timestep * layer_height);
-    var operand_height = (h * 2.0 / 5.0);
-    var operator_height = (h - (operand_height * 2));
+    var operand_height = (state_height * 2.0 / 5.0);
+    var operator_height = (state_height - (operand_height * 2));
 
     if (debug) {
         // gridlines
-        for (var x = 0; x <= total_width; x += w) {
+        for (var x = 0; x <= total_width; x += state_width) {
             svg.append("line")
                 .attr("class", "timestep-" + data.timestep)
                 .attr("x1", x_offset + x - 0.05)
@@ -89,7 +93,7 @@ function drawTimestep(fake_timestep, data) {
                 .attr("stroke", black)
                 .attr("stroke-width", 0.1);
         }
-        for (var y = 0; y <= layer_height; y += (h / 2.0)) {
+        for (var y = 0; y <= layer_height; y += (state_height / 2.0)) {
             svg.append("line")
                 .attr("class", "timestep-" + data.timestep)
                 .attr("x1", x_offset)
@@ -119,21 +123,21 @@ function drawTimestep(fake_timestep, data) {
     // Draw softmax
     /*drawHline(timestep, x_offset + (data.units.length * w * 17), y_offset + (h * 2 / 2),
         x_offset + (data.units.length * w * 17) + (w * 3 / 2), y_offset + (h * 2 / 2));*/
-    if (data.timestep == sequence.length - 1) {
+    if (data.timestep == input_sequence.length - 1) {
         drawSoftmax(data, "softmax");
     }
 
     svg.append("rect")
         .attr("class", "timestep-" + data.timestep)
-        .attr("x", x_offset + (2 * w * 18) + (w * 3 / 2) + x_margin)
-        .attr("y", y_offset + h - (height / 2) - 1)
+        .attr("x", x_offset + (2 * state_width * 18) + (state_width * 3 / 2) + x_margin)
+        .attr("y", y_offset + state_height - (HEIGHT/ 2) - 1)
         .attr("width", input_width)
-        .attr("height", height)
+        .attr("height", HEIGHT)
         .style("fill", "#dee0e2");
     svg.append("text")
         .attr("class", "timestep-" + data.timestep)
-        .attr("x", x_offset + (2 * w * 18) + (w * 3 / 2) + x_margin + 2)
-        .attr("y", y_offset + h + 5)
+        .attr("x", x_offset + (2 * state_width * 18) + (state_width * 3 / 2) + x_margin + 2)
+        .attr("y", y_offset + state_height + 5)
         .style("font-size", "17px")
         .style("fill", black)
         .style("background-color", "#dee0e2")
@@ -213,23 +217,23 @@ function drawStateWidget(timestep, geometry, min, max, vector, colour, predictio
             .text("TODO");
     }
 
-    var margin = (w / 6);
+    var margin = (geometry.width / 6);
 
     if (predictions != null) {
         var predictionGeometry = {
-            x: geometry.x + w + (w / 3) + margin,
-            y: geometry.y + (h / 3),
-            width: w / 3,
-            height: h / 3,
+            x: geometry.x + geometry.width + (geometry.width / 3) + margin,
+            y: geometry.y + (geometry.height / 3),
+            width: geometry.width / 3,
+            height: geometry.height / 3,
         };
         drawPredictionWidget(timestep, predictionGeometry, predictions.minimum, predictions.maximum, predictions.vector, classes, true);
         // Draw colour prediction.
         svg.append("rect")
             .attr("class", classes)
-            .attr("x", geometry.x + w + margin - (stroke_width / 2))
-            .attr("y", geometry.y + (h * 1 / 4))
-            .attr("width", (w / 3))
-            .attr("height", (h / 2))
+            .attr("x", geometry.x + geometry.width + margin - (stroke_width / 2))
+            .attr("y", geometry.y + (geometry.height * 1 / 4))
+            .attr("width", (geometry.width / 3))
+            .attr("height", (geometry.height / 2))
             .attr("stroke", "none")
             .attr("stroke-width", stroke_width)
             .attr("fill", colour == null ? "none" : colour)
@@ -237,13 +241,16 @@ function drawStateWidget(timestep, geometry, min, max, vector, colour, predictio
     }
 
     if (timestep != null) {
-        drawOpen(geometry.x + w + (margin * 2) - 0.5, geometry.y + margin, margin - 0.5, classes, function () {
-            var slice = sequence.slice(0, timestep + 1);
-            var distance = sequence.length - timestep - 1;
+        drawOpen(geometry.x + geometry.width + (margin * 2) - 0.5, geometry.y + margin, margin - 0.5, classes, function () {
+            input_part = part;
+            input_layer = layer;
+            drawDetail(timestep);
+            /*var slice = input_sequence.slice(0, timestep + 1);
+            var distance = input_sequence.length - timestep - 1;
             console.log("Drawing detail for " + (slice.length - 1) + " @" + distance + ": " + slice);
             var layerParameter = layer == null ? "" : "&layer=" + layer;
             d3.json("weight-detail?distance=" + distance + "&part=" + part + layerParameter + "&" + slice.map(s => "sequence=" + encodeURI(s)).join("&"))
-                .get(function (error, data) { drawDetail(data); });
+                .get(function (error, data) { drawDetail(data, timestep); });*/
         });
     }
 
@@ -337,50 +344,6 @@ function drawStateWidget(timestep, geometry, min, max, vector, colour, predictio
             .attr("y2", function(d) { return y(d.position) + macro_y.bandwidth() + 1; })
             .attr("stroke", black)
             .attr("stroke-width", stroke_width);
-    /*if (class_suffix == null) {
-        svg.selectAll(".bar")
-            .data(vector)
-            .enter()
-                .append("rect")
-                .attr("id", function(d) { return "hoverbar-" + geometry.timestep + "-" + geometry.name + "-" + d.position; })
-                .attr("class", "timestep-" + geometry.timestep)
-                .attr("x", geometry.x + 1.5)
-                .attr("y", function(d) { return y(d.position) + 1; })
-                .attr("width", geometry.width - 3)
-                .attr("height", y.bandwidth() - 2)
-                .attr("stroke", black)
-                .attr("stroke-width", 1)
-                .attr("fill", colour == "none" ? "white" : colour)
-                .style("opacity", 0)
-                .on("mouseover", function(d) {
-                    if (geometry.name != "embedding" && (geometry.timestep > 0 || !geometry.name.startsWith("cell_previous"))) {
-                        d3.select("#hoverbar-" + geometry.timestep + "-" + geometry.name + "-" + d.position)
-                            .style("opacity", 0.5);
-                    }
-                })
-                .on("mouseout", function(d) {
-                    if (geometry.name != "embedding" && (geometry.timestep > 0 || !geometry.name.startsWith("cell_previous"))) {
-                        d3.select("#hoverbar-" + geometry.timestep + "-" + geometry.name + "-" + d.position)
-                            .style("opacity", 0);
-                    }
-                })
-                .on("click", function(d) {
-                    var source = {
-                        x: geometry.x + 1,
-                        y: y(d.position) + 1,
-                        width: geometry.width - 2,
-                        height: y.bandwidth() - 2,
-                    }
-                    if (geometry.name != "embedding" && (geometry.timestep > 0 || !geometry.name.startsWith("cell_previous"))) {
-                        var slice = sequence.slice(0, geometry.timestep + 1);
-                        console.log(geometry.name);
-                        d3.json("weight-explain?" + slice.map(s => "sequence=" + encodeURI(s)).join("&") + "&name=" + geometry.name + "&column=" + d.column)
-                            .get(function (error, we) {
-                                drawExplain(geometry.timestep, source, we, colour);
-                            });
-                    }
-                });
-    }*/
 }
 
 function drawSoftmax(data, part) {
@@ -485,145 +448,6 @@ function drawPredictionWidget(timestep, geometry, min, max, predictions, classes
             .style("font-size", "12px")
             .style("opacity", baseOpacity)
             .text(function (d) { return d.label; });
-    /*svg.selectAll(".bar")
-        .data(vector)
-        .enter()
-            .append("rect")
-            .attr("id", function(d) { return "hoverbar-" + geometry.timestep + "-" + geometry.name + "-" + d.position; })
-            .attr("class", "timestep-" + geometry.timestep)
-            .attr("x", geometry.x + 1.5)
-            .attr("y", function(d) { return y(d.position) + 1; })
-            .attr("width", geometry.width - 3)
-            .attr("height", y.bandwidth() - 2)
-            .attr("stroke", black)
-            .attr("stroke-width", 1)
-            .style("opacity", 0)
-            .on("mouseover", function(d) {
-                if (geometry.name != "embedding" && (geometry.timestep > 0 || !geometry.name.startsWith("cell_previous"))) {
-                    d3.select("#hoverbar-" + geometry.timestep + "-" + geometry.name + "-" + d.position)
-                        .style("opacity", 0.5);
-                }
-            })
-            .on("mouseout", function(d) {
-                if (geometry.name != "embedding" && (geometry.timestep > 0 || !geometry.name.startsWith("cell_previous"))) {
-                    d3.select("#hoverbar-" + geometry.timestep + "-" + geometry.name + "-" + d.position)
-                        .style("opacity", 0);
-                }
-            })
-            .on("click", function(d) {
-                var source = {
-                    x: geometry.x + 1,
-                    y: y(d.position) + 1,
-                    width: geometry.width - 2,
-                    height: y.bandwidth() - 2,
-                }
-                if (geometry.name != "embedding" && (geometry.timestep > 0 || !geometry.name.startsWith("cell_previous"))) {
-                    var slice = sequence.slice(0, geometry.timestep + 1);
-                    console.log(geometry.name);
-                    d3.json("weight-explain?" + slice.map(s => "sequence=" + encodeURI(s)).join("&") + "&name=" + geometry.name + "&column=" + d.column)
-                        .get(function (error, we) {
-                            drawExplain(geometry.timestep, source, we, null);
-                        });
-                }
-            });*/
-}
-
-function drawExplain(timestep, source, we, colour) {
-    console.log(we);
-    $(".explain").remove();
-    svg.append("rect")
-        .attr("class", "timestep-" + timestep + " explain")
-        .attr("x", source.x - 0.5)
-        .attr("y", source.y - 1)
-        .attr("width", source.width + 1)
-        .attr("height", source.height + 2)
-        .attr("stroke-width", 1)
-        .attr("stroke", black)
-        .attr("fill", colour == null ? "none" : colour)
-        .style("opacity", 0.5);
-
-    for (var key in we.vectors) {
-        console.log(key);
-        var parts = key.split("-");
-
-        if (parts[0] == "output_previous") {
-            drawExplainWidget(getGeometry(timestep - 1, "output", parts[1]), -we.bound, we.bound, we.vectors[key]);
-        } else if (parts[0] == "cell_previous") {
-            drawExplainWidget(getGeometry(timestep - 1, "cell", parts[1]), -we.bound, we.bound, we.vectors[key]);
-        } else {
-            drawExplainWidget(getGeometry(timestep, parts[0], parts[1]), -we.bound, we.bound, we.vectors[key]);
-        }
-    }
-}
-
-function drawExplainWidget(geometry, min, max, vector) {
-    if (min > 0) {
-        throw "min " + min + " cannot be greater than 0";
-    }
-
-    if (max < 0) {
-        throw "max " + max + " cannot be less than 0";
-    }
-
-    var found_min = d3.min(vector, function(d) { return d.value; });
-    if (found_min < min) {
-        throw "found value " + found_min + " exceeding min " + min;
-    }
-
-    var found_max = d3.max(vector, function(d) { return d.value; });
-    if (found_max > max) {
-        throw "found value " + found_max + " exceeding max " + max;
-    }
-
-    var stroke_width = 1;
-    var band_width = geometry.height / (vector.length * 3);
-
-    var y = d3.scaleBand()
-        .domain(vector.map(function (d) { return d.position; }))
-        .range([geometry.y + (stroke_width / 2.0), geometry.y + geometry.height - (stroke_width / 2.0)]);
-
-    var x = d3.scaleLinear()
-        .domain([min, max])
-        .range([geometry.x + (stroke_width / 2.0), geometry.x + geometry.width - (stroke_width / 2.0)]);
-
-    // boundary box
-    svg.append("rect")
-        .attr("class", "timestep-" + geometry.timestep + " explain")
-        .attr("x", geometry.x + 0.5)
-        .attr("y", geometry.y + 0.5)
-        .attr("width", geometry.width - 1)
-        .attr("height", geometry.height - 1)
-        .style("opacity", 0.5)
-        .attr("stroke", black)
-        .attr("stroke-width", 1)
-        .attr("fill", "none");
-    svg.append("line")
-        .attr("class", "timestep-" + geometry.timestep + " explain")
-        .attr("x1", x(0))
-        .attr("y1", y.range()[0])
-        .attr("x2", x(0))
-        .attr("y2", y.range()[1])
-        .style("opacity", 0.5)
-        .attr("stroke", black)
-        .attr("stroke-width", 1);
-    svg.selectAll(".bar")
-        .data(vector)
-        .enter()
-            .append("rect")
-            .attr("class", "timestep-" + geometry.timestep + " explain")
-            .attr("x", function (d) {
-                return x(Math.min(0, d.value));
-            })
-            .attr("y", function (d) {
-                return y(d.position) + ((y.bandwidth() - band_width) / 2);
-            })
-            .attr("width", function (d) {
-                return Math.abs(x(Math.min(0, d.value)) - x(Math.max(0, d.value)));
-            })
-            .attr("height", band_width)
-            .style("opacity", 0.5)
-            .attr("stroke", black)
-            .attr("stroke-width", stroke_width);
 }
 
 function drawHline(timestep, x1, y1, x2, y2) {
@@ -941,36 +765,72 @@ function drawGate(timestep, x_offset, y_offset, size) {
         .attr("stroke-width", stroke_width);
 }
 
-function drawDetail(data) {
-    console.log(data);
-    var detailWidth = $(window).width() - 35;
-    var detailHeight = $(window).height() - 20;
+function drawDetail(timestep) {
     svg.append("rect")
         .attr("id", "detail-box")
         .attr("class", "details")
-        .attr("x", 10)
-        .attr("y", 10)
-        .attr("width", detailWidth)
-        .attr("height", detailHeight)
+        .attr("x", detail_margin)
+        .attr("y", detail_margin)
+        .attr("width", total_width - (detail_margin * 2))
+        .attr("height", total_height - (detail_margin * 2))
         .attr("stroke", black)
         .attr("stroke-width", 2)
         .attr("fill", "white");
-    $("svg").height(detailHeight + 20);
-    drawClose(detailWidth + 5, 15, (w / 4), "details", function () {
-        $("." + items_class).remove();
+    $("svg").height(total_height);
+    drawClose(total_width - detail_margin, detail_margin, (state_width / 4), "details", function () {
+        $(".details").remove();
+        input_part = null;
+        input_layer = null;
         drawWeightsFromSequence(0);
     });
+    svg.append("line")
+        .attr("class", "details")
+        .attr("x1", (total_width / 2) - 0.5)
+        .attr("y1", detail_margin)
+        .attr("x2", (total_width / 2) - 0.5)
+        .attr("y2", total_height - (detail_margin * 2))
+        .attr("stroke", "blue")
+        .attr("stroke-width", 1);
+    svg.append("line")
+        .attr("class", "details")
+        .attr("x1", (total_width / 4) + (detail_margin / 2) - 0.5)
+        .attr("y1", detail_margin)
+        .attr("x2", (total_width / 4) + (detail_margin / 2) - 0.5)
+        .attr("y2", total_height - (detail_margin * 2))
+        .attr("stroke", "blue")
+        .attr("stroke-width", 1);
+    svg.append("line")
+        .attr("class", "details")
+        .attr("x1", detail_margin)
+        .attr("y1", (total_height / 2) - 0.5)
+        .attr("x2", total_width - (detail_margin * 2))
+        .attr("y2", (total_height / 2) - 0.5)
+        .attr("stroke", "blue")
+        .attr("stroke-width", 1);
+    /*svg.append("line")
+        .attr("class", "details")
+        .attr("x1", (detailWidth / 4) + 10 - 0.5 - 5)
+        .attr("y1", 30)
+        .attr("x2", (detailWidth / 4) + 10 - 0.5 + 5)
+        .attr("y2", 30)
+        .attr("stroke", "blue")
+        .attr("stroke-width", 1);*/
+    drawSequenceWheel("details", input_sequence, timestep);
+}
+
+function loadDetail(data) {
+    $(".details.load").remove();
     var miniGeometry = {
-        x: (detailWidth / 4) - w,
-        y: (detailHeight / 2) - h,
-        width: w * 2,
-        height: h * 2,
+        x: (total_width / 4) + (detail_margin / 2) - state_width,
+        y: (total_height / 2) - (state_height * 2) - detail_margin,
+        width: state_width * 2,
+        height: state_height * 2,
     };
     var fullGeometry = {
-        x: (detailWidth / 2) - 50,
-        y: 20,
-        width: 100,
-        height: detailHeight - 20,
+        x: (total_width / 2) + detail_margin,
+        y: detail_margin * 2,
+        width: (total_width / 2) - (detail_margin * 3),
+        height: total_height - (detail_margin * 4),
     };
     /*if ((h / MEMORY_CHIP_HEIGHT) != (w / MEMORY_CHIP_WIDTH)) {
         throw "chips aren't square (" + (w / MEMORY_CHIP_WIDTH) + ", " + (h / MEMORY_CHIP_HEIGHT) + ")";
@@ -978,79 +838,80 @@ function drawDetail(data) {
     if (data.full.vector.length % 2 != 0) {
         throw "vector length (" + data.full.vector.length + ") must be divisible by 2";
     }
-    drawStateWidget(null, miniGeometry, data.mini.minimum, data.mini.maximum, data.mini.vector, null, null, "details", MEMORY_CHIP_WIDTH, MEMORY_CHIP_HEIGHT, null, null, null);
-    drawStateWidget(null, fullGeometry, data.full.minimum, data.full.maximum, data.full.vector, null, null, "details", 2, data.full.vector.length / 2, null, null, data.back_links);
+    drawStateWidget(null, miniGeometry, data.mini.minimum, data.mini.maximum, data.mini.vector, null, null, "details load", MEMORY_CHIP_WIDTH, MEMORY_CHIP_HEIGHT, null, null, null);
+    drawStateWidget(null, fullGeometry, data.full.minimum, data.full.maximum, data.full.vector, null, null, "details load", 2, data.full.vector.length / 2, null, null, data.back_links);
 }
 
-function drawZoom(timestep, x_middle, addition, parts) {
-    var x_offset = x_middle - ((w * 4.5) / 2) - (operator_height * 2);
-    var y_offset = y_margin + (timestep * layer_height);
-    var zoom_class = "zoom-" + Math.random().toString(36).substring(5);
+function drawSequenceWheel(classes, sequence, timestep) {
+    var x_offset = detail_margin * 2;
+    var y_offset = detail_margin * 2;
+    var width = (total_width / 2) - (detail_margin * 3);
+    var height = HEIGHT;
     svg.append("rect")
-        .attr("class", "timestep-" + timestep + " " + zoom_class)
+        .attr("class", classes)
         .attr("x", x_offset)
         .attr("y", y_offset)
-        .attr("width", (w * 4.5) + (operator_height * 4))
-        .attr("height", h * 2)
-        .attr("stroke", black)
+        .attr("width", width)
+        .attr("height", height)
+        .attr("stroke", "blue")
         .attr("stroke-width", 1)
-        .attr("fill", "white");
-    var center_x_offset = x_offset + (w * 4.5) + (operator_height * 4);
-    var center_y_offset = y_offset;
-    svg.append("circle")
-        .attr("class", "timestep-" + timestep + " " + zoom_class)
-        .attr("cx", center_x_offset)
-        .attr("cy", center_y_offset)
-        .attr("r", (operator_height / 2) - 0.5)
-        .attr("stroke", dark_red)
-        .attr("stroke-width", 1)
-        .attr("fill", light_red)
-        .on("mouseover", function(d) {
-            if (parts != null) {
-                d3.event.target.style.fill = dark_red;
-            }
-        })
-        .on("mouseout", function(d) {
-            if (parts != null) {
-                d3.event.target.style.fill = light_red;
-            }
-        })
-        .on("click", function(d) {
-            $("." + zoom_class).remove();
-        });
-    var stroke_width = operator_height / 10;
-    var stroke_length = operator_height / 2;
-    var qq = Math.sqrt((stroke_length**2) / 2);
-    svg.append("line")
-        .attr("class", "timestep-" + timestep + " " + zoom_class)
-        .attr("x1", center_x_offset - ((operator_height - qq) / 2))
-        .attr("y1", center_y_offset - ((operator_height - qq) / 2))
-        .attr("x2", center_x_offset + qq)
-        .attr("y2", center_y_offset + qq)
-        .attr("stroke", black)
-        .attr("stroke-width", stroke_width);
-    svg.append("line")
-        .attr("class", "timestep-" + timestep + " " + zoom_class)
-        .attr("x1", center_x_offset - ((operator_height - qq) / 2))
-        .attr("y1", center_y_offset + qq)
-        .attr("x2", center_x_offset + qq)
-        .attr("y2", center_y_offset - ((operator_height - qq) / 2))
-        .attr("stroke", black)
-        .attr("stroke-width", stroke_width);
-    var geometry = {width: w * 1.5, timestep: timestep, x: x_offset + operator_height - 2, y: y_offset + (h * 0.25), height: h * 1.5};
-    drawHiddenState(geometry, parts[0], zoom_class);
-
-    if (addition) {
-        drawAddition(timestep, geometry.x + (w * 1.5) + 1, y_offset + (h) - (operator_height / 2), operator_height, null, zoom_class);
-    } else {
-        drawMultiplication(timestep, geometry.x + (w * 1.5) + 1, y_offset + (h) - (operator_height / 2), operator_height, null, zoom_class);
+        .style("fill", "none");
+    var position = 0;
+    var datums = sequence.map(word => ({position: position++, word: word}));
+    svg.selectAll(".wheel")
+        .data(datums)
+        .enter()
+            .append("text")
+            .attr("id", function (d) { return "position-" + d.position; })
+            .attr("class", classes)
+            .attr("x", 0)
+            .attr("y", -20)
+            .style("font-size", "14px")
+            .style("fill", black)
+            .text(function(d) { return d.word; })
+            .on("mouseover", function(d) {
+                d3.select(this)
+                    .style("cursor", "pointer");
+            })
+            .on("mouseout", function(d) {
+                d3.select(this)
+                    .style("cursor", "auto");
+            })
+            .on("click", function(d) {
+                drawSequenceWheel(classes, sequence, d.position);
+            });
+    var center_item_width = textWidth(sequence[timestep], 14);
+    var running_width = (center_item_width / 2);
+    $("#position-" + timestep)
+        .attr("x", x_offset + (width / 2) - running_width)
+        .attr("y", y_offset + (height / 2) + (height / 4));
+    var space_width = textWidth("&nbsp;", 14);
+    for (var i = 1; i <= timestep; i++) {
+        var item_width = textWidth(sequence[timestep - i], 14);
+        running_width += item_width + space_width;
+        $("#position-" + (timestep - i))
+            .attr("x", x_offset + (width / 2) - running_width)
+            .attr("y", y_offset + (height / 2) + (height / 4))
+            .css("opacity", 1.0 - (Math.max(i - 3, 0) * .2));
+    }
+    running_width = (center_item_width / 2);
+    for (var i = 1; i <= sequence.length; i++) {
+        running_width += space_width;
+        $("#position-" + (timestep + i))
+            .attr("x", x_offset + (width / 2) + running_width)
+            .attr("y", y_offset + (height / 2) + (height / 4))
+            .css("opacity", 1.0 - (Math.max(i - 3, 0) * .2));
+        var item_width = textWidth(sequence[timestep + i], 14);
+        running_width += item_width;
     }
 
-    geometry.x += (w * 1.5) + operator_height + 2;
-    drawHiddenState(geometry, parts[1], zoom_class);
-    drawEquals(timestep, geometry.x + (w * 1.5) + 1, y_offset + (h) - (operator_height / 2), operator_height, zoom_class);
-    geometry.x += (w * 1.5) + operator_height + 2;
-    drawHiddenState(geometry, parts[2], zoom_class);
+    // Load the data based off the center item.
+    var slice = sequence.slice(0, timestep + 1);
+    var distance = sequence.length - timestep - 1;
+    console.log("Drawing detail for " + (slice.length - 1) + " @" + distance + ": " + slice);
+    var layerParameter = input_layer == null ? "" : "&layer=" + input_layer;
+    d3.json("weight-detail?distance=" + distance + "&part=" + input_part + layerParameter + "&" + slice.map(s => "sequence=" + encodeURI(s)).join("&"))
+        .get(function (error, data) { loadDetail(data); });
 }
 
 function drawOpen(x_offset, y_offset, radius, items_class, callback) {
@@ -1165,9 +1026,9 @@ function drawAutocomplete(timestep, words) {
     var focus = null;
 
     svg.append("foreignObject")
-        .attr("transform", "translate(" + x_offset + "," + (y_offset + h - (height / 2) - 1) + ")")
+        .attr("transform", "translate(" + x_offset + "," + (y_offset + state_height - (HEIGHT / 2) - 1) + ")")
         .attr("width", input_width)
-        .attr("height", height)
+        .attr("height", HEIGHT)
         .append("xhtml:div")
         .attr("id", "autocomplete-" + timestep);
     var autocomplete = $("#autocomplete-" + timestep);
@@ -1192,12 +1053,12 @@ function drawAutocomplete(timestep, words) {
             var textContent = e.target.textContent.toLowerCase();
             autocomplete.find("input").val(textContent);
 
-            if (timestep >= sequence.length) {
-                sequence.push(textContent);
+            if (timestep >= input_sequence.length) {
+                input_sequence.push(textContent);
                 d3.json("words")
                     .get(function (error, data) { drawAutocomplete(timestep + 1, data); });
             } else {
-                sequence[timestep] = textContent;
+                input_sequence[timestep] = textContent;
             }
 
             drawWeightsFromSequence(0);
@@ -1234,8 +1095,8 @@ function drawAutocomplete(timestep, words) {
                 autocomplete.find("input").val(textContent);
 
                 if (textContent == "") {
-                    var tail = sequence.length;
-                    sequence = sequence.slice(0, timestep);
+                    var tail = input_sequence.length;
+                    input_sequence = input_sequence.slice(0, timestep);
 
                     for (var s = timestep; s <= tail; s++) {
                         if (s != timestep) {
@@ -1245,12 +1106,12 @@ function drawAutocomplete(timestep, words) {
                         $(".timestep-" + s).remove();
                     }
                 } else {
-                    if (timestep >= sequence.length) {
-                        sequence.push(textContent);
+                    if (timestep >= input_sequence.length) {
+                        input_sequence.push(textContent);
                         d3.json("words")
                             .get(function (error, data) { drawAutocomplete(timestep + 1, data); });
                     } else {
-                        sequence[timestep] = textContent;
+                        input_sequence[timestep] = textContent;
                     }
                 }
 
@@ -1267,11 +1128,11 @@ function drawAutocomplete(timestep, words) {
 }
 
 function drawWeightsFromSequence(timestep) {
-    console.log("Full sequence: " + sequence);
+    console.log("Full sequence: " + input_sequence);
 
-    for (var s = timestep; s < sequence.length; s++) {
-        var slice = sequence.slice(0, s + 1);
-        var distance = sequence.length - s - 1;
+    for (var s = timestep; s < input_sequence.length; s++) {
+        var slice = input_sequence.slice(0, s + 1);
+        var distance = input_sequence.length - s - 1;
         console.log("Drawing sequence for " + (slice.length - 1) + " @" + distance + ": " + slice);
         d3.json("weights?distance=" + distance + "&" + slice.map(s => "sequence=" + encodeURI(s)).join("&"))
             .get(function (error, data) { drawTimestep(slice.length - 1, data); });
@@ -1281,30 +1142,30 @@ function drawWeightsFromSequence(timestep) {
 function getGeometry(timestep, part, layer) {
     var x_offset = (x_margin * 2) + input_width;
     var y_offset = y_margin + (timestep * layer_height);
-    var layer_offset = layer * w * 14;
+    var layer_offset = layer * state_width * 14;
     var b;
 
     switch (part) {
         case "embedding":
-            b = {x: x_offset + w, y: y_offset + (h * 3 / 4)};
+            b = {x: x_offset + state_width, y: y_offset + (state_height * 3 / 4)};
             break;
         case "cell_previouses":
-            b = {x: x_offset + (w * 9 / 2) + layer_offset, y: y_offset};
+            b = {x: x_offset + (state_width * 9 / 2) + layer_offset, y: y_offset};
             break;
         /*case "forget_gate":
             b = {x: x_offset + (w * 3) + (w / 2) + layer_offset, y: y_offset + (h * 1 / 2) + (operator_height / 2), height: operand_height};
             break;*/
         case "forgets":
-            b = {x: x_offset + (w * 8) + layer_offset, y: y_offset};
+            b = {x: x_offset + (state_width * 8) + layer_offset, y: y_offset};
             break;
         case "input_hats":
-            b = {x: x_offset + (w * 9 / 2) + layer_offset, y: y_offset + (h * 3 / 2)};
+            b = {x: x_offset + (state_width * 9 / 2) + layer_offset, y: y_offset + (state_height * 3 / 2)};
             break;
         /*case "remember_gate":
             b = {x: x_offset + (w * 7) + (w / 2) + layer_offset, y: y_offset + (h * 3 / 2) + (operator_height / 2), height: operand_height};
             break;*/
         case "remembers":
-            b = {x: x_offset + (w * 8) + layer_offset, y: y_offset + (h * 3 / 2)};
+            b = {x: x_offset + (state_width * 8) + layer_offset, y: y_offset + (state_height * 3 / 2)};
             break;
         /*case "forget_hat":
             b = {x: x_offset + (w * 11) + (w / 2) + layer_offset, y: y_offset + (h * 1 / 2), height: operand_height};
@@ -1316,21 +1177,36 @@ function getGeometry(timestep, part, layer) {
             b = {x: x_offset + (w * 13) + layer_offset, y: y_offset + (h * 1 / 2), height: h};
             break;*/
         case "cell_hats":
-            b = {x: x_offset + (w * 11) + (w / 2) + layer_offset, y: y_offset + (h * 3 / 4)};
+            b = {x: x_offset + (state_width * 11) + (state_width / 2) + layer_offset, y: y_offset + (state_height * 3 / 4)};
             break;
         /*case "output_gate":
             b = {x: x_offset + (w * 15) + (w / 2) + layer_offset, y: y_offset + h + (operator_height / 2), height: operand_height};
             break;*/
         case "outputs":
-            b = {x: x_offset + (w * 15) + layer_offset, y: y_offset + (h * 3 / 4)};
+            b = {x: x_offset + (state_width * 15) + layer_offset, y: y_offset + (state_height * 3 / 4)};
             break;
         case "softmax":
             // For the 2 layers v
-            b = {x: x_offset + (2 * w * 17) + (w * 3 / 2), y: y_offset + (h * 3 / 4)};
+            b = {x: x_offset + (2 * state_width * 17) + (state_width * 3 / 2), y: y_offset + (state_height * 3 / 4)};
             break;
         default:
             return null;
     }
 
-    return Object.assign({}, {width: w, height: h}, b);
+    return Object.assign({}, {width: state_width, height: state_height}, b);
 }
+
+function textWidth(text, fontSize) {
+    var temporaryDiv = document.createElement("div");
+    document.body.appendChild(temporaryDiv);
+    temporaryDiv.style.fontSize = "" + fontSize + "px";
+    temporaryDiv.style.position = "absolute";
+    temporaryDiv.style.left = -100;
+    temporaryDiv.style.top = -100;
+    temporaryDiv.innerHTML = text;
+    var width = temporaryDiv.clientWidth;
+    document.body.removeChild(temporaryDiv);
+    temporaryDiv = null;
+    return width;
+}
+
