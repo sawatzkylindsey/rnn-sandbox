@@ -1,4 +1,5 @@
 
+import functools
 import itertools
 import json
 import logging
@@ -196,6 +197,20 @@ class NeuralNetwork:
         accuracy_test = self.lstm.test(self.test_xys, True)
         logging.debug("(v, t): (%s, %s)" % (accuracy_validation, accuracy_test))
 
+    @functools.lru_cache()
+    def stepwise(self, sequence):
+        if len(sequence) == 0:
+            return rnn.Stepwise(self.lstm, "root", handle_unknown=True)
+        else:
+            return self.stepwise(sequence[:-1]).next_stepwise(sequence[-1])
+
+    def query_lstm(self, sequence):
+        stepwise_lstm = self.stepwise(tuple(sequence[:-1]))
+        word = sequence[-1]
+        resolved_word = self.words.decode(self.words.encode(word, True))
+        result, instruments = stepwise_lstm.query(word, NeuralNetwork.INSTRUMENTS)
+        return resolved_word, result, instruments
+
     def _train_predictor(self):
         part_labels = mlbase.Labels(set(NeuralNetwork.INSTRUMENTS))
         layer_labels = mlbase.Labels(set(range(NeuralNetwork.LAYERS)))
@@ -355,12 +370,7 @@ class NeuralNetwork:
         return colours
 
     def weights(self, sequence, distance):
-        stepwise_lstm = self.lstm.stepwise(handle_unknown=True)
-
-        for x in sequence:
-            x_word = self.words.decode(self.words.encode(x, True))
-            result, instruments = stepwise_lstm.step(x, NeuralNetwork.INSTRUMENTS)
-
+        last_word, result, instruments = self.query_lstm(sequence)
         embedding_key = self.encode_key("embedding")
         points = {
             embedding_key: instruments["embedding"]
@@ -371,17 +381,14 @@ class NeuralNetwork:
                 points[self.encode_key(part, layer)] = instruments[part][layer]
 
         point_reductions, point_colours, point_predictions = self.compute_point_abstractions(distance, points)
-        embedding = HiddenState(point_reductions[embedding_key], colour=point_colours[embedding_key], predictions=self.prediction_distribution(point_predictions[embedding_key]))
-        units = self.make_lstm_units(point_reductions, point_colours, point_predictions)
+        name = self.latex_name(len(sequence) - 1, "embedding")
+        embedding = HiddenState(name, point_reductions[embedding_key], colour=point_colours[embedding_key], predictions=self.prediction_distribution(point_predictions[embedding_key]))
+        units = self.make_lstm_units(len(sequence) - 1, point_reductions, point_colours, point_predictions)
         softmax = LabelDistribution(result.distribution, NeuralNetwork.OUTPUT_WIDTH, lambda sentiment: self.sentiment_colour(sentiment))
-        return Timestep(embedding, units, softmax, len(sequence) - 1, x_word, result.prediction)
+        return Timestep(embedding, units, softmax, len(sequence) - 1, last_word, result.prediction)
 
     def weight_detail(self, sequence, distance, part, layer):
-        stepwise_lstm = self.lstm.stepwise(handle_unknown=True)
-
-        for x in sequence:
-            result, instruments = stepwise_lstm.step(x, [part])
-
+        last_word, result, instruments = self.query_lstm(sequence)
         point = instruments[part]
 
         if layer is not None:
@@ -396,9 +403,10 @@ class NeuralNetwork:
         key = self.encode_key(part, layer)
         keyed_point = {key: point}
         reduction, colour, prediction = self.compute_point_abstractions(distance, keyed_point)
-        hidden_state = HiddenState(reduction[key], min_max, colour[key], self.prediction_distribution(prediction[key]))
+        name = self.latex_name(len(sequence) - 1, part, layer)
+        hidden_state = HiddenState(name, reduction[key], min_max, colour[key], self.prediction_distribution(prediction[key]))
         # This is the full point.
-        full_hidden_state = HiddenState(point, min_max, None, None)
+        full_hidden_state = HiddenState(name, point, min_max, None, None)
         back_links = {}
 
         for i, endpoint in self.dimensionality_reduce_mapping(keyed_point, NeuralNetwork.HIDDEN_REDUCTION)[key].items():
@@ -425,7 +433,7 @@ class NeuralNetwork:
 
         return LabelDistribution(prediction, colour_fn=lambda sentiment: self.sentiment_colour(sentiment))
 
-    def make_lstm_units(self, point_reductions, point_colours, point_predictions):
+    def make_lstm_units(self, timestep, point_reductions, point_colours, point_predictions):
         units = {}
 
         for part in NeuralNetwork.LSTM_PARTS:
@@ -438,7 +446,8 @@ class NeuralNetwork:
                     min_max = (None, None)
 
                 key = self.encode_key(part, layer)
-                hidden_state = HiddenState(point_reductions[key], min_max, point_colours[key], self.prediction_distribution(point_predictions[key]))
+                name = self.latex_name(timestep, part, layer)
+                hidden_state = HiddenState(name, point_reductions[key], min_max, point_colours[key], self.prediction_distribution(point_predictions[key]))
                 units[part][layer] = hidden_state
 
         return units
@@ -542,4 +551,31 @@ class NeuralNetwork:
     def tanh(self, value):
         part = math.exp(-2 * value)
         return (1.0 - part) / (1.0 + part)
+
+    def latex_name(self, timestep, part, layer=None):
+        if part == "embedding":
+            return "e_%d" % timestep
+        elif part == "remember_gates":
+            return "i_%d^%d" % (timestep, layer)
+        elif part == "forget_gates":
+            return "f_%d^%d" % (timestep, layer)
+        elif part == "output_gates":
+            return "o_%d^%d" % (timestep, layer)
+        elif part == "input_hats":
+            return "input_%d^%d" % (timestep, layer)
+        elif part == "remembers":
+            return "remember_%d^%d" % (timestep, layer)
+        elif part == "forgets":
+            return "forget_%d^%d" % (timestep, layer)
+        elif part == "cells":
+            return "c_%d^%d" % (timestep, layer)
+        elif part == "cell_hats":
+            return "cell_%d^%d" % (timestep, layer)
+        elif part == "cell_previouses":
+            if timestep == 0:
+                return "-"
+
+            return "cell_%d^%d" % (timestep - 1, layer)
+        elif part == "outputs":
+            return "output_%d^%d" % (timestep, layer)
 

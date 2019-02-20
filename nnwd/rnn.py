@@ -316,19 +316,30 @@ class Rnn:
 
 
 class Stepwise:
-    def __init__(self, rnn, name=None, handle_unknown=False):
+    def __init__(self, rnn, name=None, handle_unknown=False, state_t=None):
+        self.rnn = rnn
         # Amazingly, python on our servers doesn't have random.choices.
         # We can do the same thing manually.              vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
         self.name = name if name is not None else "".join([random.choice(string.ascii_lowercase) for i in range(6)])
         self.handle_unknown = handle_unknown
-        self.rnn = rnn
-        self.state = None
-        self.t = 0
+        self.state = None if state_t is None else state_t[0]
+        self.t = 0 if state_t is None else state_t[1]
 
     def step(self, x, instrument_names=[]):
-        result, self.state, instruments = self.rnn.evaluate(x, self.handle_unknown, self.state, instrument_names)
+        result, self.state, instruments = self._query(x, instrument_names)
         self.t += 1
         return result, instruments
+
+    def next_stepwise(self, x):
+        _, next_state, _ = self._query(x)
+        return Stepwise(self.rnn, self.name + "," + x, self.handle_unknown, (next_state, self.t + 1))
+
+    def _query(self, x, instrument_names=[]):
+        return self.rnn.evaluate(x, self.handle_unknown, self.state, instrument_names)
+
+    def query(self, x, instrument_names=[]):
+        result, state, instruments = self._query(x, instrument_names)
+        return (result, instruments)
 
 
 class Result:
