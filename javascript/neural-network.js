@@ -1007,6 +1007,27 @@ function drawInset(data, placement) {
         throw (inset_separator * 8) + (inset_unit_width * 11) + " != " + inset_width;
     }
     var classes = "detail inset" + (placement == null ? "" : " " + placement);
+    var label = placement == null ? null : (placement == "top" ? "A" : "B");
+
+    if (label != null) {
+        svg.append("rect")
+            .attr("class", classes)
+            .attr("x", inset_x_offset - (inset_unit_width * 2))
+            .attr("y", inset_y_offset + (inset_height / 2) - (inset_unit_height / 2) + (placement == "bottom" ? (inset_unit_height / 2) : 0))
+            .attr("width", inset_unit_width)
+            .attr("height", (inset_unit_height / 2) - 1)
+            .attr("stroke", "none")
+            .attr("stroke-width", 1)
+            .attr("fill", light_grey);
+        svg.append("text")
+            .attr("class", classes)
+            .attr("x", inset_x_offset - (inset_unit_width * 2) + 2 - (placement == "top" ? 0.5 : 0))
+            .attr("y", inset_y_offset + (inset_height / 2) - (inset_unit_height / 2) + HEIGHT - 2 + (placement == "bottom" ? (inset_unit_height / 2) : 0))
+            .style("font-size", "16px")
+            .style("fill", black)
+            .text(label);
+    }
+
     svg.append("rect")
         .attr("class", classes)
         .attr("x", inset_x_offset)
@@ -1275,6 +1296,17 @@ function drawWeightDetail(data, placement) {
     var classes = "detail load" + (placement == null ? "" : " " + placement);
     var linker_suffix = placement == null ? "-top" : "-" + placement;
     drawStateWidget(null, miniGeometry, null, data.mini.minimum, data.mini.maximum, data.mini.vector, data.mini.colour, data.mini.predictions, classes, MEMORY_CHIP_WIDTH, MEMORY_CHIP_HEIGHT, null, null, null, linker_suffix, null);
+    var label = placement == null ? null : (placement == "top" ? "A:" : "B:");
+
+    if (label != null) {
+        svg.append("text")
+            .attr("class", classes)
+            .attr("x", miniGeometry.x - textWidth(label) - 10)
+            .attr("y", miniGeometry.y + (miniGeometry.height / 2) + (HEIGHT / 4))
+            .style("font-size", "16px")
+            .style("fill", black)
+            .text(label);
+    }
 
     if (placement == "bottom") {
         variance_lower_bottom = data.full.minimum;
@@ -1401,6 +1433,8 @@ function drawMainSequence() {
     }
 }
 
+var back_width_main = null;
+var back_width_compare = null;
 function drawSequenceWheel(main, sequence, timestep) {
     var x_offset = detail_margin * 2;
     var y_offset = (detail_margin * 2) + (main ? 0 : HEIGHT + detail_margin);
@@ -1429,8 +1463,8 @@ function drawSequenceWheel(main, sequence, timestep) {
             .append("text")
             .attr("id", function (d) { return "position-" + d.position + type_suffix; })
             .attr("class", "detail wheel" + type_suffix)
-            .attr("x", 0)
-            .attr("y", -20)
+            .attr("x", -50)
+            .attr("y", -50)
             .style("font-size", "14px")
             .style("fill", black)
             .text(function(d) { return d.word; })
@@ -1454,13 +1488,14 @@ function drawSequenceWheel(main, sequence, timestep) {
                 drawSequenceWheel(main, sequence, d.position);
             });
     var center_item_width = textWidth(sequence[timestep], 14);
-    var running_width = (center_item_width / 2);
+    var back_width = (center_item_width / 2);
+    var front_width = (center_item_width / 2);
     $("#position-" + timestep + type_suffix)
-        .attr("x", x_offset + (width / 2) - running_width)
+        .attr("x", x_offset + (width / 2) - back_width)
         .attr("y", y_offset + (height / 2) + (height / 4));
     svg.append("rect")
         .attr("class", "detail wheel" + type_suffix)
-        .attr("x", x_offset + (width / 2) - running_width - 2.5)
+        .attr("x", x_offset + (width / 2) - back_width - 2.5)
         .attr("y", y_offset)
         .attr("width", center_item_width + 5)
         .attr("height", height)
@@ -1470,21 +1505,47 @@ function drawSequenceWheel(main, sequence, timestep) {
     var space_width = textWidth("&nbsp;", 14) + 2;
     for (var i = 1; i <= timestep; i++) {
         var item_width = textWidth(sequence[timestep - i], 14);
-        running_width += item_width + space_width;
+        back_width += item_width + space_width;
         $("#position-" + (timestep - i) + type_suffix)
-            .attr("x", x_offset + (width / 2) - running_width)
+            .attr("x", x_offset + (width / 2) - back_width)
             .attr("y", y_offset + (height / 2) + (height / 4))
             .css("opacity", 1.0 - (Math.max(i - 3, 0) * .2));
     }
-    running_width = (center_item_width / 2);
     for (var i = 1; i <= sequence.length; i++) {
-        running_width += space_width;
+        front_width += space_width;
         $("#position-" + (timestep + i) + type_suffix)
-            .attr("x", x_offset + (width / 2) + running_width)
+            .attr("x", x_offset + (width / 2) + front_width)
             .attr("y", y_offset + (height / 2) + (height / 4))
             .css("opacity", 1.0 - (Math.max(i - 3, 0) * .2));
         var item_width = textWidth(sequence[timestep + i], 14);
-        running_width += item_width;
+        front_width += item_width;
+    }
+
+    if (main) {
+        back_width_main = back_width;
+    } else {
+        back_width_compare = back_width;
+    }
+
+    if (compare_sequence.length > 0) {
+        var labelA = "A:";
+        var labelB = "B:";
+        var item_width = textWidth(labelA, 16) + 10;
+        $(".wheel-label").remove();
+        svg.append("text")
+            .attr("class", "detail wheel-label")
+            .attr("x", x_offset + (width / 2) - Math.max(back_width_main, back_width_compare) - item_width - 2)
+            .attr("y", (detail_margin * 2) + (height / 2) + (height / 4))
+            .style("font-size", "16px")
+            .style("fill", black)
+            .text(labelA);
+        svg.append("text")
+            .attr("class", "detail wheel-label")
+            .attr("x", x_offset + (width / 2) - Math.max(back_width_main, back_width_compare) - item_width)
+            .attr("y", (detail_margin * 2) + HEIGHT + detail_margin + (height / 2) + (height / 4))
+            .style("font-size", "16px")
+            .style("fill", black)
+            .text(labelB);
     }
 
     loadInset(main);
