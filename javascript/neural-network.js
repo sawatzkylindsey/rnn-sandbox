@@ -40,7 +40,7 @@ $(document).ready(function () {
         .style('top', 0)
         .style('left', 0)
         .style("width", total_width)
-        .style('height', layer_height * 2);
+        .style('height', total_height);
 
     // arrow head definition
     svg.insert('defs', ':first-child')
@@ -1887,7 +1887,6 @@ function drawInputModal(callback, edit_sequence) {
         .attr("stroke", black)
         .attr("stroke-width", 2)
         .attr("fill", "white");
-    $("svg").height(total_height);
     drawClose(x_offset + width, y_offset, (state_width / 4), "modal", function () {
         $(".modal").remove();
     });
