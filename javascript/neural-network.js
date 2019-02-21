@@ -1753,6 +1753,7 @@ function drawAutocomplete(timestep) {
     var y_offset = y_margin + (timestep * layer_height)
     var focus = null;
 
+    $("#autocomplete-" + timestep).parent().remove();
     svg.append("foreignObject")
         .attr("class", "autocomplete")
         .attr("transform", "translate(" + x_offset + "," + (y_offset + state_height - (HEIGHT / 2) - 1) + ")")
@@ -1902,7 +1903,6 @@ function drawInputModal(callback, edit_sequence) {
 
     if (edit_sequence != null) {
         sequenceInputter.find("input").val(edit_sequence.join(" "));
-        //d3.json("weights?distance=" + distance + "&" + slice.map(s => "sequence=" + encodeURI(s)).join("&"))
     }
 
     sequenceInputter.on("keydown", function(e) {
