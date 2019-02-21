@@ -24,6 +24,11 @@ from pytils import adjutant, check
 
 
 RESUME_DIR = ".resume"
+STAR_MAP = {
+    1: "negative",
+    3: "neutral",
+    5: "positive",
+}
 
 
 def create(reviews_stream, epochs, verbose):
@@ -40,17 +45,15 @@ def create(reviews_stream, epochs, verbose):
                 stars = int(review["stars"])
                 assert stars == review["stars"], "%s != %s" % (stars, review["stars"])
 
-                if stars != 3:
-                    if stars == 2:
-                        stars = 1
-                    elif stars == 4:
-                        stars = 5
+                if stars == 2:
+                    stars = 1
+                elif stars == 4:
+                    stars = 5
 
-                    stars = str(stars)
-                    xys.append((text, stars))
+                xys.append((text, STAR_MAP[stars]))
 
-                    if len(xys) > 20000:
-                        break
+                if len(xys) > 20000:
+                    break
 
         pickler.dump(xys, xys_file)
 
@@ -285,11 +288,23 @@ class NeuralNetwork:
         self.colour_embeddings = self.find_colour_embeddings()
 
     def find_colour_embeddings(self):
-        red_green_line = lambda x: -x + 255
-        ordered_sentiments = sorted([int(s) for s in self.sentiments.labels()])
-        scaler = 255.0 / (len(self.sentiments) - 1)
-        #                 RED                      GREEN    BLUE
-        return {pair[0]: (red_green_line(pair[1]), pair[1], 0) for pair in [(str(sentiment), i * scaler) for i, sentiment in enumerate(ordered_sentiments)]}
+        assert len(self.sentiments.labels()) == 3, len(self.sentiments.labels())
+        #ordered_sentiments = sorted([int(s) for s in self.sentiments.labels()])
+        # Pallet from: http://colorbrewer2.org/#type=diverging&scheme=RdYlGn&n=3
+        #   negative: fc8d59 / 252,141,89
+        #    neutral: ffffbf / 255,255,191
+        #   positive: 91cf60 / 145,207,96
+        # Pallet from: https://nlp.stanford.edu/sentiment/treebank.html
+        #   negative: #67001f / 103,0,31
+        # neutral: #f7f7f7 / 247,247,247
+        #   positive: #053061 / 5,48,97
+        #             24: 053061 #053061
+        embedding = {
+            "negative": (103, 0, 31),
+            "neutral": (247, 247, 247),
+            "positive": (5, 48, 97),
+        }
+        return embedding;
 
     def sentiment_colour(self, sentiment):
         if not self.is_setup():
@@ -362,10 +377,12 @@ class NeuralNetwork:
         scaler = (255.0 / 4)
 
         for key, point in points.items():
-            invert_distribution = {k: 1.0 - v for k, v in predictions[key].items()}
-            prediction_distances = [(k, v * scaler) for k, v in mlbase.softmax(invert_distribution).items()]
-            fit, _ = geometry.fit_point([self.colour_embeddings[item[0]] for item in prediction_distances], [item[1] for item in prediction_distances], epsilon=0.1, visualize=False)
-            colours[key] = "rgb(%d, %d, %d)" % tuple([round(i) for i in fit])
+            most_likely_prediction = sorted(predictions[key].items(), key=lambda item: item[1], reverse=True)[0][0]
+            colours[key] = "rgb(%d, %d, %d)" % self.colour_embeddings[most_likely_prediction]
+            #invert_distribution = {k: 1.0 - v for k, v in predictions[key].items()}
+            #prediction_distances = [(k, v * scaler) for k, v in mlbase.softmax(invert_distribution).items()]
+            #fit, _ = geometry.fit_point([self.colour_embeddings[item[0]] for item in prediction_distances], [item[1] for item in prediction_distances], epsilon=0.1, visualize=False)
+            #colours[key] = "rgb(%d, %d, %d)" % tuple([round(i) for i in fit])
 
         return colours
 
