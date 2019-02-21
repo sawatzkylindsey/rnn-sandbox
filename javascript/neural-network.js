@@ -969,12 +969,13 @@ function drawDetail() {
             function acceptCompareInput(sequence) {
                 compare_sequence = sequence;
                 $(".compare-button").remove();
+                var count = $(".detail.comparison.activation").length;
                 $(".detail.load").remove();
                 $(".detail.inset").remove();
                 loadInset(true);
                 loadDetail(true);
                 drawSequenceWheel(false, compare_sequence, 0);
-                drawCompareDial();
+                drawCompareDial(count);
             }
             drawInputModal(acceptCompareInput);
         });
@@ -1134,8 +1135,9 @@ var variance_upper_bottom = null;
 var variance_minimum = null;
 var variance_maximum = null;
 var deadzone = 1;
-function drawCompareDial() {
+function drawCompareDial(count) {
     var percent_width = textWidth("100%", 14);
+    var match_count = count;
     var x_line = (total_width / 2) - (detail_margin * 2) - percent_width;
     compare_dial_y_min = (total_height / 2) - (total_height / 10);
     compare_dial_y_max = (total_height / 2) + (total_height / 10);
@@ -1146,8 +1148,9 @@ function drawCompareDial() {
     compare_dial_different_value = d3.scaleLinear()
         .domain([compare_dial_y_middle + deadzone, compare_dial_y_max - compare_dial_radius])
         .range([0, 1]);
+    $(".detail.compare-dial").remove();
     svg.append("line")
-        .attr("class", "detail")
+        .attr("class", "detail compare-dial")
         .attr("x1", x_line)
         .attr("y1", compare_dial_y_min)
         .attr("x2", x_line)
@@ -1155,28 +1158,35 @@ function drawCompareDial() {
         .attr("stroke", black)
         .attr("stroke-width", 2);
     svg.append("text")
-        .attr("class", "detail")
+        .attr("class", "detail compare-dial")
         .attr("x", x_line - (textWidth("similar", 14) / 2))
         .attr("y", compare_dial_y_min - 5)
         .style("font-size", "14px")
         .style("fill", black)
         .text("similar")
     svg.append("text")
-        .attr("class", "detail")
+        .attr("class", "detail compare-dial")
         .attr("x", x_line - (textWidth("different", 14) / 2))
         .attr("y", compare_dial_y_max + 12)
         .style("font-size", "14px")
         .style("fill", black)
         .text("different")
     svg.append("text")
-        .attr("class", "detail compare-dial-value")
+        .attr("class", "detail compare-dial compare-dial-value")
         .attr("x", x_line + compare_dial_radius + 5)
         .attr("y", compare_dial_y_middle + 5)
         .style("font-size", "14px")
         .style("fill", black)
         .text("0%")
+    svg.append("text")
+        .attr("class", "detail compare-dial compare-dial-count")
+        .attr("x", x_line - compare_dial_radius - textWidth(match_count, 14) - 5)
+        .attr("y", compare_dial_y_middle + 5)
+        .style("font-size", "14px")
+        .style("fill", black)
+        .text(match_count)
     svg.append("circle")
-        .attr("class", "detail")
+        .attr("class", "detail compare-dial")
         .attr("cx", x_line)
         .attr("cy", compare_dial_y_middle)
         .attr("r", 2)
@@ -1187,7 +1197,7 @@ function drawCompareDial() {
         .data([{}])
         .enter()
             .append("circle")
-            .attr("class", "detail compare-dial-circle")
+            .attr("class", "detail compare-dial compare-dial-circle")
             .attr("cx", x_line)
             .attr("cy", compare_dial_y_middle)
             .attr("r", compare_dial_radius)
@@ -1251,6 +1261,8 @@ function dragged(d) {
             $(".compare-dial-value")
                 .attr("y", new_y + 5)
                 .text(percent + "%");
+            $(".compare-dial-count")
+                .attr("y", new_y + 5);
             return new_y;
         });
 }
@@ -1354,17 +1366,22 @@ function sortByPosition(a, b) {
 }
 
 function highlightActivations(percent, similar) {
+    var count = null;
+
     if (percent == 0.0) {
-        $(".comparison.top.activation").css("opacity", 1.0);
+        count = $(".comparison.top.activation").css("opacity", 1.0).length;
         $(".comparison.bottom.activation").css("opacity", 1.0);
     } else {
         var scaler = similar ? 1.0 - percent : percent;
-        var activate = similar ? 0.0 : 1.0;
-        var deactivate = similar ? 1.0 : 0.0;
+        var matched_opacity = similar ? 0.0 : 1.0;
+        var unmatched_opacity = similar ? 1.0 : 0.0;
+        var matched_counter = similar ? 0 : 1;
+        var unmatched_counter = similar ? 1 : 0;
         var activationsTop = $(".comparison.top.activation");
         var activationsBottom = $(".comparison.bottom.activation");
         activationsTop.sort(sortByPosition);
         activationsBottom.sort(sortByPosition);
+        count = 0;
 
         for (var i = 0; i < activationsTop.length; i++) {
             var value_top = activationsTop[i].__data__.value;
@@ -1382,14 +1399,18 @@ function highlightActivations(percent, similar) {
             var max_matching = target_value + (absolute_target_value * scaler);
 
             if (comparison_value < min_matching || comparison_value > max_matching) {
-                activationsTop[i].style.opacity = activate;
-                activationsBottom[i].style.opacity = activate;
+                activationsTop[i].style.opacity = matched_opacity;
+                activationsBottom[i].style.opacity = matched_opacity;
+                count += matched_counter;
             } else {
-                activationsTop[i].style.opacity = deactivate;
-                activationsBottom[i].style.opacity = deactivate;
+                activationsTop[i].style.opacity = unmatched_opacity;
+                activationsBottom[i].style.opacity = unmatched_opacity;
+                count += unmatched_counter;
             }
         }
     }
+
+    $(".compare-dial-count").text(count);
 }
 
 function drawMainSequence() {
@@ -1422,15 +1443,79 @@ function drawMainSequence() {
             .attr("x", (total_width / 2) - running_width)
             .attr("y", y_placement);
     }
-    running_width = (center_item_width / 2);
-    for (var i = 1; i <= main_sequence.length; i++) {
-        running_width += space_width;
-        $("#main-wheel-position-" + (middle_index + i))
+    running_width = (center_item_width / 2) + space_width;
+    for (var i = middle_index + 1; i <= main_sequence.length; i++) {
+        $("#main-wheel-position-" + i)
             .attr("x", (total_width / 2) + running_width)
             .attr("y", y_placement);
-        var item_width = textWidth(main_sequence[middle_index + i], 16);
-        running_width += item_width;
+        var item_width = textWidth(main_sequence[i], 16);
+        running_width += item_width + space_width;
+        console.log(running_width);
     }
+    $(".edit-button").remove();
+    var inputWidth = textWidth("edit..", 16);
+    svg.append("rect")
+        .attr("class", "edit-button")
+        .attr("x", (total_width / 2) + running_width - 20)
+        .attr("y", y_placement - (HEIGHT * .7))
+        .attr("width", inputWidth + 5)
+        .attr("height", HEIGHT)
+        .attr("rx", 5)
+        .attr("ry", 5)
+        .attr("stroke", "none")
+        .attr("fill", light_grey);
+    svg.append("text")
+        .attr("class", "edit-button")
+        .attr("x", (total_width / 2) + running_width + 2.5 - 20)
+        .attr("y", y_placement)
+        .style("font-size", "16px")
+        .style("fill", black)
+        .text("edit..");
+    svg.append("rect")
+        .attr("class", "edit-button")
+        .attr("x", (total_width / 2) + running_width - 20)
+        .attr("y", y_placement - (HEIGHT * .7))
+        .attr("width", inputWidth + 5)
+        .attr("height", HEIGHT)
+        .attr("rx", 5)
+        .attr("ry", 5)
+        .attr("stroke", dark_grey)
+        .attr("stroke-width", 1)
+        .attr("fill", "transparent")
+        .style("pointer-events", "bounding-box")
+        .on("mouseover", function(d) {
+            d3.select(this)
+                .style("cursor", "pointer");
+            d3.select(this)
+                .transition()
+                .duration(100)
+                .attr("stroke-width", 2);
+        })
+        .on("mouseout", function(d) {
+            d3.select(this)
+                .style("cursor", "auto");
+            d3.select(this)
+                .transition()
+                .duration(50)
+                .attr("stroke-width", 1);
+        })
+        .on("click", function(d) {
+            function acceptMainInput(sequence) {
+                $(".edit-button").remove();
+                var tail = main_sequence.length;
+                main_sequence = sequence;
+                trimSequenceTail(tail, main_sequence.length);
+                drawMainSequence();
+                drawWeightsFromSequence(0);
+                for (var timestep = 0; timestep < main_sequence.length; timestep++) {
+                    drawAutocomplete(timestep);
+                    var autocomplete = $("#autocomplete-" + timestep);
+                    autocomplete.find("input").val(main_sequence[timestep]);
+                }
+                drawAutocomplete(timestep);
+            }
+            drawInputModal(acceptMainInput, main_sequence);
+        });
 }
 
 var back_width_main = null;
@@ -1486,6 +1571,11 @@ function drawSequenceWheel(main, sequence, timestep) {
                 }
 
                 drawSequenceWheel(main, sequence, d.position);
+
+                if (compare_sequence.length > 0) {
+                    var count = $(".detail.comparison.top.activation").length;
+                    drawCompareDial(count);
+                }
             });
     var center_item_width = textWidth(sequence[timestep], 14);
     var back_width = (center_item_width / 2);
@@ -1511,13 +1601,13 @@ function drawSequenceWheel(main, sequence, timestep) {
             .attr("y", y_offset + (height / 2) + (height / 4))
             .css("opacity", 1.0 - (Math.max(i - 3, 0) * .2));
     }
-    for (var i = 1; i <= sequence.length; i++) {
+    for (var i = timestep + 1; i < sequence.length; i++) {
         front_width += space_width;
-        $("#position-" + (timestep + i) + type_suffix)
+        $("#position-" + i + type_suffix)
             .attr("x", x_offset + (width / 2) + front_width)
             .attr("y", y_offset + (height / 2) + (height / 4))
-            .css("opacity", 1.0 - (Math.max(i - 3, 0) * .2));
-        var item_width = textWidth(sequence[timestep + i], 14);
+            .css("opacity", 1.0 - (Math.max(i - timestep - 3, 0) * .2));
+        var item_width = textWidth(sequence[i], 14);
         front_width += item_width;
     }
 
@@ -1782,7 +1872,7 @@ function drawWeightsFromSequence(timestep) {
     }
 }
 
-function drawInputModal(callback) {
+function drawInputModal(callback, edit_sequence) {
     var width = (total_width / 2);
     var height = (total_height / 2);
     var x_offset = (total_width - width) / 2;
@@ -1809,6 +1899,12 @@ function drawInputModal(callback) {
         .attr("id", "sequence-inputter");
     var sequenceInputter = $("#sequence-inputter");
     sequenceInputter.append("<input class=':focus'/>");
+
+    if (edit_sequence != null) {
+        sequenceInputter.find("input").val(edit_sequence.join(" "));
+        //d3.json("weights?distance=" + distance + "&" + slice.map(s => "sequence=" + encodeURI(s)).join("&"))
+    }
+
     sequenceInputter.on("keydown", function(e) {
         // Enter key
         if (e.keyCode == 13) {
