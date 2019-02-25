@@ -271,8 +271,12 @@ function drawStateWidget(timestep, geometry, name, min, max, vector, colour, pre
         return macro_x(Math.floor(position / chip_height));
     }
 
-    var magnitude = d3.scaleLinear()
-        .domain([0, Math.max(Math.abs(min), Math.abs(max))])
+    //var magnitude = d3.scaleLinear()
+    //    .domain([1, 1 + Math.max(Math.abs(min), Math.abs(max))])
+    var magnitude = d3.scaleLog()
+        // In d3 v3 we can't set 0 in the domain, so push everything up by 1.
+        // Make sure to do this when applying the scale as well!
+        .domain([1, 1 + Math.max(Math.abs(min), Math.abs(max))])
         .range([0, macro_x.bandwidth()]);
 
     var margin = (geometry.width / 6);
@@ -341,7 +345,7 @@ function drawStateWidget(timestep, geometry, name, min, max, vector, colour, pre
                 if (d.value >= 0) {
                     return base_x;
                 } else {
-                    return base_x + (macro_x.bandwidth() - magnitude(Math.abs(d.value)));
+                    return base_x + (macro_x.bandwidth() - magnitude(1 + Math.abs(d.value)));
                 }
             })
             .attr("y", function (d) {
@@ -351,7 +355,7 @@ function drawStateWidget(timestep, geometry, name, min, max, vector, colour, pre
                     return y(d.position) + (macro_y.bandwidth() / 2) + 0.5;
                 }
             })
-            .attr("width", function (d) { return magnitude(Math.abs(d.value)); })
+            .attr("width", function (d) { return magnitude(1 + Math.abs(d.value)); })
             .attr("height", function (d) {
                 if (placement == null) {
                     return macro_y.bandwidth();
@@ -389,6 +393,7 @@ function drawStateWidget(timestep, geometry, name, min, max, vector, colour, pre
             .style("pointer-events", "bounding-box")
             .on("mouseover", function(d) {
                 if (timestep == null) {
+                    console.log(d.position + " " + d.value);
                     d3.selectAll(".linker-" + (linker == null ? d.position : linker[d.position]) + linker_suffix)
                         .transition()
                         .duration(100)
@@ -446,7 +451,13 @@ function drawStateWidget(timestep, geometry, name, min, max, vector, colour, pre
                     return y(d.position) + (macro_y.bandwidth() / 2);
                 }
             })
-            .attr("stroke", black)
+            .attr("stroke", function (d) {
+                if (d.value == 0) {
+                    return "none";
+                }
+
+                return black;
+            })
             .attr("stroke-width", stroke_width);
 }
 
@@ -1116,6 +1127,8 @@ function drawInsetPart(x_offset, y_offset, width, height, part, layer, colour, p
             loadDetail(true);
 
             if (compare_sequence.length != 0) {
+                var count = $(".detail.comparison.top.activation").length;
+                drawCompareDial(count);
                 loadInset(false);
                 loadDetail(false);
             }
@@ -1286,6 +1299,7 @@ function loadDetail(main) {
 }
 
 function drawWeightDetail(data, placement) {
+    console.log(data);
     $(".detail.load" + (placement == null ? "" : "." + placement)).remove();
     var miniGeometry = {
         x: (total_width / 4) + (detail_margin / 2) - state_width,
@@ -1382,10 +1396,18 @@ function highlightActivations(percent, similar) {
         activationsTop.sort(sortByPosition);
         activationsBottom.sort(sortByPosition);
         count = 0;
+        var queryTop = [];
+        var queryBottom = [];
 
         for (var i = 0; i < activationsTop.length; i++) {
-            var value_top = activationsTop[i].__data__.value;
-            var value_bottom = activationsBottom[i].__data__.value;
+            var activationTop = activationsTop[i];
+            var activationBottom = activationsBottom[i];
+            var value_top = activationTop.__data__.value;
+            var value_bottom = activationBottom.__data__.value;
+            var position = activationTop.__data__.position;
+            if (position != activationBottom.__data__.position) {
+                throw position + " != " + activationBottom.__data__.position;
+            }
             var absolute_target_value = Math.max(Math.abs(value_top), Math.abs(value_bottom));
             var target_value = value_top;
             var comparison_value = value_bottom;
@@ -1399,14 +1421,28 @@ function highlightActivations(percent, similar) {
             var max_matching = target_value + (absolute_target_value * scaler);
 
             if (comparison_value < min_matching || comparison_value > max_matching) {
-                activationsTop[i].style.opacity = matched_opacity;
-                activationsBottom[i].style.opacity = matched_opacity;
+                activationTop.style.opacity = matched_opacity;
+                activationBottom.style.opacity = matched_opacity;
                 count += matched_counter;
+
+                if (matched_counter == 1) {
+                    queryTop.push(position + ":" + value_top.toFixed(6));
+                    queryBottom.push(position + ":" + value_bottom.toFixed(6));
+                }
             } else {
-                activationsTop[i].style.opacity = unmatched_opacity;
-                activationsBottom[i].style.opacity = unmatched_opacity;
+                activationTop.style.opacity = unmatched_opacity;
+                activationBottom.style.opacity = unmatched_opacity;
                 count += unmatched_counter;
+
+                if (unmatched_counter == 1) {
+                    queryTop.push(position + ":" + value_top.toFixed(6));
+                    queryBottom.push(position + ":" + value_bottom.toFixed(6));
+                }
             }
+
+            var prefix = input_part + "," + input_layer + "|";
+            console.log("top: " + prefix + queryTop.join(","));
+            console.log("bottom: " + prefix + queryBottom.join(","));
         }
     }
 
@@ -1450,7 +1486,6 @@ function drawMainSequence() {
             .attr("y", y_placement);
         var item_width = textWidth(main_sequence[i], 16);
         running_width += item_width + space_width;
-        console.log(running_width);
     }
     $(".edit-button").remove();
     var inputWidth = textWidth("edit..", 16);

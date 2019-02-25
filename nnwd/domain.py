@@ -57,12 +57,25 @@ def create(reviews_stream, epochs, verbose):
 
         pickler.dump(xys, xys_file)
 
-    random.shuffle(xys)
-    split_1 = int(len(xys) * 0.8)
-    split_2 = split_1 + int(len(xys) * 0.1)
-    train_xys = xys[:split_1]
-    validation_xys = xys[split_1:split_2]
-    test_xys = xys[split_2:]
+    train_xys_file = os.path.join(RESUME_DIR, "xys.train.pickle")
+    validation_xys_file = os.path.join(RESUME_DIR, "xys.validation.pickle")
+    test_xys_file = os.path.join(RESUME_DIR, "xys.test.pickle")
+
+    if os.path.exists(train_xys_file):
+        train_xys = pickler.load(train_xys_file)
+        validation_xys = pickler.load(validation_xys_file)
+        test_xys = pickler.load(test_xys_file)
+    else:
+        random.shuffle(xys)
+        split_1 = int(len(xys) * 0.8)
+        split_2 = split_1 + int(len(xys) * 0.1)
+        train_xys = xys[:split_1]
+        validation_xys = xys[split_1:split_2]
+        test_xys = xys[split_2:]
+        pickler.dump(train_xys, train_xys_file)
+        pickler.dump(validation_xys, validation_xys_file)
+        pickler.dump(test_xys, test_xys_file)
+
     logging.debug("data sets (train, validation, test): %d, %d, %d" % (len(train_xys), len(validation_xys), len(test_xys)))
 
     for data_set in [train_xys, validation_xys, test_xys]:
@@ -143,12 +156,13 @@ class NeuralNetwork:
         "outputs": "output",
     }
 
-    def __init__(self, words, sentiments, train_xys, epoch_threshold, validation_xys, test_xys):
+    def __init__(self, words, sentiments, train_xys, epoch_threshold, validation_xys, test_xys, target_accuracy=0.95):
         self.words = check.check_instance(words, mlbase.Labels)
         self.sentiments = check.check_instance(sentiments, mlbase.Labels)
         self.train_xys = [mlbase.Xy(*pair) for pair in train_xys]
         self.validation_xys = [mlbase.Xy(*pair) for pair in validation_xys]
         self.test_xys = [mlbase.Xy(*pair) for pair in test_xys]
+        self.target_accuracy = target_accuracy
         self.epoch_threshold = epoch_threshold
         self.setup_complete = False
         self._background_setup = threading.Thread(target=self._setup)
@@ -178,7 +192,7 @@ class NeuralNetwork:
             batch = 512
             arc = -1
 
-            while accuracy_validation < 0.8 and arc < 12:
+            while accuracy_validation < self.target_accuracy and arc < 12:
                 arc += 1
 
                 if arc % 2 == 0:
@@ -241,6 +255,8 @@ class NeuralNetwork:
             logging.debug("train predictor %s" % loss)
             self.predictor.save(predictor_dir)
 
+        self._get_search_data()
+
     def _get_predictor_data(self):
         predictor_xys = []
         predictor_xys_file = os.path.join(RESUME_DIR, "predictor_xys.pickle")
@@ -248,7 +264,7 @@ class NeuralNetwork:
         if os.path.exists(predictor_xys_file):
             predictor_xys = pickler.load(predictor_xys_file)
         else:
-            for xy in self.train_xys:
+            for xy in self.validation_xys:
                 stepwise_lstm = self.lstm.stepwise(False)
                 xs = []
                 final_distribution = None
@@ -283,6 +299,46 @@ class NeuralNetwork:
 
         logging.debug("Predictor data (distance based): %d." % len(predictor_xys))
         return predictor_xys
+
+    def _get_search_data(self):
+        search_xys = []
+        search_xys_file = os.path.join(RESUME_DIR, "search_xys.pickle")
+
+        if os.path.exists(search_xys_file):
+            search_xys = pickler.load(search_xys_file)
+        else:
+            for xy in self.train_xys:
+                stepwise_lstm = self.lstm.stepwise(False)
+                xs = []
+                final_prediction = None
+
+                for i, word in enumerate(xy.x):
+                    result, instruments = stepwise_lstm.step(word, NeuralNetwork.INSTRUMENTS)
+
+                    if i == len(xy.x) - 1:
+                        final_prediction = result.prediction
+
+                    x = ("embedding", 0, i, tuple(instruments["embedding"]))
+                    xs += [x]
+
+                    for part in NeuralNetwork.LSTM_PARTS:
+                        for layer in range(NeuralNetwork.LAYERS):
+                            point = tuple(instruments[part][layer])
+                            x = (part, layer, i, point)
+                            xs += [x]
+
+                for x in xs:
+                    search_xy = (xy, final_prediction) + x
+
+                    if len(search_xys) == 0:
+                        pdb.set_trace()
+
+                    search_xys += [search_xy]
+
+            pickler.dump(search_xys, search_xys_file)
+
+        logging.debug("Search data: %d." % len(search_xys))
+        return search_xys
 
     def _setup_colour_embeddings(self):
         self.colour_embeddings = self.find_colour_embeddings()
