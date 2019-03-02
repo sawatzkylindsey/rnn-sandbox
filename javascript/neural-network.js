@@ -128,9 +128,9 @@ function drawTimestep(fake_timestep, data) {
     $("svg").height(layer_height * (main_sequence.length + 2));
     $(".timestep-" + data.timestep).remove();
 
-    for (var t=0; t < main_sequence.length - 1; t++) {
+    /*for (var t=0; t < main_sequence.length - 1; t++) {
         $(".timestep-" + t + ".softmax").remove();
-    }
+    }*/
 
     if (data.x_word != main_sequence[data.timestep]) {
         svg.append("text")
@@ -191,9 +191,7 @@ function drawTimestep(fake_timestep, data) {
     // Draw softmax
     /*drawHline(timestep, x_offset + (data.units.length * w * 17), y_offset + (h * 2 / 2),
         x_offset + (data.units.length * w * 17) + (w * 3 / 2), y_offset + (h * 2 / 2));*/
-    if (data.timestep == main_sequence.length - 1) {
-        drawSoftmax(data, "softmax");
-    }
+    drawSoftmax(data, "softmax");
 
     svg.append("rect")
         .attr("class", "timestep-" + data.timestep)

@@ -1,8 +1,10 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 
+import collections
 import math
 from nltk.translate.bleu_score import sentence_bleu
+from nltk.tokenize import word_tokenize
 import numpy as np
 import pdb
 import re
@@ -17,21 +19,37 @@ END = "<end>"
 UNKNOWN = "<unknown>"
 
 
-def split_words(text):
-    return re.findall(r"\w+", text.lower(), re.UNICODE)
+def split_words(corpus):
+    return [word.lower() for word in word_tokenize(corpus)]
+
+
+def terminal(word):
+    return word == "." or \
+        word == "?" or \
+        word == "!" or \
+        word == "\"" or \
+        word == "''"
 
 
 def split_sentences(text):
     words = split_words(text)
     sentences = []
     sentence = []
+    terminate = False
 
-    for word in words:
-        if word == END:
+    for i, word in enumerate(words):
+        if word == END or terminate:
+            assert len(sentence) > 0
             sentences += [sentence]
-            sentence = []
+            sentence = [word]
+            terminate = False
         else:
             sentence += [word]
+            # Terminate the sentence if this is a terminal word (.!?) and if there aren't any subsequent terminal words.
+            terminate = terminal(word) and (i + 1 >= len(words) or not terminal(words[i + 1]))
+
+            if word == "\"" or word == "''":
+                terminate = i + 1 < len(words) and terminal(words[i + 1])
 
     if len(sentence) > 0:
         sentences += [sentence]
@@ -47,6 +65,29 @@ def corpus_vocabulary(corpus_lines):
             words.add(word)
 
     return vocabulary(words)
+
+
+def corpus_sequences(corpus_stream):
+    corpus_lines = None
+    total_count = 0.0
+    words = set()
+    xy_sequences = []
+
+    for line in corpus_stream:
+        for sentence in split_sentences(line):
+            sequence = []
+            total_count += len(sentence)
+
+            for i, word in enumerate(sentence):
+                words.add(word)
+                sequence.append(word)
+
+            if len(sequence) > 0:
+                xy_sequences.append(sequence)
+
+    #logging.info("words (%d): %s" % (len(labels), labels))
+    #logging.debug("sentences (%d): %s" % (len(xy_sequences), xy_sequences))
+    return words, xy_sequences
 
 
 def vocabulary(words):

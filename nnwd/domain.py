@@ -24,38 +24,20 @@ from pytils import adjutant, check
 
 
 RESUME_DIR = ".resume"
-STAR_MAP = {
-    1: "negative",
-    3: "neutral",
-    5: "positive",
-}
 
 
-def create(reviews_stream, epochs, verbose):
+def create(corpus_stream, epochs, verbose):
     xys = []
     xys_file = os.path.join(RESUME_DIR, "xys.pickle")
+    words_file = os.path.join(RESUME_DIR, "words.pickle")
 
     if os.path.exists(xys_file):
         xys = pickler.load(xys_file)
+        words = pickler.load(words_file)
     else:
-        for review in reviews_stream:
-            text = [word.lower() for word in word_tokenize(review["text"])]
-
-            if len(text) <= 25:
-                stars = int(review["stars"])
-                assert stars == review["stars"], "%s != %s" % (stars, review["stars"])
-
-                if stars == 2:
-                    stars = 1
-                elif stars == 4:
-                    stars = 5
-
-                xys.append((text, STAR_MAP[stars]))
-
-                if len(xys) > 20000:
-                    break
-
+        words, xys = nlp.corpus_sequences(corpus_stream)
         pickler.dump(xys, xys_file)
+        pickler.dump(words, words_file)
 
     train_xys_file = os.path.join(RESUME_DIR, "xys.train.pickle")
     validation_xys_file = os.path.join(RESUME_DIR, "xys.validation.pickle")
@@ -76,31 +58,16 @@ def create(reviews_stream, epochs, verbose):
         pickler.dump(validation_xys, validation_xys_file)
         pickler.dump(test_xys, test_xys_file)
 
+    #print("\n".join([" ".join(i) for i in train_xys]))
+    #print("\n".join([" ".join(i) for i in validation_xys]))
+    #print("\n".join([" ".join(i) for i in test_xys]))
     logging.debug("data sets (train, validation, test): %d, %d, %d" % (len(train_xys), len(validation_xys), len(test_xys)))
+    words = mlbase.Labels(words.union(set([mlbase.BLANK])), unknown=nlp.UNKNOWN)
+    return words, NeuralNetwork(words, xy_sequence(train_xys), epochs, xy_sequence(validation_xys), xy_sequence(test_xys))
 
-    for data_set in [train_xys, validation_xys, test_xys]:
-        histogram = {}
 
-        for xy in data_set:
-            if xy[1] not in histogram:
-                histogram[xy[1]] = 0
-
-            histogram[xy[1]] += 1
-
-        logging.debug("data set histogram: %s" % histogram)
-
-    vocabulary = set([mlbase.BLANK])
-    classes = set()
-
-    for xy in xys:
-        for word in xy[0]:
-            vocabulary.add(word)
-
-        classes.add(xy[1])
-
-    words = mlbase.Labels(vocabulary, unknown=nlp.UNKNOWN)
-    sentiments = mlbase.Labels(classes)
-    return words, NeuralNetwork(words, sentiments, train_xys, epochs, validation_xys, test_xys)
+def xy_sequence(xys):
+    return [(sequence[:-1], sequence[1:]) for sequence in xys if len(sequence) > 1]
 
 
 class NeuralNetwork:
@@ -110,7 +77,7 @@ class NeuralNetwork:
     OUTPUT_WIDTH = 7
     HIDDEN_REDUCTION = 10
     EMBEDDING_REDUCTION = 10
-    TOP_PREDICTIONS = 2
+    TOP_PREDICTIONS = 3
     INSTRUMENTS = [
         "embedding",
         "remember_gates",
@@ -156,13 +123,11 @@ class NeuralNetwork:
         "outputs": "output",
     }
 
-    def __init__(self, words, sentiments, train_xys, epoch_threshold, validation_xys, test_xys, target_accuracy=0.95):
+    def __init__(self, words, train_xys, epoch_threshold, validation_xys, test_xys):
         self.words = check.check_instance(words, mlbase.Labels)
-        self.sentiments = check.check_instance(sentiments, mlbase.Labels)
         self.train_xys = [mlbase.Xy(*pair) for pair in train_xys]
         self.validation_xys = [mlbase.Xy(*pair) for pair in validation_xys]
         self.test_xys = [mlbase.Xy(*pair) for pair in test_xys]
-        self.target_accuracy = target_accuracy
         self.epoch_threshold = epoch_threshold
         self.setup_complete = False
         self._background_setup = threading.Thread(target=self._setup)
@@ -182,37 +147,76 @@ class NeuralNetwork:
         #return not self._background_setup.is_alive()
 
     def _train_rnn(self):
-        self.lstm = rnn.Rnn(NeuralNetwork.LAYERS, NeuralNetwork.HIDDEN_WIDTH, NeuralNetwork.EMBEDDING_WIDTH, self.words, self.sentiments)
+        self.lstm = rnn.Rnn(NeuralNetwork.LAYERS, NeuralNetwork.HIDDEN_WIDTH, NeuralNetwork.EMBEDDING_WIDTH, self.words)
         lstm_dir = os.path.join(RESUME_DIR, "lstm")
 
         if os.path.exists(lstm_dir):
             self.lstm.load(lstm_dir)
         else:
-            accuracy_validation = 0.0
-            batch = 512
+            perplexity_validation = None
+            best_loss = None
+            batch = 32
             arc = -1
+            version = -1
 
-            while accuracy_validation < self.target_accuracy and arc < 12:
+            while arc < 6:
                 arc += 1
+                logging.debug("train lstm arc %d (batch %d)" % (arc, batch))
+                loss, perplexity = self.lstm_train_loop(batch, self.epoch_threshold, True)
+                logging.debug("train lstm arc %d (batch %d): (loss, perplexity) (%s, %s)" % (arc, batch, loss, perplexity))
 
-                if arc % 2 == 0:
-                    batch = max(8, int(batch / 2))
+                if best_loss is None or loss < best_loss:
+                    best_loss = loss
+                    perplexity_validation = perplexity
+                    version += 1
+                    self.lstm.save(lstm_dir, version, True)
+                else:
+                    best_loss = None
+                    self.lstm.load(lstm_dir, version)
+                    mini_epochs = max(1, int(self.epoch_threshold * 0.25))
+                    smaller_batch = max(8, int(batch * 0.8))
+                    smaller_loss, smaller_perplexity = self.lstm_train_loop(smaller_batch, mini_epochs, False)
+                    logging.debug("mini train lstm smaller (batch %d): (loss, perplexity) (%s, %s)" % (smaller_batch, smaller_loss, smaller_perplexity))
+                    self.lstm.save(lstm_dir, "smaller-%d" % version)
+                    self.lstm.load(lstm_dir, version)
+                    bigger_batch = int(batch * 1.2)
+                    bigger_loss, bigger_perplexity = self.lstm_train_loop(bigger_batch, mini_epochs, False)
+                    logging.debug("mini train lstm bigger (batch %d): (loss, perplexity) (%s, %s)" % (bigger_batch, bigger_loss, bigger_perplexity))
+                    self.lstm.save(lstm_dir, "bigger-%d" % version)
+                    self.lstm.load(lstm_dir, version)
 
-                training_parameters = mlbase.TrainingParameters() \
-                    .batch(batch) \
-                    .epochs(self.epoch_threshold) \
-                    .convergence(False)
-                loss = self.lstm.train(self.train_xys, training_parameters)
-                accuracy_validation = self.lstm.test(self.validation_xys)
-                logging.debug("train lstm arc %d (batch %d): (loss, accuracy) (%s, %s)" % (arc, batch, loss, accuracy_validation))
+                    if bigger_perplexity < perplexity_validation:
+                        # If the bigger batches are getting a better perplexity, choose it (maybe the smaller is as well, but bigger usually means more general learning).
+                        batch = bigger_batch
+                        self.lstm.mark_latest(lstm_dir, "bigger-%d" % version)
+                        self.lstm.load(lstm_dir)
+                    elif smaller_perplexity < perplexity_validation:
+                        # Certainly choose it
+                        batch = smaller_batch
+                        self.lstm.mark_latest(lstm_dir, "smaller-%d" % version)
+                        self.lstm.load(lstm_dir)
+                    else:
+                        # Neither are getting better results.  Which is best among the choices?
+                        if bigger_perplexity < smaller_perplexity:
+                            batch = bigger_batch
+                        else:
+                            batch = smaller_batch
 
-            self.lstm.save(lstm_dir)
+        logging.debug("Calculating final validation perplexity.")
+        perplexity_validation = self.lstm.test(self.validation_xys, True)
+        logging.debug("Calculating final test perplexity.")
+        perplexity_test = self.lstm.test(self.test_xys, True)
+        logging.debug("(v, t): (%s, %s)" % (perplexity_validation, perplexity_test))
 
-        logging.debug("Calculating final validation accuracy.")
-        accuracy_validation = self.lstm.test(self.validation_xys, True)
-        logging.debug("Calculating final test accuracy.")
-        accuracy_test = self.lstm.test(self.test_xys, True)
-        logging.debug("(v, t): (%s, %s)" % (accuracy_validation, accuracy_test))
+    def lstm_train_loop(self, batch, epoch_threshold, debug):
+        training_parameters = mlbase.TrainingParameters() \
+            .batch(batch) \
+            .epochs(epoch_threshold) \
+            .convergence(False) \
+            .debug(debug)
+        loss = self.lstm.train(self.train_xys, training_parameters)
+        perplexity = self.lstm.test(self.validation_xys)
+        return loss, perplexity
 
     @functools.lru_cache()
     def stepwise(self, sequence):
@@ -231,11 +235,9 @@ class NeuralNetwork:
     def _train_predictor(self):
         part_labels = mlbase.Labels(set(NeuralNetwork.INSTRUMENTS))
         layer_labels = mlbase.Labels(set(range(NeuralNetwork.LAYERS)))
-        distance_field = mlbase.IntegerField()
         hidden_vector = mlbase.VectorField(NeuralNetwork.HIDDEN_WIDTH)
-        #predictor_input = mlbase.ConcatField([part_labels, layer_labels, hidden_vector])
-        predictor_input = mlbase.ConcatField([part_labels, layer_labels, distance_field, hidden_vector])
-        predictor_output = mlbase.Labels(set(self.sentiments.labels()))
+        predictor_input = mlbase.ConcatField([part_labels, layer_labels, hidden_vector])
+        predictor_output = mlbase.Labels(set(self.words.labels()))
         hyper_parameters = ffnn.HyperParameters() \
             .width(len(predictor_input))
         self.predictor = ffnn.Model("predictor", hyper_parameters, predictor_input, predictor_output, mlbase.SINGLE_LABEL)
@@ -266,38 +268,23 @@ class NeuralNetwork:
         else:
             for xy in self.validation_xys:
                 stepwise_lstm = self.lstm.stepwise(False)
-                xs = []
-                final_distribution = None
 
                 for i, word in enumerate(xy.x):
                     result, instruments = stepwise_lstm.step(word, NeuralNetwork.INSTRUMENTS)
-                    distance = len(xy.x) - i - 1
-
-                    if distance == 0:
-                        final_distribution = result.distribution
-
-                    #x = ("embedding", 0, tuple(instruments["embedding"]))
-                    x = ("embedding", 0, distance, tuple(instruments["embedding"]))
-                    xs += [x]
-                    #train_xy = mlbase.Xy(x, result.distribution)
-                    #predictor_xys += [train_xy]
+                    x = ("embedding", 0, tuple(instruments["embedding"]))
+                    train_xy = mlbase.Xy(x, result.distribution)
+                    predictor_xys += [train_xy]
 
                     for part in NeuralNetwork.LSTM_PARTS:
                         for layer in range(NeuralNetwork.LAYERS):
                             point = tuple(instruments[part][layer])
-                            #x = (part, layer, point)
-                            x = (part, layer, distance, point)
-                            xs += [x]
-                            #train_xy = mlbase.Xy(x, result.distribution)
-                            #predictor_xys += [train_xy]
-
-                for x in xs:
-                    train_xy = mlbase.Xy(x, final_distribution)
-                    predictor_xys += [train_xy]
+                            x = (part, layer, point)
+                            train_xy = mlbase.Xy(x, result.distribution)
+                            predictor_xys += [train_xy]
 
             pickler.dump(predictor_xys, predictor_xys_file)
 
-        logging.debug("Predictor data (distance based): %d." % len(predictor_xys))
+        logging.debug("Predictor data: %d." % len(predictor_xys))
         return predictor_xys
 
     def _get_search_data(self):
@@ -309,31 +296,17 @@ class NeuralNetwork:
         else:
             for xy in self.train_xys:
                 stepwise_lstm = self.lstm.stepwise(False)
-                xs = []
-                final_prediction = None
 
                 for i, word in enumerate(xy.x):
                     result, instruments = stepwise_lstm.step(word, NeuralNetwork.INSTRUMENTS)
-
-                    if i == len(xy.x) - 1:
-                        final_prediction = result.prediction
-
                     x = ("embedding", 0, i, tuple(instruments["embedding"]))
-                    xs += [x]
+                    search_xys += [(xy, result.prediction) + x]
 
                     for part in NeuralNetwork.LSTM_PARTS:
                         for layer in range(NeuralNetwork.LAYERS):
                             point = tuple(instruments[part][layer])
                             x = (part, layer, i, point)
-                            xs += [x]
-
-                for x in xs:
-                    search_xy = (xy, final_prediction) + x
-
-                    if len(search_xys) == 0:
-                        pdb.set_trace()
-
-                    search_xys += [search_xy]
+                            search_xys += [(xy, result.prediction) + x]
 
             pickler.dump(search_xys, search_xys_file)
 
@@ -341,32 +314,61 @@ class NeuralNetwork:
         return search_xys
 
     def _setup_colour_embeddings(self):
-        self.colour_embeddings = self.find_colour_embeddings()
+        weights = []
+        order = []
 
-    def find_colour_embeddings(self):
-        assert len(self.sentiments.labels()) == 3, len(self.sentiments.labels())
-        #ordered_sentiments = sorted([int(s) for s in self.sentiments.labels()])
-        # Pallet from: http://colorbrewer2.org/#type=diverging&scheme=RdYlGn&n=3
-        #   negative: fc8d59 / 252,141,89
-        #    neutral: ffffbf / 255,255,191
-        #   positive: 91cf60 / 145,207,96
-        # Pallet from: https://nlp.stanford.edu/sentiment/treebank.html
-        #   negative: #67001f / 103,0,31
-        # neutral: #f7f7f7 / 247,247,247
-        #   positive: #053061 / 5,48,97
-        #             24: 053061 #053061
-        embedding = {
-            "negative": (103, 0, 31),
-            "neutral": (247, 247, 247),
-            "positive": (5, 48, 97),
+        for word in self.words.labels():
+            weight = self.lstm.embed(word)
+            weights += [weight]
+            order += [word]
+
+        # Pallet from: http://colorbrewer2.org/#type=qualitative&scheme=Accent&n=6
+        #  0: 127,201,127
+        #  1: 190,174,212
+        #  2: 253,192,134
+        #  3: 255,255,153
+        #  4: 56,108,176
+        #  5: 240,2,127
+        pallet = {
+              0: (127, 201, 127),
+              1: (190, 174, 212),
+              2: (253, 192, 134),
+              3: (255, 255, 153),
+              4: (56, 108, 176),
+              5: (240, 2, 127),
         }
-        return embedding;
+        self.colour_embeddings = self.find_colour_embeddings(weights, order, pallet)
 
-    def sentiment_colour(self, sentiment):
+    def find_colour_embeddings(self, weights, order, pallet):
+        colour_embeddings = {}
+
+        for tsne_perplexity in [50]:#[5, 10, 20, 30, 50]:
+            tsne = TSNE(n_components=1, perplexity=tsne_perplexity)
+            embeddings_1d = adjutant.flat_map(tsne.fit_transform(weights))
+            minimum = min(embeddings_1d)
+            maximum = max(embeddings_1d)
+            domain_step = (maximum - minimum) / len(pallet)
+            category = lambda point: len(pallet) - 1 if point == maximum else int((point - minimum) / domain_step)
+            colour_embeddings[tsne_perplexity] = {order[j]: pallet[category(embedding)] for j, embedding in enumerate(embeddings_1d)}
+            #mapping = {}
+
+            #for word, colour_point in colour_embeddings[tsne_perplexity].items():
+            #    if colour_point not in mapping:
+            #        mapping[colour_point] = []
+
+            #    mapping[colour_point] += [word]
+
+            #print(adjutant.dict_as_str(mapping))
+
+        #choice = input("choice (05, 10, 20, 30, 50): ")
+        return colour_embeddings[50]
+
+
+    def word_colour(self, word):
         if not self.is_setup():
             return None
 
-        embedding = self.colour_embeddings[sentiment]
+        embedding = self.colour_embeddings[word]
         return "rgb(%d, %d, %d)" % embedding
 
     def compute_point_abstractions(self, distance, points):
@@ -414,14 +416,12 @@ class NeuralNetwork:
         return mappings
 
     def predict_distributions(self, distance, points):
-        #xs = [self.decode_key(key) + (point,) for key, point in points.items()]
-        xs = [self.decode_key(key) + (distance, point) for key, point in points.items()]
+        xs = [self.decode_key(key) + (point,) for key, point in points.items()]
         results = self.predictor.evaluate(xs)
         distribution_predictions = {}
 
         for i, x in enumerate(xs):
-            #part, layer, _ = x
-            part, layer, distance, _ = x
+            part, layer, _ = x
             ordered_predictions = [item[0] for item in sorted(results[i].distribution.items(), key=lambda item: item[1], reverse=True)]
             distribution_predictions[self.encode_key(part, layer)] = {prediction: results[i].distribution[prediction] for prediction in ordered_predictions[:NeuralNetwork.TOP_PREDICTIONS]}
 
@@ -429,16 +429,38 @@ class NeuralNetwork:
 
     def fit_colours(self, points, predictions):
         colours = {}
-        # Make the maximum target distance (1.0) one quarter the length of a dimension in the colour space.
-        scaler = (255.0 / 4)
 
         for key, point in points.items():
-            most_likely_prediction = sorted(predictions[key].items(), key=lambda item: item[1], reverse=True)[0][0]
-            colours[key] = "rgb(%d, %d, %d)" % self.colour_embeddings[most_likely_prediction]
-            #invert_distribution = {k: 1.0 - v for k, v in predictions[key].items()}
-            #prediction_distances = [(k, v * scaler) for k, v in mlbase.softmax(invert_distribution).items()]
-            #fit, _ = geometry.fit_point([self.colour_embeddings[item[0]] for item in prediction_distances], [item[1] for item in prediction_distances], epsilon=0.1, visualize=False)
-            #colours[key] = "rgb(%d, %d, %d)" % tuple([round(i) for i in fit])
+            #most_likely_prediction = sorted(predictions[key].items(), key=lambda item: item[1], reverse=True)[0][0]
+            #colours[key] = "rgb(%d, %d, %d)" % self.colour_embeddings[most_likely_prediction]
+            interpolation_points = {}
+
+            for word, probability in predictions[key].items():
+                colour = self.colour_embeddings[word]
+
+                if colour not in interpolation_points:
+                    interpolation_points[colour] = (word, probability)
+                else:
+                    if interpolation_points[colour][1] < probability:
+                        interpolation_points[colour] = (word, probability)
+
+            if len(interpolation_points) == 1:
+                colours[key] = "rgb(%d, %d, %d)" % next(iter(interpolation_points.keys()))
+            else:
+                maximum_distance = None
+
+                for pair in itertools.combinations([colour for colour in interpolation_points.keys()], 2):
+                    distance = geometry.distance(pair[0], pair[1])
+
+                    if maximum_distance is None or distance > maximum_distance:
+                        maximum_distance = distance
+
+                lowest_probability = min([p for w, p in interpolation_points.values()])
+                highest_probability = max([p for w, p in interpolation_points.values()])
+                maximum_domain = highest_probability + lowest_probability
+                prediction_distances = [(w, maximum_distance + (-p * maximum_distance / maximum_domain)) for w, p in interpolation_points.values()]
+                fit, _ = geometry.fit_point([self.colour_embeddings[item[0]] for item in prediction_distances], [item[1] for item in prediction_distances], epsilon=0.1, visualize=False)
+                colours[key] = "rgb(%d, %d, %d)" % tuple([round(i) for i in fit])
 
         return colours
 
@@ -457,7 +479,7 @@ class NeuralNetwork:
         name = self.latex_name(len(sequence) - 1, "embedding")
         embedding = HiddenState(name, point_reductions[embedding_key], colour=point_colours[embedding_key], predictions=self.prediction_distribution(point_predictions[embedding_key]))
         units = self.make_lstm_units(len(sequence) - 1, point_reductions, point_colours, point_predictions)
-        softmax = LabelDistribution(result.distribution, NeuralNetwork.OUTPUT_WIDTH, lambda sentiment: self.sentiment_colour(sentiment))
+        softmax = LabelDistribution(result.distribution, NeuralNetwork.OUTPUT_WIDTH, lambda word: self.word_colour(word))
         return Timestep(embedding, units, softmax, len(sequence) - 1, last_word, result.prediction)
 
     def weight_detail(self, sequence, distance, part, layer):
@@ -504,7 +526,7 @@ class NeuralNetwork:
         if prediction is None:
             return None
 
-        return LabelDistribution(prediction, colour_fn=lambda sentiment: self.sentiment_colour(sentiment))
+        return LabelDistribution(prediction, colour_fn=lambda word: self.word_colour(word))
 
     def make_lstm_units(self, timestep, point_reductions, point_colours, point_predictions):
         units = {}

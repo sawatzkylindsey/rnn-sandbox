@@ -248,18 +248,23 @@ class Labels(Field):
         self._empty = None
         self._encoding = {}
         self._decoding = {}
+        labels_prefix = []
 
         if unknown is not None:
             self._encoding[unknown] = 0
             self._decoding[0] = self.unknown
+            labels_prefix = [unknown]
 
         i = len(self._encoding)
-        self._labels = sorted([label for label in values])
+        labels = sorted([label for label in values])
 
-        for value in self._labels:
+        for value in labels:
             self._encoding[check.check_not_none(value)] = i
             self._decoding[i] = value
             i += 1
+
+        # Include unknown in the correct position if it's being represented in the labels.
+        self._labels = labels_prefix + labels
 
     def __repr__(self):
         return "Labels{%s}" % self._encoding
@@ -327,6 +332,11 @@ class Labels(Field):
         assert len(array) == len(self), "%d != %d" % (len(array), len(self))
         check.check_pdist(array)
         return {self.decode(i): probability for i, probability in enumerate(array)}
+
+    def vector_decode_probability(self, array, value):
+        assert len(array) == len(self), "%d != %d" % (len(array), len(self))
+        check.check_pdist(array)
+        return array[self.encode(value)]
 
 
 class VectorField(Field):

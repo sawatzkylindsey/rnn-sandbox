@@ -2,7 +2,9 @@
 # -*- coding: utf-8 -*-
 
 import collections
+import json
 import logging
+import math
 import numpy as np
 import os
 import pdb
@@ -23,12 +25,11 @@ class Rnn:
     # we track all the other intermediate gates/states for the weight instrumentation.
     SCAN_STATES = 10
 
-    def __init__(self, layers, width, embedding_width, word_labels, sentiment_labels, scope="rnn"):
+    def __init__(self, layers, width, embedding_width, word_labels, scope="rnn"):
         self.layers = layers
         self.width = width
         self.embedding_width = embedding_width
         self.word_labels = word_labels
-        self.sentiment_labels = sentiment_labels
         self.scope = scope
 
         self.time_dimension = None
@@ -38,8 +39,8 @@ class Rnn:
         #   _c      constant
 
         self.unrolled_inputs_p = self.placeholder("unrolled_inputs_p", [self.time_dimension, self.batch_dimension], tf.int32)
-        self.input_gathers_p = self.placeholder("input_gathers_p", [self.batch_dimension, 2], tf.int32)
-        self.output_p = self.placeholder("output_p", [self.batch_dimension], tf.int32)
+        self.input_lengths_p = self.placeholder("input_lengths_p", [self.batch_dimension], tf.int32)
+        self.unrolled_outputs_p = self.placeholder("unrolled_outputs_p", [self.time_dimension, self.batch_dimension], tf.int32)
 
         self.initial_state_p = self.placeholder("initial_state_p", [Rnn.SCAN_STATES, self.layers, self.batch_dimension, self.width])
 
@@ -60,9 +61,9 @@ class Rnn:
         self.H_bias = self.variable("H_bias", [self.layers, self.width], initial=0.0)
         tf.identity(tf.reshape(self.H_bias, [-1, self.width]), name="H_bias")
 
-        self.Y = self.variable("Y", [self.width, len(self.sentiment_labels)])
-        self.Y_bias = self.variable("Y_bias", [1, len(self.sentiment_labels)], initial=0.0)
-        tf.identity(tf.reshape(self.Y_bias, [len(self.sentiment_labels)]), name="Y_bias")
+        self.Y = self.variable("Y", [self.width, len(self.word_labels)])
+        self.Y_bias = self.variable("Y_bias", [1, len(self.word_labels)], initial=0.0)
+        tf.identity(tf.reshape(self.Y_bias, [len(self.word_labels)]), name="Y_bias")
 
         self.unrolled_embedded_inputs = tf.nn.embedding_lookup(self.E, self.unrolled_inputs_p)
         assert_shape(self.unrolled_embedded_inputs, [self.time_dimension, self.batch_dimension, self.embedding_width])
@@ -157,16 +158,17 @@ class Rnn:
         assert_shape(final_state_for_matmul, [self.combine_dimensions(), self.width])
 
         self.output_logits = tf.matmul(final_state_for_matmul, self.Y) + self.Y_bias
-        assert_shape(self.output_logits, [self.combine_dimensions(), len(self.sentiment_labels)])
+        assert_shape(self.output_logits, [self.combine_dimensions(), len(self.word_labels)])
 
-        unrolled_outputs = tf.reshape(self.output_logits, [max_time, batch_size, len(self.sentiment_labels)])
-        assert_shape(unrolled_outputs, [self.time_dimension, self.batch_dimension, len(self.sentiment_labels)])
+        unrolled_outputs = tf.reshape(self.output_logits, [max_time, batch_size, len(self.word_labels)])
+        assert_shape(unrolled_outputs, [self.time_dimension, self.batch_dimension, len(self.word_labels)])
 
-        self.output_distributions = tf.nn.softmax(unrolled_outputs[-1])
-        assert_shape(self.output_distributions, [self.batch_dimension, len(self.sentiment_labels)])
+        self.output_distributions = tf.nn.softmax(unrolled_outputs)
+        assert_shape(self.output_distributions, [self.time_dimension, self.batch_dimension, len(self.word_labels)])
 
-        expected_outputs = tf.gather_nd(unrolled_outputs, self.input_gathers_p)
-        self.cost = tf.reduce_sum(tf.nn.softmax_cross_entropy_with_logits_v2(logits=expected_outputs, labels=tf.one_hot(self.output_p, len(self.sentiment_labels))))
+        expected_outputs = tf.reshape(self.output_logits, [max_time, batch_size, len(self.word_labels)])
+        self.mask = tf.sequence_mask(self.input_lengths_p, dtype=tf.float32)
+        self.cost = tf.contrib.seq2seq.sequence_loss(logits=expected_outputs, targets=self.unrolled_outputs_p, weights=self.mask)
         self.updates = tf.train.AdamOptimizer().minimize(self.cost)
 
         self.session = tf.Session()
@@ -209,22 +211,20 @@ class Rnn:
             while offset < len(shuffled_xys):
                 batch = shuffled_xys[offset:offset + training_parameters.batch()]
                 offset += training_parameters.batch()
-                data_x, data_y = mlbase.as_time_major(batch, False)
+                data_x, data_y = mlbase.as_time_major(batch, True)
                 input_labels = [[self.word_labels.encode(word if word is not None else mlbase.BLANK) for word in timespot] for timespot in data_x]
-                # Gathers are indexes, not lengths.
-                #                                 vvv
-                input_gathers = [[len(sequence.x) - 1, i] for i, sequence in enumerate(batch)]
-                output_labels = [self.sentiment_labels.encode(word if word is not None else mlbase.BLANK) for word in data_y]
+                input_lengths = [len(sequence.x) for sequence in batch]
+                output_labels = [[self.word_labels.encode(word if word is not None else mlbase.BLANK) for word in timespot] for timespot in data_y]
                 parameters = {
                     self.unrolled_inputs_p: np.array(input_labels),
-                    self.input_gathers_p: np.array(input_gathers),
+                    self.input_lengths_p: np.array(input_lengths),
                     self.initial_state_p: self.initial_state(len(batch)),
-                    self.output_p: np.array(output_labels),
+                    self.unrolled_outputs_p: np.array(output_labels),
                 }
                 _, total_cost = self.session.run([self.updates, self.cost], feed_dict=parameters)
                 epoch_loss += total_cost
 
-            if epoch % epochs_tenth == 0:
+            if epoch % epochs_tenth == 0 and training_parameters.debug():
                 logging.debug(epoch_template.format(epoch, epoch_loss))
 
             losses.append(epoch_loss)
@@ -236,7 +236,7 @@ class Rnn:
 
     def test(self, xy_sequences, debug=False):
         assert len(xy_sequences) > 0
-        correct = 0
+        total = 0.0
         case_slot_length = len(str(len(xy_sequences)))
         case_template = "{{Case {:%dd}}}" % case_slot_length
         offset = 0
@@ -244,28 +244,33 @@ class Rnn:
         while offset < len(xy_sequences):
             batch = xy_sequences[offset:offset + 32]
             offset += 32
-            data_x, data_y = mlbase.as_time_major(batch, False)
+            data_x, data_y = mlbase.as_time_major(batch, True)
             input_labels = [[self.word_labels.encode(word if word is not None else mlbase.BLANK) for word in timespot] for timespot in data_x]
+            input_lengths = [len(sequence.x) for sequence in batch]
             parameters = {
                 self.unrolled_inputs_p: np.array(input_labels),
                 self.initial_state_p: self.initial_state(len(batch)),
             }
-            distributions = self.session.run(self.output_distributions, feed_dict=parameters)
+            time_distributions = self.session.run(self.output_distributions, feed_dict=parameters)
+            predictions = [[] for case in range(len(batch))]
+            log_probabilities = [0.0 for case in range(len(batch))]
 
-            for case, distribution in enumerate(distributions):
-                prediction = self.sentiment_labels.vector_decode(distribution)
+            for timestep, distributions in enumerate(time_distributions):
+                for case, distribution in enumerate(distributions):
+                    if timestep < input_lengths[case]:
+                        predictions[case] += [self.word_labels.vector_decode(distribution)]
+                        probability = self.word_labels.vector_decode_probability(distribution, batch[case].y[timestep])
+                        log_probabilities[case] += math.log2(probability)
 
-                if prediction == batch[case].y:
-                    correct += 1
+            for case, log_probability in enumerate(log_probabilities):
+                perplexity = 2**(-(log_probability / input_lengths[case]))
+                total += perplexity
 
-                    if debug:
-                        logging.debug("%s passed!\n   Sequence: %s\n   Expected: %s" % \
-                            (case_template.format(case), " ".join(batch[case].x), batch[case].y))
-                elif debug:
-                    logging.debug("%s failed!\n   Sequence: %s\n   Expected: %s\n  Predicted: %s" % \
-                        (case_template.format(case), " ".join(batch[case].x), batch[case].y, prediction))
+                if debug:
+                    logging.debug("%s perplexity %.4f.\n   Sequence: %s\n   Predicted: %s" % \
+                        (case_template.format(case), perplexity, " ".join(batch[case].x), " ".join(predictions[case])))
 
-        return correct / float(len(xy_sequences))
+        return total / len(xy_sequences)
 
     def evaluate(self, x, handle_unknown=False, state=None, instrument_names=[]):
         parameters = {
@@ -274,8 +279,10 @@ class Rnn:
         }
         instruments = [self.session.graph.get_tensor_by_name("%s:0" % name) for name in instrument_names]
         distributions, next_state, *instrument_values = self.session.run([self.output_distributions, self.state] + instruments, feed_dict=parameters)
-        distribution = distributions[0]
-        result = Result(self.sentiment_labels.vector_decode(distribution), self.sentiment_labels.vector_decode_distribution(distribution), self.sentiment_labels.encoding())
+        assert len(distributions) == 1
+        assert len(distributions[0]) == 1
+        distribution = distributions[0][0]
+        result = Result(self.word_labels.vector_decode(distribution), self.word_labels.vector_decode_distribution(distribution), self.word_labels.encoding())
         return result, next_state, {name: instrument_values[i] for i, name in enumerate(instrument_names)}
 
     def probe(self, name, layer):
@@ -299,20 +306,102 @@ class Rnn:
         }
         return self.session.run([self.session.graph.get_tensor_by_name("embedding:0")], feed_dict=parameters)[0].tolist()
 
-    def load(self, model_dir):
-        model = tf.train.get_checkpoint_state(model_dir)
-        assert model is not None, "No saved model in '%s'." % model_dir
+    def load(self, model_dir, version=None):
+        checkpoints = Checkpoints.load(model_dir)
+        model_path = checkpoints.model_path(version)
+        version_key = "latest" if version is None else checkpoints.version_key(version)
+        logging.debug("Restoring model %s=%s." % (version_key, model_path))
         saver = tf.train.Saver(tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=self.scope))
-        saver.restore(self.session, model.model_checkpoint_path)
+        saver.restore(self.session, model_path)
 
-    def save(self, model_dir):
+    def save(self, model_dir, version, set_latest=False):
         if os.path.isfile(model_dir) or (model_dir.endswith("/") and os.path.isfile(os.path.dirname(model_dir))):
             raise ValueError("model_dir '%s' must not be a file." % model_dir)
 
+        checkpoints = Checkpoints.load(model_dir)
+
+        if checkpoints is None:
+            checkpoints = Checkpoints(model_dir)
+
         os.makedirs(model_dir, exist_ok=True)
-        model_file = os.path.join(model_dir, "basename")
+        logging.debug("Saving model at %s=%d (latest=%s)." % (checkpoints.version_key(version), checkpoints.next_step, set_latest))
         saver = tf.train.Saver(tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=self.scope))
-        saver.save(self.session, model_file)
+        saver.save(self.session, checkpoints.model_path_prefix(), global_step=checkpoints.next_step)
+        checkpoints.update_next(version, set_latest) \
+            .save()
+
+    def mark_latest(self, model_dir, version):
+        checkpoints = Checkpoints.load(model_dir)
+        checkpoints.update_latest(version) \
+            .save()
+
+
+class Checkpoints:
+    def __init__(self, model_dir, versions={}, latest=None, step=-1):
+        self.model_dir = check.check_instance(model_dir, str)
+        self.save_path = self.get_save_path(self.model_dir)
+        self.versions = check.check_instance(versions, dict)
+        self.latest = latest
+        self.step = check.check_instance(step, int)
+        self.next_step = self.step + 1
+
+    def model_path_prefix(self):
+        return os.path.join(self.model_dir, "basename")
+
+    def version_key(self, version):
+        return "v%s" % str(version)
+
+    def model_path(self, version=None):
+        if version is None:
+            key = self.latest
+        else:
+            key = self.version_key(version)
+
+        step = self.versions[key]
+        return self.model_path_prefix() + ("-%d" % step)
+
+    def update_next(self, version, set_latest=False):
+        key = self.version_key(version)
+        self.versions[key] = self.next_step
+        self.step = self.next_step
+        self.next_step += 1
+
+        if self.latest is None or set_latest:
+            self.latest = key
+
+        return self
+
+    def update_latest(self, version):
+        self.latest = self.version_key(version)
+        return self
+
+    def as_json(self):
+        return {
+            "versions": self.versions,
+            "latest": self.latest,
+            "step": self.step,
+        }
+
+    def save(self):
+        os.makedirs(self.model_dir, exist_ok=True)
+
+        with open(self.save_path, "w") as fh:
+            json.dump(self.as_json(), fh)
+
+    @classmethod
+    def get_save_path(self, model_dir):
+        return os.path.join(model_dir, "checkpoints.json")
+
+    @classmethod
+    def load(self, model_dir):
+        save_path = self.get_save_path(model_dir)
+
+        if not os.path.exists(save_path):
+            return None
+
+        with open(save_path, "r") as fh:
+            data = json.load(fh)
+            return Checkpoints(model_dir, data["versions"], data["latest"], data["step"])
 
 
 class Stepwise:
@@ -345,7 +434,7 @@ class Stepwise:
 class Result:
     def __init__(self, prediction, distribution, encoding):
         self.prediction = prediction
-        self.distribution = distribution
+        self.distribution = check.check_pdist(distribution)
         self.encoding = encoding
 
     def __repr__(self):

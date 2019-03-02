@@ -113,12 +113,12 @@ def main(argv):
                     action="store_true",
                     help="Turn on verbose logging.")
     ap.add_argument("-p", "--port", default=8888, type=int)
-    ap.add_argument("--reviews", default="yelp/review.json")
+    ap.add_argument("--corpus", default="corpora/the-little-prince-v1.txt")
     ap.add_argument("--epochs", default=1000, type=int)
     aargs = ap.parse_args(argv)
     setup_logging(".%s.log" % os.path.splitext(os.path.basename(__file__))[0], aargs.verbose, False, True, True)
     logging.debug(aargs)
-    words, neural_network = domain.create(stream_input(aargs.reviews), aargs.epochs, aargs.verbose)
+    words, neural_network = domain.create(stream_input(aargs.corpus), aargs.epochs, aargs.verbose)
     run(aargs.port, words, neural_network)
 
 
@@ -126,7 +126,7 @@ def stream_input(input_file):
     with open(input_file, "r") as fh:
         for line in fh.readlines():
             if line.strip() != "":
-                yield json.loads(line)
+                yield line
 
 
 def patch_Thread_for_profiling():
