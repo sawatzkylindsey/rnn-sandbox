@@ -7,7 +7,11 @@ max_bytes = (2**31) - 1
 
 
 def dump(data, file_path):
-    os.makedirs(os.path.dirname(file_path), exist_ok=True)
+    dirname = os.path.dirname(file_path)
+
+    if dirname != "":
+        os.makedirs(dirname, exist_ok=True)
+
     bytes_out = pickle.dumps(data)
 
     with open(file_path, "wb") as fh:

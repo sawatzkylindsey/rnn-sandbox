@@ -45,7 +45,7 @@ def main():
 
             try:
                 dataset, query = parse(user_input)
-                print("(%s, %s, %s)" % (dataset, query))
+                print("(%s, %s)" % (dataset, query))
             except WriteLast as e:
                 with open("data.csv", "w") as fh:
                     writer = csv_writer(fh)
@@ -59,10 +59,8 @@ def main():
             if query is not None:
                 result = find_closest(dataset, query)
                 print("found %d: " % len(result))
-                print("distance, sentence, expectation")
 
                 for r in result[:TOP]:
-                    # (distance, index, word, xy.x, xy.y, prediction, point)
                     print(r)
         else:
             # Exit path - don't do anything
@@ -91,10 +89,10 @@ def find_closest(dataset, query):
     global test_xys
     xys = train_xys if dataset == "train" else (validation_xys if dataset == "validation" else test_xys)
     result = []
-    histogram = {"negative": 0, "neutral": 0, "positive": 0}
+    # TODO
+    histogram = {}
 
-    for candidate in xys:
-        sequence = candidate[0]
+    for sequence in xys:
         matches = 0
 
         for target in query:
@@ -128,14 +126,10 @@ def find_closest(dataset, query):
 
         distance = len(query) - matches
 
-        if distance == 0:
-            histogram[candidate[1]] += 1
-
         if matches > 0:
-            result += [(distance, candidate[1], candidate[0])]
+            result += [(distance, sequence)]
 
     sorted_result = sorted(result)
-    print("histogram @0: %s" % (adjutant.dict_as_str(histogram)))
     return sorted_result
 
 

@@ -1,4 +1,5 @@
 
+import collections
 import functools
 import itertools
 import json
@@ -24,6 +25,7 @@ from pytils import adjutant, check
 
 
 RESUME_DIR = ".resume"
+ActivationPoint = collections.namedtuple("ActivationPoint", ["sequence", "expectation", "prediction", "part", "layer", "index", "point"])
 
 
 def create(corpus_stream, epochs, verbose):
@@ -137,6 +139,7 @@ class NeuralNetwork:
     def _setup(self):
         self._train_rnn()
         self._setup_colour_embeddings()
+        self._get_activation_data()
         self._train_predictor()
         # Also set inside self._train_predictor().
         self.setup_complete = True
@@ -257,8 +260,6 @@ class NeuralNetwork:
             logging.debug("train predictor %s" % loss)
             self.predictor.save(predictor_dir)
 
-        self._get_search_data()
-
     def _get_predictor_data(self):
         predictor_xys = []
         predictor_xys_file = os.path.join(RESUME_DIR, "predictor_xys.pickle")
@@ -287,31 +288,34 @@ class NeuralNetwork:
         logging.debug("Predictor data: %d." % len(predictor_xys))
         return predictor_xys
 
-    def _get_search_data(self):
-        search_xys = []
-        search_xys_file = os.path.join(RESUME_DIR, "search_xys.pickle")
+    def _get_activation_data(self):
+        activation_data = []
+        activation_data_file = os.path.join(RESUME_DIR, "activation_data.pickle")
 
-        if os.path.exists(search_xys_file):
-            search_xys = pickler.load(search_xys_file)
+        if os.path.exists(activation_data_file):
+            activation_data = pickler.load(activation_data_file)
         else:
             for xy in self.train_xys:
                 stepwise_lstm = self.lstm.stepwise(False)
+                sequence = []
 
                 for i, word in enumerate(xy.x):
+                    sequence += [word]
                     result, instruments = stepwise_lstm.step(word, NeuralNetwork.INSTRUMENTS)
-                    x = ("embedding", 0, i, tuple(instruments["embedding"]))
-                    search_xys += [(xy, result.prediction) + x]
+                    part = "embedding"
+                    layer = 0
+                    point = tuple(instruments[part])
+                    activation_data += [ActivationPoint(sequence=sequence, expectation=xy.y[i], prediction=result.prediction, part=part, layer=layer, index=i, point=point)]
 
                     for part in NeuralNetwork.LSTM_PARTS:
                         for layer in range(NeuralNetwork.LAYERS):
                             point = tuple(instruments[part][layer])
-                            x = (part, layer, i, point)
-                            search_xys += [(xy, result.prediction) + x]
+                            activation_data += [ActivationPoint(sequence=sequence, expectation=xy.y[i], prediction=result.prediction, part=part, layer=layer, index=i, point=point)]
 
-            pickler.dump(search_xys, search_xys_file)
+            pickler.dump(activation_data, activation_data_file)
 
-        logging.debug("Search data: %d." % len(search_xys))
-        return search_xys
+        logging.debug("Activation data: %d." % len(activation_data))
+        return activation_data
 
     def _setup_colour_embeddings(self):
         weights = []

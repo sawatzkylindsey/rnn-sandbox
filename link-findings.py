@@ -1,81 +1,68 @@
 
 from argparse import ArgumentParser
-from csv import reader as csv_reader
+import collections
 import os
 import pdb
 import sys
 
 from nnwd import geometry
 from nnwd import pickler
+from nnwd.domain import ActivationPoint
 from pytils import adjutant
 
 
 TOP = 10
-
-
-def parse_sequence(sequence_str):
-    assert sequence_str.startswith("[") and sequence_str.endswith("]")
-    pieces = sequence_str[1:-1].split(", ")
-    sequence = []
-
-    for piece in pieces:
-        if piece.startswith("'"):
-            assert piece.endswith("'")
-            sequence += [piece[1:-1]]
-        elif piece.startswith('"'):
-            assert piece.endswith('"')
-            sequence += [piece[1:-1]]
-        else:
-            assert not piece.endswith("'")
-            sequence += [piece]
-
-    return sequence
+MatchPoint = collections.namedtuple("MatchPoint", ["distance", "word", "index", "prediction", "expectation"])
 
 
 def main(argv):
     ap = ArgumentParser(prog="server")
+    ap.add_argument("-e", "--elastic", action="store_true", default=False)
     ap.add_argument("findings", nargs="+")
     args = ap.parse_args(argv)
     cases = {}
+    level_part_layers = []
 
-    for level, finding in enumerate(args.findings):
-        print("%d-%s" % (level, finding))
-        with open(finding, "r") as fh:
-            for row in csv_reader(fh):
-                distance, prediction, expectation, backtance, word, index, sequence, point = row
-                distance = float(distance)
-                backtance = int(backtance)
-                index = int(index)
-                sequence = parse_sequence(sequence)
-                case = tuple(sequence)
+    for level_finding in args.findings:
+        level, finding = level_finding.split(":")
+        level = int(level)
+        print("%d:%s" % (level, finding))
+        part, layer, data = pickler.load(finding)
+        assert (level, part, layer) not in level_part_layers, "duplicate (level, part, layer): (%s, %s, %s)" % (level, part, layer)
+        level_part_layers += [(level, part, layer)]
 
-                if case not in cases:
-                    cases[case] = {}
+        for i in data:
+            distance, activation_point = i
+            case = tuple(activation_point.sequence)
 
-                if level not in cases[case]:
-                    cases[case][level] = []
+            if case not in cases:
+                cases[case] = {}
 
-                cases[case][level] += [(distance, prediction, expectation, backtance, word, index)]
+            if (level, part, layer) not in cases[case]:
+                cases[case][(level, part, layer)] = []
 
+            cases[case][(level, part, layer)] += [i]
+
+    level_part_layers = sorted(level_part_layers)
+    print(level_part_layers)
     matched_cases = {}
     printed = False
 
     for case, subd in cases.items():
-        if 0 in subd:
-            matches = search(0, len(args.findings) - 1, subd, None)
+        matches = search(0, level_part_layers, subd, None)
 
-            if len(matches) > 0:
-                best = None
-                minimum = None
+        if len(matches) > 0:
+            best = None
+            minimum = None
 
-                for match in matches:
-                    total_distance = [item[0] for item in match]
+            for match in matches:
+                total_distance = sum([item[0] for item in match])
 
-                    if minimum is None or total_distance < minimum:
-                        best = match
-                        minimum = total_distance
+                if minimum is None or total_distance < minimum:
+                    best = match
+                    minimum = total_distance
 
-                matched_cases[case] = match
+            matched_cases[case] = (total_distance, match)
 
     print("matched cases: %d" % len(matched_cases))
     for case, match in sorted(matched_cases.items(), key=lambda item: item[1]):
@@ -84,21 +71,40 @@ def main(argv):
     return 0
 
 
-def search(level, final_level, level_instances, index):
+def search(constraint_index, level_part_layers, lpl_instances, index):
     results = []
+    constraint = level_part_layers[constraint_index]
 
-    for instance in level_instances[level]:
-        distance, prediction, expectation, instance_backtance, word, instance_index = instance
+    # This case doesn't even have instances across all the constraining (level, part, layers) - definitely can't be satisified.
+    if len(lpl_instances) < len(level_part_layers):
+        return []
 
-        if index is None or instance_index > index:
-            if level + 1 in level_instances:
-                sub_results = search(level + 1, final_level, level_instances, instance_index)
+    if constraint_index > 0:
+        previous_level = level_part_layers[constraint_index - 1][0]
+        assert previous_level <= constraint[0]
+
+        if previous_level == constraint[0]:
+            acceptable = lambda ap: ap.index == index
+        else:
+            acceptable = lambda ap: ap.index > index
+    else:
+        acceptable = lambda ap: True
+
+    for instance in lpl_instances[constraint]:
+        distance, activation_point = instance
+
+        if index is None or acceptable(activation_point):
+            word = activation_point.sequence[activation_point.index]
+
+            # If we're at the final constraint.
+            if constraint_index + 1 == len(level_part_layers):
+                # Found
+                results += [[MatchPoint(distance=distance, word=word, index=activation_point.index, prediction=activation_point.prediction, expectation=activation_point.expectation)]]
+            else:
+                sub_results = search(constraint_index + 1, level_part_layers, lpl_instances, activation_point.index)
 
                 for r in sub_results:
-                    results += [[(distance, word, instance_index)] + r]
-            elif level == final_level:
-                # Found
-                results += [[(distance, word, instance_index, prediction, expectation)]]
+                    results += [[MatchPoint(distance=distance, word=word, index=activation_point.index, prediction=None, expectation=None)] + r]
 
     return results
 

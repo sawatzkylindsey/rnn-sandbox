@@ -1,16 +1,16 @@
 
-from csv import writer as csv_writer
 import os
 import pdb
 
 from nnwd import geometry
 from nnwd import pickler
+from nnwd.domain import ActivationPoint
 from pytils import adjutant
 
 
 RESUME_DIR = ".resume"
 TOP = 10
-search_xys = []
+activation_data = []
 
 
 class WriteLast(Exception):
@@ -18,55 +18,39 @@ class WriteLast(Exception):
 
 
 def main():
-    global search_xys
-    search_xys_file = os.path.join(RESUME_DIR, "search_xys.pickle")
+    global activation_data
+    activation_data_file = os.path.join(RESUME_DIR, "activation_data.pickle")
 
-    if os.path.exists(search_xys_file):
-        search_xys = pickler.load(search_xys_file)
+    if os.path.exists(activation_data_file):
+        activation_data = pickler.load(activation_data_file)
     else:
         raise ValueError()
 
     user_input = ""
 
     while not user_input.startswith("quit"):
-        user_input = input("enter next search (part,layer(,backtance)|axis:target_value,..): ")
+        user_input = input("enter next search (part,layer|axis:target_value,..): ")
 
         if not user_input.startswith("quit"):
             query = None
 
             try:
-                part, layer, backtance, query = parse(user_input)
-                print("(%s, %s, %s, %s)" % (part, layer, backtance, query))
+                part, layer, query = parse(user_input)
+                print("(%s, %s, %s)" % (part, layer, query))
             except WriteLast as e:
-                with open("result-q10.csv", "w") as fh:
-                    writer = csv_writer(fh)
-
-                    for r in result[:q10]:
-                        writer.writerow(r)
-
-                with open("result-q25.csv", "w") as fh:
-                    writer = csv_writer(fh)
-
-                    for r in result[:q25]:
-                        writer.writerow(r)
-
-                with open("result-q50.csv", "w") as fh:
-                    writer = csv_writer(fh)
-
-                    for r in result[:q50]:
-                        writer.writerow(r)
+                pickler.dump((part, layer, result[:q10]), "result-q10.pickle")
+                pickler.dump((part, layer, result[:q25]), "result-q25.pickle")
+                pickler.dump((part, layer, result[:q50]), "result-q50.pickle")
             except Exception as e:
                 print(e)
                 print("error interpreting: %s" % user_input)
 
             if query is not None:
-                result, q10, q25, q50 = find_closest(part, layer, backtance, query)
+                result, q10, q25, q50 = find_closest(part, layer, query)
                 print("found %d: " % len(result))
-                print("distance, index, word, expectation, prediction, sentence")
 
                 for r in result[:TOP]:
-                    distance, prediction, expectation, backtance, word, index, sequence, point = r
-                    print("%s, %s, %s, %s, %s, %s" % (distance, prediction, backtance, word, index, sequence))
+                    print(r)
         else:
             # Exit path - don't do anything
             pass
@@ -80,14 +64,7 @@ def parse(user_input):
 
     context, targets = user_input.split("|")
     contexts = context.split(",")
-
-    if len(contexts) == 2:
-        part, layer = contexts
-        backtance = None
-    else:
-        part, layer, backtance = contexts
-        backtance = int(backtance)
-
+    part, layer = contexts
     layer = int(layer)
     query = []
 
@@ -97,33 +74,28 @@ def parse(user_input):
         target = float(target)
         query += [(axis, target)]
 
-    return part, layer, backtance, query
+    return part, layer, query
 
 
-def find_closest(query_part, query_layer, query_backtance, query):
+def find_closest(query_part, query_layer, query):
     assert len(query) > 0, "empty query - would simply return everything!"
-    global search_xys
+    global activation_data
     result = []
     minimum_distance = None
     maximum_distance = None
 
-    for candidate in search_xys:
-        xy, prediction, part, layer, index, point = candidate
-
-        if query_part == part and query_layer == layer:
-            sub_point = [point[axis] for axis, _ in query]
+    for candidate in activation_data:
+        if query_part == candidate.part and query_layer == candidate.layer:
+            sub_point = [candidate.point[axis] for axis, _ in query]
             target_point = [target for axis, target in query]
             distance = geometry.distance(sub_point, target_point)
-            backtance = len(xy.x) - index - 1
+            result += [(distance, candidate)]
 
-            if query_backtance is None or query_backtance == backtance:
-                result += [(distance, prediction, xy.y, backtance, xy.x[index], index, xy.x, point)]
+            if minimum_distance is None or distance < minimum_distance:
+                minimum_distance = distance
 
-                if minimum_distance is None or distance < minimum_distance:
-                    minimum_distance = distance
-
-                if maximum_distance is None or distance > maximum_distance:
-                    maximum_distance = distance
+            if maximum_distance is None or distance > maximum_distance:
+                maximum_distance = distance
 
     if len(result) == 0:
         return result
@@ -131,40 +103,34 @@ def find_closest(query_part, query_layer, query_backtance, query):
     q50 = maximum_distance * .5
     q25 = maximum_distance * .25
     q10 = maximum_distance * .1
-    print("distance stats: [%.4f, %.4f] q50: %.4f q25: %.4f q10: %.4f" % (minimum_distance, maximum_distance, q50, q25, q10))
+    print("distance stats: [%.4f, %.4f] q10: %.4f q25: %.4f q50: %.4f" % (minimum_distance, maximum_distance, q10, q25, q50))
     sorted_result = sorted(result)
     cut10 = int(len(result) * 0.1)
     cut25 = int(len(result) * 0.25)
     cut50 = int(len(result) * 0.5)
 
-    histogram_q10 = {"negative": {}, "neutral": {}, "positive": {}}
-    for r in sorted_result[:cut10]:
-        if r[3] not in histogram_q10[r[1]]:
-            histogram_q10[r[1]][r[3]] = 0
-
-        histogram_q10[r[1]][r[3]] += 1
-        q10 = r[0]
-
-    histogram_q25 = {"negative": {}, "neutral": {}, "positive": {}}
-    for r in sorted_result[:cut25]:
-        if r[3] not in histogram_q25[r[1]]:
-            histogram_q25[r[1]][r[3]] = 0
-
-        histogram_q25[r[1]][r[3]] += 1
-        q25 = r[0]
-
-    histogram_q50 = {"negative": {}, "neutral": {}, "positive": {}}
-    for r in sorted_result[:cut50]:
-        if r[3] not in histogram_q50[r[1]]:
-            histogram_q50[r[1]][r[3]] = 0
-
-        histogram_q50[r[1]][r[3]] += 1
-        q50 = r[0]
-
-    print("q50: %.4f q25: %.4f q10: %.4f" % (q50, q25, q10))
-    print("histograms\n  q50: %s\n  q25: %s\n  q10: %s" % (adjutant.dict_as_str(rollup(histogram_q50)), adjutant.dict_as_str(rollup(histogram_q25)), adjutant.dict_as_str(rollup(histogram_q10))))
-    print("histograms\n  q50: %s\n  q25: %s\n  q10: %s" % (adjutant.dict_as_str(histogram_q50), adjutant.dict_as_str(histogram_q25), adjutant.dict_as_str(histogram_q10)))
+    histogram_q10, q10 = build_histogram(sorted_result[:cut10])
+    histogram_q25, q25 = build_histogram(sorted_result[:cut25])
+    histogram_q50, q50 = build_histogram(sorted_result[:cut50])
+    print("q10: %.4f q25: %.4f q50: %.4f" % (q10, q25, q50))
+    print("histograms\n  q10: %s\n  q25: %s\n  q50: %s" % (adjutant.dict_as_str(histogram_q10), adjutant.dict_as_str(histogram_q25), adjutant.dict_as_str(histogram_q50)))
     return sorted_result, cut10, cut25, cut50
+
+
+def build_histogram(results):
+    histogram = {}
+    cutoff = None
+
+    for r in results:
+        distance, activation_point = r
+
+        if activation_point.prediction not in histogram:
+            histogram[activation_point.prediction] = 0
+
+        histogram[activation_point.prediction] += 1
+        cutoff = distance
+
+    return histogram, cutoff
 
 
 def rollup(d):

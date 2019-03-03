@@ -391,7 +391,8 @@ function drawStateWidget(timestep, geometry, name, min, max, vector, colour, pre
             .style("pointer-events", "bounding-box")
             .on("mouseover", function(d) {
                 if (timestep == null) {
-                    console.log(d.position + " " + d.value);
+                    var prefix = input_part + "," + input_layer + "|";
+                    console.log(prefix + d.position + ":" + d.value.toFixed(6));
                     d3.selectAll(".linker-" + (linker == null ? d.position : linker[d.position]) + linker_suffix)
                         .transition()
                         .duration(100)
@@ -1378,70 +1379,64 @@ function sortByPosition(a, b) {
 }
 
 function highlightActivations(percent, similar) {
-    var count = null;
+    var count = 0;
+    var scaler = similar ? 1.0 - percent : percent;
+    var threshold = Math.max(Math.abs(variance_minimum), Math.abs(variance_maximum)) * scaler;
+    var matched_opacity = similar ? 0.0 : 1.0;
+    var unmatched_opacity = similar ? 1.0 : 0.0;
+    var matched_counter = similar ? 0 : 1;
+    var unmatched_counter = similar ? 1 : 0;
+    var activationsTop = $(".comparison.top.activation");
+    var activationsBottom = $(".comparison.bottom.activation");
+    activationsTop.sort(sortByPosition);
+    activationsBottom.sort(sortByPosition);
+    var queryTop = [];
+    var queryBottom = [];
 
-    if (percent == 0.0) {
-        count = $(".comparison.top.activation").css("opacity", 1.0).length;
-        $(".comparison.bottom.activation").css("opacity", 1.0);
-    } else {
-        var scaler = similar ? 1.0 - percent : percent;
-        var matched_opacity = similar ? 0.0 : 1.0;
-        var unmatched_opacity = similar ? 1.0 : 0.0;
-        var matched_counter = similar ? 0 : 1;
-        var unmatched_counter = similar ? 1 : 0;
-        var activationsTop = $(".comparison.top.activation");
-        var activationsBottom = $(".comparison.bottom.activation");
-        activationsTop.sort(sortByPosition);
-        activationsBottom.sort(sortByPosition);
-        count = 0;
-        var queryTop = [];
-        var queryBottom = [];
-
-        for (var i = 0; i < activationsTop.length; i++) {
-            var activationTop = activationsTop[i];
-            var activationBottom = activationsBottom[i];
-            var value_top = activationTop.__data__.value;
-            var value_bottom = activationBottom.__data__.value;
-            var position = activationTop.__data__.position;
-            if (position != activationBottom.__data__.position) {
-                throw position + " != " + activationBottom.__data__.position;
-            }
-            var absolute_target_value = Math.max(Math.abs(value_top), Math.abs(value_bottom));
-            var target_value = value_top;
-            var comparison_value = value_bottom;
-
-            if (absolute_target_value == Math.abs(value_bottom)) {
-                target_value = value_bottom;
-                comparison_value = value_top;
-            }
-
-            var min_matching = target_value - (absolute_target_value * scaler);
-            var max_matching = target_value + (absolute_target_value * scaler);
-
-            if (comparison_value < min_matching || comparison_value > max_matching) {
-                activationTop.style.opacity = matched_opacity;
-                activationBottom.style.opacity = matched_opacity;
-                count += matched_counter;
-
-                if (matched_counter == 1) {
-                    queryTop.push(position + ":" + value_top.toFixed(6));
-                    queryBottom.push(position + ":" + value_bottom.toFixed(6));
-                }
-            } else {
-                activationTop.style.opacity = unmatched_opacity;
-                activationBottom.style.opacity = unmatched_opacity;
-                count += unmatched_counter;
-
-                if (unmatched_counter == 1) {
-                    queryTop.push(position + ":" + value_top.toFixed(6));
-                    queryBottom.push(position + ":" + value_bottom.toFixed(6));
-                }
-            }
-
-            var prefix = input_part + "," + input_layer + "|";
-            console.log("top: " + prefix + queryTop.join(","));
-            console.log("bottom: " + prefix + queryBottom.join(","));
+    for (var i = 0; i < activationsTop.length; i++) {
+        var activationTop = activationsTop[i];
+        var activationBottom = activationsBottom[i];
+        var value_top = activationTop.__data__.value;
+        var value_bottom = activationBottom.__data__.value;
+        var position = activationTop.__data__.position;
+        if (position != activationBottom.__data__.position) {
+            throw position + " != " + activationBottom.__data__.position;
         }
+        var absolute_target_value = Math.max(Math.abs(value_top), Math.abs(value_bottom));
+        var target_value = value_top;
+        var comparison_value = value_bottom;
+
+        if (absolute_target_value == Math.abs(value_bottom)) {
+            target_value = value_bottom;
+            comparison_value = value_top;
+        }
+
+        var min_matching = target_value - threshold;
+        var max_matching = target_value + threshold;
+
+        if (comparison_value < min_matching || comparison_value > max_matching) {
+            activationTop.style.opacity = matched_opacity;
+            activationBottom.style.opacity = matched_opacity;
+            count += matched_counter;
+
+            if (matched_counter == 1) {
+                queryTop.push(position + ":" + value_top.toFixed(6));
+                queryBottom.push(position + ":" + value_bottom.toFixed(6));
+            }
+        } else {
+            activationTop.style.opacity = unmatched_opacity;
+            activationBottom.style.opacity = unmatched_opacity;
+            count += unmatched_counter;
+
+            if (unmatched_counter == 1) {
+                queryTop.push(position + ":" + value_top.toFixed(6));
+                queryBottom.push(position + ":" + value_bottom.toFixed(6));
+            }
+        }
+
+        var prefix = input_part + "," + input_layer + "|";
+        console.log("top: " + prefix + queryTop.join(","));
+        console.log("bottom: " + prefix + queryBottom.join(","));
     }
 
     $(".compare-dial-count").text(count);
