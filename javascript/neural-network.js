@@ -91,6 +91,10 @@ function drawTimestep(fake_timestep, data) {
     $("svg").height(layer_height * (main_sequence.length + 2));
     $(".timestep-" + data.timestep).remove();
 
+    if (data.timestep == 0) {
+        drawSubTitle("Components", "timestep-0 components");
+    }
+
     /*for (var t=0; t < main_sequence.length - 1; t++) {
         $(".timestep-" + t + ".softmax").remove();
     }*/
@@ -447,17 +451,6 @@ function drawPredictionWidget(timestep, geometry, name, min, max, predictions, c
             .style("opacity", 0.7);
     }
 
-    // Boundary box
-    svg.append("rect")
-        .attr("class", classes + (subtle ? "" : " softmax") + " " + id_class)
-        .attr("x", geometry.x + 0.5)
-        .attr("y", geometry.y + 0.5)
-        .attr("width", geometry.width - 1)
-        .attr("height", geometry.height - 1)
-        .attr("stroke", light_grey)
-        .attr("stroke-width", 1)
-        .attr("fill", "none")
-        .style("opacity", baseOpacity);
     svg.append("line")
         .attr("class", classes + (subtle ? "" : " softmax") + " " + id_class)
         .attr("x1", x(0))
@@ -513,9 +506,9 @@ function drawPredictionWidget(timestep, geometry, name, min, max, predictions, c
                 return geometry.x + Math.abs(x(d.value) - x(min)) + 5;
             })
             .attr("y", function (d) {
-                return y(d.position) + (y.step() / 2) + 4;
+                return y(d.position) + (y.step() / 2) + (subtle ? 3 : 4);
             })
-            .style("font-size", "12px")
+            .style("font-size", subtle ? "9px" : "12px")
             .style("opacity", baseOpacity)
             .text(function (d) { return d.label; });
 }
@@ -1692,7 +1685,7 @@ function drawAutocomplete(timestep) {
                 main_sequence[timestep] = textContent;
             }
 
-            drawWeightsFromSequence(0);
+            drawWeightsFromSequence(timestep);
             $("#main_input").val(main_sequence.join(" "));
         });
     })
@@ -1739,7 +1732,7 @@ function drawAutocomplete(timestep) {
                     }
                 }
 
-                drawWeightsFromSequence(0);
+                drawWeightsFromSequence(timestep);
                 $("#main_input").val(main_sequence.join(" "));
             }
         }
@@ -1764,8 +1757,6 @@ function trimSequenceTail(old_sequence_length, new_sequence_length) {
 
 function drawWeightsFromSequence(timestep) {
     console.log("Full sequence: " + main_sequence);
-    $(".components").remove();
-    drawSubTitle("Components", "components");
 
     for (var s = timestep; s < main_sequence.length; s++) {
         var slice = main_sequence.slice(0, s + 1);

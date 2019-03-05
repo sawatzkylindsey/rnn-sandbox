@@ -18,12 +18,11 @@ from pytils.log import user_log
 
 
 class Model:
-    def __init__(self, scope, hyper_parameters, input_labels, output_labels, task):
+    def __init__(self, scope, hyper_parameters, input_labels, output_labels):
         self.scope = scope
         self.hyper = check.check_instance(hyper_parameters, HyperParameters)
         self.input_labels = input_labels
         self.output_labels = output_labels
-        self.task = task
 
         batch_size_dimension = None
 
@@ -33,7 +32,7 @@ class Model:
 
         # Base variable setup
         self.input_p = self.placeholder("input_p", [batch_size_dimension, len(self.input_labels)])
-        self.output_p = self.placeholder("output_p", [batch_size_dimension, len(self.output_labels)])
+        self.output_p = self.placeholder("output_p", [batch_size_dimension], tf.int32)
 
         self.E = self.variable("E", [len(self.input_labels), self.hyper.width()])
         self.E_bias = self.variable("E_bias", [1, self.hyper.width()], 0.)
@@ -56,28 +55,27 @@ class Model:
             hidden = tf.tanh(tf.matmul(hidden, self.H[l]) + self.H_bias[l])
             mlbase.assert_shape(hidden, [batch_size_dimension, self.hyper.width()])
 
-        self.output_logit = tf.tanh(tf.matmul(hidden, self.Y) + self.Y_bias)
+        self.output_logit = tf.matmul(hidden, self.Y) + self.Y_bias
         mlbase.assert_shape(self.output_logit, [batch_size_dimension, len(self.output_labels)])
         self.output_distributions = tf.nn.softmax(self.output_logit)
+        #self.output_distributions = tf.nn.softmax(tf.matmul(hidden, self.Y) + self.Y_bias)
         mlbase.assert_shape(self.output_distributions, [batch_size_dimension, len(self.output_labels)])
-        #expected_output = tf.reshape(self.output_label_p, [-1, len(self.output_labels)])
-        #assert self.output_logit.shape.as_list() == expected_output.shape.as_list(), "%s != %s" % (self.output_logit.shape.as_list(), expected_output.shape.as_list())
-
-        if self.task == mlbase.SINGLE_LABEL:
-            loss_fn = tf.nn.softmax_cross_entropy_with_logits_v2
-        elif self.task == mlbase.MULTI_LABEL:
-            loss_fn = tf.nn.sigmoid_cross_entropy_with_logits
-
-        # Expected output:                 v
-        # Un-scaled prediction:                                                      v
+        #self.cost = tf.reduce_mean(tf.nn.nce_loss(
+        #    weights=tf.transpose(self.Y),
+        #    biases=self.Y_bias,
+        #    labels=self.output_p,
+        #    inputs=hidden,
+        #    num_sampled=1,
+        #    num_classes=len(self.output_labels)))
+        loss_fn = tf.nn.sparse_softmax_cross_entropy_with_logits
         self.cost = tf.reduce_mean(loss_fn(labels=tf.stop_gradient(self.output_p), logits=self.output_logit))
         self.updates = tf.train.AdamOptimizer().minimize(self.cost)
 
         self.session = tf.Session()
         self.session.run(tf.global_variables_initializer())
 
-    def placeholder(self, name, shape):
-        return tf.placeholder(tf.float32, shape, name=name)
+    def placeholder(self, name, shape, dtype=tf.float32):
+        return tf.placeholder(dtype, shape, name=name)
 
     def variable(self, name, shape, initial=None):
         with tf.variable_scope(self.scope):
@@ -105,7 +103,7 @@ class Model:
             while offset < len(shuffled_xys):
                 batch = shuffled_xys[offset:offset + training_parameters.batch()]
                 xs = [self.input_labels.vector_encode(xy.x) for xy in batch]
-                ys = [self.output_labels.vector_encode(xy.y) for xy in batch]
+                ys = [self.output_labels.encode(xy.y) for xy in batch]
                 feed = {
                     self.input_p: np.array(xs),
                     self.output_p: np.array(ys),

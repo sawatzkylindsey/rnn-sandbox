@@ -243,8 +243,9 @@ class NeuralNetwork:
         predictor_input = mlbase.ConcatField([part_labels, layer_labels, hidden_vector])
         predictor_output = mlbase.Labels(set(self.words.labels()))
         hyper_parameters = ffnn.HyperParameters() \
-            .width(len(predictor_input))
-        self.predictor = ffnn.Model("predictor", hyper_parameters, predictor_input, predictor_output, mlbase.SINGLE_LABEL)
+            .layers(2) \
+            .width(int((len(predictor_input) + len(predictor_output)) / 2.0))
+        self.predictor = ffnn.Model("predictor", hyper_parameters, predictor_input, predictor_output)
         predictor_dir = os.path.join(RESUME_DIR, "predictor")
 
         if os.path.exists(predictor_dir):
@@ -272,16 +273,20 @@ class NeuralNetwork:
                 stepwise_lstm = self.lstm.stepwise(False)
 
                 for i, word in enumerate(xy.x):
+                    # Set the prediction to that which the lstm has been trained against, not the actual learned prediction (which will be fixed).
+                    # For example, consider the two training examples: "the little prince" -> "was" and "the little prince" -> "is".
+                    # We need predictor samples for both "was" and "is", but if we use the actual lstm prediction this will fixate on just one of these.
+                    prediction = xy.y[i]
                     result, instruments = stepwise_lstm.step(word, NeuralNetwork.INSTRUMENTS)
                     x = ("embedding", 0, tuple(instruments["embedding"]))
-                    train_xy = mlbase.Xy(x, result.prediction)
+                    train_xy = mlbase.Xy(x, prediction)
                     predictor_xys += [train_xy]
 
                     for part in NeuralNetwork.LSTM_PARTS:
                         for layer in range(NeuralNetwork.LAYERS):
                             point = tuple(instruments[part][layer])
                             x = (part, layer, point)
-                            train_xy = mlbase.Xy(x, result.prediction)
+                            train_xy = mlbase.Xy(x, prediction)
                             predictor_xys += [train_xy]
 
             pickler.dump(predictor_xys, predictor_xys_file)
