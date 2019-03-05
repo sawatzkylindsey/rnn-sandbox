@@ -6,7 +6,7 @@ var total_height = null;
 var detail_margin = 10;
 var layer_height = 225;
 var input_width = 100;
-var x_margin = 25;
+var x_margin = 20;
 var y_margin = 25;
 var HEIGHT = 20;
 var circle_radius = 8;
@@ -98,7 +98,7 @@ function drawTimestep(fake_timestep, data) {
     if (data.x_word != main_sequence[data.timestep]) {
         svg.append("text")
             .attr("class", "timestep-" + data.timestep + " components")
-            .attr("x", x_margin + (input_width * 2 / 3))
+            .attr("x", x_margin + (input_width * 1 / 3))
             .attr("y", y_margin + (data.timestep * layer_height) + state_height + (state_height / 5) + HEIGHT + 5)
             .style("font-size", "14px")
             .style("fill", black)
@@ -233,7 +233,7 @@ function drawStateWidget(timestep, geometry, name, min, max, vector, colour, pre
             width: geometry.width / 3,
             height: geometry.height / 3,
         };
-        drawPredictionWidget(timestep, predictionGeometry, predictions.minimum, predictions.maximum, predictions.vector, classes, true);
+        drawPredictionWidget(timestep, predictionGeometry, null, predictions.minimum, predictions.maximum, predictions.vector, classes, true);
         // Draw colour prediction.
         svg.append("rect")
             .attr("class", classes)
@@ -258,13 +258,12 @@ function drawStateWidget(timestep, geometry, name, min, max, vector, colour, pre
 
     // Name
     if (name != null) {
-        svg.append("text")
+        svg.append("image")
             .attr("class", classes)
-            .attr("x", geometry.x + (geometry.width / 2) - (textWidth(name, 12) / 2))
-            .attr("y", geometry.y + geometry.height + 10)
-            .style("font-size", "12px")
-            .style("fill", black)
-            .text(name);
+            .attr("xlink:href", "latex/" + name + ".png")
+            .attr("x", geometry.x + (geometry.width / 2) - 6)
+            .attr("y", geometry.y + geometry.height + 2 + (name.startsWith("e_") ? 5 : 0))
+            .style("opacity", 0.7);
     }
 
     // Boundary box
@@ -411,10 +410,10 @@ function drawSoftmax(data, part) {
     var geometry = getGeometry(data.timestep, part, 1);
     var labelWeightVector = data[part];
     var classes = "timestep-" + data.timestep + " components";
-    drawPredictionWidget(data.timestep, geometry, labelWeightVector.minimum, labelWeightVector.maximum, labelWeightVector.vector, classes, false);
+    drawPredictionWidget(data.timestep, geometry, labelWeightVector.name, labelWeightVector.minimum, labelWeightVector.maximum, labelWeightVector.vector, classes, false);
 }
 
-function drawPredictionWidget(timestep, geometry, min, max, predictions, classes, subtle) {
+function drawPredictionWidget(timestep, geometry, name, min, max, predictions, classes, subtle) {
     var found_min = d3.min(predictions, function(d) { return d.value; });
     if (found_min < min) {
         throw "found value " + found_min + " exceeding min " + min;
@@ -438,7 +437,17 @@ function drawPredictionWidget(timestep, geometry, min, max, predictions, classes
     var baseOpacity = subtle ? 0.2 : 1.0;
     var id_class = "softmax-" + Math.random().toString(36).substring(5);
 
-    // boundary box
+    // Name
+    if (name != null) {
+        svg.append("image")
+            .attr("class", classes)
+            .attr("xlink:href", "latex/" + name + ".png")
+            .attr("x", geometry.x + (geometry.width / 2) - (textWidth(name, 12) / 2))
+            .attr("y", geometry.y + geometry.height + 10)
+            .style("opacity", 0.7);
+    }
+
+    // Boundary box
     svg.append("rect")
         .attr("class", classes + (subtle ? "" : " softmax") + " " + id_class)
         .attr("x", geometry.x + 0.5)
@@ -829,7 +838,7 @@ function drawGate(timestep, x_offset, y_offset, size) {
 function drawSubTitle(title, classes) {
     svg.append("text")
         .attr("class", classes)
-        .attr("x", x_margin + 5)
+        .attr("x", x_margin + 10)
         .attr("y", y_margin - 2)
         .style("font-size", "16px")
         .style("fill", black)
@@ -850,7 +859,7 @@ function drawDetail() {
         .attr("fill", "white");
     drawSubTitle("Detail", "detail");
     $("svg").height(total_height);
-    drawClose(x_margin - circle_radius, y_margin - circle_radius, circle_radius, "detail", function () {
+    drawClose(x_margin - circle_radius + 5, y_margin - circle_radius, circle_radius, "detail", function () {
         $(".detail").remove();
         $(".modal").remove();
         compare_sequence = [];
@@ -1021,7 +1030,7 @@ function drawInset(data, placement) {
     drawInsetPart(x, y_top, inset_unit_width, inset_unit_height, "forgets", 0, data.units["forgets"][0].colour, placement, classes);
     drawInsetPart(x, y_bottom, inset_unit_width, inset_unit_height, "remembers", 0, data.units["remembers"][0].colour, placement, classes);
     x += inset_separator + inset_unit_width;
-    drawInsetPart(x, y_middle, inset_unit_width, inset_unit_height, "cell_hats", 0, data.units["cell_hats"][0].colour, placement, classes);
+    drawInsetPart(x, y_middle, inset_unit_width, inset_unit_height, "cells", 0, data.units["cells"][0].colour, placement, classes);
     x += inset_separator + inset_unit_width;
     drawInsetPart(x, y_middle, inset_unit_width, inset_unit_height, "outputs", 0, data.units["outputs"][0].colour, placement, classes);
     x += inset_separator + inset_unit_width;
@@ -1031,7 +1040,7 @@ function drawInset(data, placement) {
     drawInsetPart(x, y_top, inset_unit_width, inset_unit_height, "forgets", 1, data.units["forgets"][1].colour, placement, classes);
     drawInsetPart(x, y_bottom, inset_unit_width, inset_unit_height, "remembers", 1, data.units["remembers"][1].colour, placement, classes);
     x += inset_separator + inset_unit_width;
-    drawInsetPart(x, y_middle, inset_unit_width, inset_unit_height, "cell_hats", 1, data.units["cell_hats"][1].colour, placement, classes);
+    drawInsetPart(x, y_middle, inset_unit_width, inset_unit_height, "cells", 1, data.units["cells"][1].colour, placement, classes);
     x += inset_separator + inset_unit_width;
     drawInsetPart(x, y_middle, inset_unit_width, inset_unit_height, "outputs", 1, data.units["outputs"][1].colour, placement, classes);
 }
@@ -1820,47 +1829,47 @@ function getGeometry(timestep, part, layer) {
 
     switch (part) {
         case "embedding":
-            b = {x: x_offset + state_width, y: y_offset + (state_height * 3 / 4)};
+            b = {x: x_offset + (state_width / 2), y: y_offset + (state_height * 3 / 4)};
             break;
         case "cell_previouses":
-            b = {x: x_offset + (state_width * 9 / 2) + layer_offset, y: y_offset};
+            b = {x: x_offset + (state_width * 8 / 2) + layer_offset, y: y_offset};
             break;
         /*case "forget_gate":
             b = {x: x_offset + (w * 3) + (w / 2) + layer_offset, y: y_offset + (h * 1 / 2) + (operator_height / 2), height: operand_height};
             break;*/
         case "forgets":
-            b = {x: x_offset + (state_width * 8) + layer_offset, y: y_offset};
+            b = {x: x_offset + (state_width * 8) - (state_width / 2) + layer_offset, y: y_offset};
             break;
         case "input_hats":
-            b = {x: x_offset + (state_width * 9 / 2) + layer_offset, y: y_offset + (state_height * 3 / 2)};
+            b = {x: x_offset + (state_width * 8 / 2) + layer_offset, y: y_offset + (state_height * 3 / 2)};
             break;
         /*case "remember_gate":
             b = {x: x_offset + (w * 7) + (w / 2) + layer_offset, y: y_offset + (h * 3 / 2) + (operator_height / 2), height: operand_height};
             break;*/
         case "remembers":
-            b = {x: x_offset + (state_width * 8) + layer_offset, y: y_offset + (state_height * 3 / 2)};
+            b = {x: x_offset + (state_width * 8) - (state_width / 2) + layer_offset, y: y_offset + (state_height * 3 / 2)};
             break;
         /*case "forget_hat":
             b = {x: x_offset + (w * 11) + (w / 2) + layer_offset, y: y_offset + (h * 1 / 2), height: operand_height};
             break;
         case "remember_hat":
             b = {x: x_offset + (w * 11) + (w / 2) + layer_offset, y: y_offset + (h * 2 / 2) + (operator_height / 2), height: operand_height};
-            break;
-        case "cell":
-            b = {x: x_offset + (w * 13) + layer_offset, y: y_offset + (h * 1 / 2), height: h};
             break;*/
-        case "cell_hats":
+        case "cells":
+            b = {x: x_offset + (state_width * 11) + layer_offset, y: y_offset + (state_height * 3 / 4)};
+            break;
+        /*case "cell_hats":
             b = {x: x_offset + (state_width * 11) + (state_width / 2) + layer_offset, y: y_offset + (state_height * 3 / 4)};
             break;
-        /*case "output_gate":
+        case "output_gate":
             b = {x: x_offset + (w * 15) + (w / 2) + layer_offset, y: y_offset + h + (operator_height / 2), height: operand_height};
             break;*/
         case "outputs":
-            b = {x: x_offset + (state_width * 15) + layer_offset, y: y_offset + (state_height * 3 / 4)};
+            b = {x: x_offset + (state_width * 15) - (state_width / 2) + layer_offset, y: y_offset + (state_height * 3 / 4)};
             break;
         case "softmax":
             // For the 2 layers v
-            b = {x: x_offset + (state_width * 19) + layer_offset, y: y_offset + (state_height * 3 / 4)};
+            b = {x: x_offset + (state_width * 19) - (state_width / 2) + layer_offset, y: y_offset + (state_height * 3 / 4)};
             break;
         default:
             return null;

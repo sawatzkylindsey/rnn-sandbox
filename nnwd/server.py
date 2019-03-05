@@ -75,7 +75,7 @@ class ServerHandler(BaseHTTPRequestHandler):
     def _read_request(self):
         url = urllib.parse.urlparse(self.path)
         data = urllib.parse.parse_qs(url.query)
-        return (url.path[1:], data)
+        return (urllib.parse.unquote(url.path[1:]), data)
 
     def _set_headers(self, content_type, others={}):
         self.send_response(200)

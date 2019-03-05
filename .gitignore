@@ -3,6 +3,9 @@
 *.pyc
 *.swp
 
+.DS_Store
+
 p3/
 pytils-master/
+javascript/latex/
 

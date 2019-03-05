@@ -72,7 +72,8 @@ class HiddenState:
 
 
 class LabelDistribution:
-    def __init__(self, label_weights, top_k=None, colour_fn=lambda i: None):
+    def __init__(self, name, label_weights, top_k=None, colour_fn=lambda i: None):
+        self.name = name
         self.label_weights = [(str(item[0]), float(item[1])) for item in sorted(label_weights.items(), key=lambda item: item[1], reverse=True)[:len(label_weights) if top_k is None else top_k]]
         self.minimum = 0
         self.maximum = max(self.label_weights, key=lambda item: item[1])[1] * 1.25
@@ -81,6 +82,7 @@ class LabelDistribution:
 
     def as_json(self):
         return {
+            "name": self.name,
             "vector": [{"value": item[1], "position": i, "label": item[0], "colour": self.colour_fn(item[0])} for i, item in enumerate(self.label_weights)],
             "minimum": self.minimum,
             "maximum": self.maximum

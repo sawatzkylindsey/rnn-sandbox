@@ -17,6 +17,7 @@ from ml import base as mlbase
 from ml import nlp
 from ml import nn as ffnn
 from nnwd import geometry
+from nnwd import latex
 from nnwd.models import Timestep, WeightExplain, WeightDetail, HiddenState, LabelDistribution
 from nnwd import pickler
 from nnwd import rnn
@@ -267,20 +268,20 @@ class NeuralNetwork:
         if os.path.exists(predictor_xys_file):
             predictor_xys = pickler.load(predictor_xys_file)
         else:
-            for xy in self.validation_xys:
+            for xy in self.train_xys:
                 stepwise_lstm = self.lstm.stepwise(False)
 
                 for i, word in enumerate(xy.x):
                     result, instruments = stepwise_lstm.step(word, NeuralNetwork.INSTRUMENTS)
                     x = ("embedding", 0, tuple(instruments["embedding"]))
-                    train_xy = mlbase.Xy(x, result.distribution)
+                    train_xy = mlbase.Xy(x, result.prediction)
                     predictor_xys += [train_xy]
 
                     for part in NeuralNetwork.LSTM_PARTS:
                         for layer in range(NeuralNetwork.LAYERS):
                             point = tuple(instruments[part][layer])
                             x = (part, layer, point)
-                            train_xy = mlbase.Xy(x, result.distribution)
+                            train_xy = mlbase.Xy(x, result.prediction)
                             predictor_xys += [train_xy]
 
             pickler.dump(predictor_xys, predictor_xys_file)
@@ -480,10 +481,11 @@ class NeuralNetwork:
                 points[self.encode_key(part, layer)] = instruments[part][layer]
 
         point_reductions, point_colours, point_predictions = self.compute_point_abstractions(distance, points)
-        name = self.latex_name(len(sequence) - 1, "embedding")
-        embedding = HiddenState(name, point_reductions[embedding_key], colour=point_colours[embedding_key], predictions=self.prediction_distribution(point_predictions[embedding_key]))
+        embedding_name = self.latex_name(len(sequence) - 1, "embedding")
+        embedding = HiddenState(embedding_name, point_reductions[embedding_key], colour=point_colours[embedding_key], predictions=self.prediction_distribution(point_predictions[embedding_key]))
         units = self.make_lstm_units(len(sequence) - 1, point_reductions, point_colours, point_predictions)
-        softmax = LabelDistribution(result.distribution, NeuralNetwork.OUTPUT_WIDTH, lambda word: self.word_colour(word))
+        softmax_name = self.latex_name(len(sequence) - 1, "softmax")
+        softmax = LabelDistribution(softmax_name, result.distribution, NeuralNetwork.OUTPUT_WIDTH, lambda word: self.word_colour(word))
         return Timestep(embedding, units, softmax, len(sequence) - 1, last_word, result.prediction)
 
     def weight_detail(self, sequence, distance, part, layer):
@@ -530,7 +532,7 @@ class NeuralNetwork:
         if prediction is None:
             return None
 
-        return LabelDistribution(prediction, colour_fn=lambda word: self.word_colour(word))
+        return LabelDistribution(None, prediction, colour_fn=lambda word: self.word_colour(word))
 
     def make_lstm_units(self, timestep, point_reductions, point_colours, point_predictions):
         units = {}
@@ -651,6 +653,7 @@ class NeuralNetwork:
         part = math.exp(-2 * value)
         return (1.0 - part) / (1.0 + part)
 
+    @latex.generate_png
     def latex_name(self, timestep, part, layer=None):
         if part == "embedding":
             return "e_%d" % timestep
@@ -661,20 +664,22 @@ class NeuralNetwork:
         elif part == "output_gates":
             return "o_%d^%d" % (timestep, layer)
         elif part == "input_hats":
-            return "input_%d^%d" % (timestep, layer)
+            return "z_%d^%d" % (timestep, layer)
         elif part == "remembers":
-            return "remember_%d^%d" % (timestep, layer)
+            return "j_%d^%d" % (timestep, layer)
         elif part == "forgets":
-            return "forget_%d^%d" % (timestep, layer)
+            return "g_%d^%d" % (timestep, layer)
         elif part == "cells":
             return "c_%d^%d" % (timestep, layer)
         elif part == "cell_hats":
-            return "cell_%d^%d" % (timestep, layer)
+            return "cellhat_%d^%d" % (timestep, layer)
         elif part == "cell_previouses":
             if timestep == 0:
-                return "-"
+                return None
 
-            return "cell_%d^%d" % (timestep - 1, layer)
+            return "c_%d^%d" % (timestep - 1, layer)
         elif part == "outputs":
-            return "output_%d^%d" % (timestep, layer)
+            return "x_%d^%d" % (timestep, layer)
+        elif part == "softmax":
+            return "y_%d" % timestep
 
