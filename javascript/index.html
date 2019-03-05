@@ -4,12 +4,24 @@
     <link rel="stylesheet" type="text/css" href="style.css"/>
 </head>
 <script src="js/d3.min.js"></script>
-<script src="js/jquery-3.2.1.min.js"></script>
+<script  src="js/jquery-3.2.1.min.js"></script>
 <script src="neural-network.js"></script>
 <script src="https://d3js.org/d3.v4.min.js"></script>
+<script>
+var TOTAL_WIDTH=1420;
+var TOTAL_HEIGHT=720;
+var LEFT_WIDTH=150;
+var TOP_HEIGHT=40;
+</script>
 <body>
-    <div id="main_div">
-        <svg id="svg"></svg>
+    <div id="header" class="floating" style="height: 40px;">
+        <div style="float: left; position: absolute; top: 50%; width: 151px; transform: translateY(-50%); text-align: right;">Input:</div>
+        <div style="float: left; position: absolute; top: 50%; left: 160px; width: 600px; height: 20px; transform: translateY(-50%);">
+            <input id="main_input" type="text"/>
+        </div>
+    </div>
+    <div id="lefter" class="floating" style="width: 150px;">
+        <div style="text-align: center; margin: 5px;">Legend / Query</div>
     </div>
 </body>
 

@@ -1,14 +1,15 @@
 
 var MEMORY_CHIP_HEIGHT = 5;
 var MEMORY_CHIP_WIDTH = 2;
-var total_width = 1400;
-var total_height = 700;
+var total_width = null;
+var total_height = null;
 var detail_margin = 10;
 var layer_height = 225;
 var input_width = 100;
 var x_margin = 25;
-var y_margin = 50;
+var y_margin = 25;
 var HEIGHT = 20;
+var circle_radius = 8;
 var state_width = 30;
 var state_height = layer_height / 3.0;
 if ((state_height / MEMORY_CHIP_HEIGHT) != (state_width / MEMORY_CHIP_WIDTH)) {
@@ -32,13 +33,14 @@ var input_layer = null;
 var words = null;
 
 $(document).ready(function () {
+    total_width = TOTAL_WIDTH - LEFT_WIDTH;
+    total_height = TOTAL_HEIGHT - TOP_HEIGHT;
     d3.json("words")
         .get(function (error, data) { words = data; });
 
     svg = d3.select('body').append('svg')
+        .attr("transform", "translate(" + LEFT_WIDTH + "," + TOP_HEIGHT + ")")
         .style('position', 'absolute')
-        .style('top', 0)
-        .style('left', 0)
         .style("width", total_width)
         .style('height', total_height);
 
@@ -57,69 +59,30 @@ $(document).ready(function () {
         .attr('d', 'M2,2 L10,6 L2,10 L6,6 L2,2')
         .style('fill', light_grey);
 
-    var inputWidth = textWidth("input..", 16);
-    svg.append("rect")
-        .attr("class", "input-button")
-        .attr("x", (total_width / 2) - (inputWidth / 2))
-        .attr("y", detail_margin)
-        .attr("width", inputWidth + 5)
-        .attr("height", HEIGHT)
-        .attr("rx", 5)
-        .attr("ry", 5)
-        .attr("stroke", "none")
-        .attr("fill", light_grey);
-    svg.append("text")
-        .attr("class", "input-button")
-        .attr("x", (total_width / 2) - (inputWidth / 2) + 2.5)
-        .attr("y", detail_margin + (HEIGHT * .7))
-        .style("font-size", "16px")
-        .style("fill", black)
-        .text("input..");
-    svg.append("rect")
-        .attr("class", "input-button")
-        .attr("x", (total_width / 2) - (inputWidth / 2))
-        .attr("y", detail_margin)
-        .attr("width", inputWidth + 5)
-        .attr("height", HEIGHT)
-        .attr("rx", 5)
-        .attr("ry", 5)
-        .attr("stroke", dark_grey)
-        .attr("stroke-width", 1)
-        .attr("fill", "transparent")
-        .style("pointer-events", "bounding-box")
-        .on("mouseover", function(d) {
-            d3.select(this)
-                .style("cursor", "pointer");
-            d3.select(this)
-                .transition()
-                .duration(100)
-                .attr("stroke-width", 2);
-        })
-        .on("mouseout", function(d) {
-            d3.select(this)
-                .style("cursor", "auto");
-            d3.select(this)
-                .transition()
-                .duration(50)
-                .attr("stroke-width", 1);
-        })
-        .on("click", function(d) {
-            function acceptMainInput(sequence) {
-                $(".input-button").remove();
-                var tail = main_sequence.length;
-                main_sequence = sequence;
-                trimSequenceTail(tail, main_sequence.length);
-                drawMainSequence();
-                drawWeightsFromSequence(0);
-                for (var timestep = 0; timestep < main_sequence.length; timestep++) {
-                    drawAutocomplete(timestep);
-                    var autocomplete = $("#autocomplete-" + timestep);
-                    autocomplete.find("input").val(main_sequence[timestep]);
-                }
-                drawAutocomplete(timestep);
-            }
-            drawInputModal(acceptMainInput);
-        });
+    function acceptMainInput(sequence) {
+        var tail = main_sequence.length;
+        main_sequence = sequence;
+        trimSequenceTail(tail, main_sequence.length);
+        drawWeightsFromSequence(0);
+        for (var timestep = 0; timestep < main_sequence.length; timestep++) {
+            drawAutocomplete(timestep);
+            var autocomplete = $("#autocomplete-" + timestep);
+            autocomplete.find("input").val(main_sequence[timestep]);
+        }
+        drawAutocomplete(timestep);
+    }
+    $("#header").css("width", TOTAL_WIDTH);
+    var main_input = $("#main_input");
+    main_input.on("keydown", function(e) {
+        // Enter key
+        if (e.keyCode == 13) {
+            var sequence = $(this).val()
+                .toLowerCase()
+                .split(/\W+/);
+            $(".modal").remove();
+            acceptMainInput(sequence);
+        }
+    });
 });
 
 function drawTimestep(fake_timestep, data) {
@@ -134,9 +97,9 @@ function drawTimestep(fake_timestep, data) {
 
     if (data.x_word != main_sequence[data.timestep]) {
         svg.append("text")
-            .attr("class", "timestep-" + data.timestep)
+            .attr("class", "timestep-" + data.timestep + " components")
             .attr("x", x_margin + (input_width * 2 / 3))
-            .attr("y", y_margin + (data.timestep * layer_height) + state_height + HEIGHT + 5)
+            .attr("y", y_margin + (data.timestep * layer_height) + state_height + (state_height / 5) + HEIGHT + 5)
             .style("font-size", "14px")
             .style("fill", black)
             .text(data.x_word);
@@ -152,7 +115,7 @@ function drawTimestep(fake_timestep, data) {
         // gridlines
         for (var x = 0; x <= total_width; x += state_width) {
             svg.append("line")
-                .attr("class", "timestep-" + data.timestep)
+                .attr("class", "timestep-" + data.timestep + " components")
                 .attr("x1", x_offset + x - 0.05)
                 .attr("y1", y_offset)
                 .attr("x2", x_offset + x - 0.05)
@@ -163,7 +126,7 @@ function drawTimestep(fake_timestep, data) {
         }
         for (var y = 0; y <= layer_height; y += (state_height / 2.0)) {
             svg.append("line")
-                .attr("class", "timestep-" + data.timestep)
+                .attr("class", "timestep-" + data.timestep + " components")
                 .attr("x1", x_offset)
                 .attr("y1", y_offset + y - 0.05)
                 .attr("x2", x_offset + total_width)
@@ -192,22 +155,6 @@ function drawTimestep(fake_timestep, data) {
     /*drawHline(timestep, x_offset + (data.units.length * w * 17), y_offset + (h * 2 / 2),
         x_offset + (data.units.length * w * 17) + (w * 3 / 2), y_offset + (h * 2 / 2));*/
     drawSoftmax(data, "softmax");
-
-    svg.append("rect")
-        .attr("class", "timestep-" + data.timestep)
-        .attr("x", x_offset + (2 * state_width * 18) + (state_width * 3 / 2) + x_margin)
-        .attr("y", y_offset + state_height - (HEIGHT/ 2) - 1)
-        .attr("width", input_width)
-        .attr("height", HEIGHT)
-        .style("fill", "#dee0e2");
-    svg.append("text")
-        .attr("class", "timestep-" + data.timestep)
-        .attr("x", x_offset + (2 * state_width * 18) + (state_width * 3 / 2) + x_margin + 2)
-        .attr("y", y_offset + state_height + 5)
-        .style("font-size", "17px")
-        .style("fill", black)
-        .style("background-color", "#dee0e2")
-        .text(data.y_word);
 }
 
 function drawHiddenState(data, part, layer) {
@@ -222,7 +169,7 @@ function drawHiddenState(data, part, layer) {
             hiddenState = data.units[part][layer];
         }
 
-        var classes = "timestep-" + data.timestep;
+        var classes = "timestep-" + data.timestep + " components";
         drawStateWidget(data.timestep, geometry, hiddenState.name, hiddenState.minimum, hiddenState.maximum, hiddenState.vector, hiddenState.colour, hiddenState.predictions, classes,
             MEMORY_CHIP_WIDTH, MEMORY_CHIP_HEIGHT, part, layer, null, null, null);
     }
@@ -461,9 +408,9 @@ function drawStateWidget(timestep, geometry, name, min, max, vector, colour, pre
 }
 
 function drawSoftmax(data, part) {
-    var geometry = getGeometry(data.timestep, part, null);
+    var geometry = getGeometry(data.timestep, part, 1);
     var labelWeightVector = data[part];
-    var classes = "timestep-" + data.timestep;
+    var classes = "timestep-" + data.timestep + " components";
     drawPredictionWidget(data.timestep, geometry, labelWeightVector.minimum, labelWeightVector.maximum, labelWeightVector.vector, classes, false);
 }
 
@@ -879,19 +826,31 @@ function drawGate(timestep, x_offset, y_offset, size) {
         .attr("stroke-width", stroke_width);
 }
 
+function drawSubTitle(title, classes) {
+    svg.append("text")
+        .attr("class", classes)
+        .attr("x", x_margin + 5)
+        .attr("y", y_margin - 2)
+        .style("font-size", "16px")
+        .style("fill", black)
+        .text(title);
+}
+
 function drawDetail() {
+    $(".components").remove();
+    $("#main_input").prop("disabled", true);
     svg.append("rect")
         .attr("id", "detail-box")
         .attr("class", "detail")
-        .attr("x", detail_margin)
-        .attr("y", detail_margin)
-        .attr("width", total_width - (detail_margin * 2))
-        .attr("height", total_height - (detail_margin * 2))
-        .attr("stroke", black)
-        .attr("stroke-width", 2)
+        .attr("x", 0)
+        .attr("y", 0)
+        .attr("width", total_width)
+        .attr("height", total_height)
+        .attr("stroke", "none")
         .attr("fill", "white");
+    drawSubTitle("Detail", "detail");
     $("svg").height(total_height);
-    drawClose(total_width - detail_margin, detail_margin, (state_width / 4), "detail", function () {
+    drawClose(x_margin - circle_radius, y_margin - circle_radius, circle_radius, "detail", function () {
         $(".detail").remove();
         $(".modal").remove();
         compare_sequence = [];
@@ -899,6 +858,7 @@ function drawDetail() {
         input_part = null;
         input_layer = null;
         drawWeightsFromSequence(0);
+        $("#main_input").prop("disabled", false);
     });
 
     if (debug) {
@@ -907,7 +867,7 @@ function drawDetail() {
             .attr("x1", (total_width / 2) - 0.5)
             .attr("y1", detail_margin)
             .attr("x2", (total_width / 2) - 0.5)
-            .attr("y2", total_height - (detail_margin * 2))
+            .attr("y2", total_height - detail_margin)
             .attr("stroke", "blue")
             .attr("stroke-width", 1);
         svg.append("line")
@@ -915,14 +875,14 @@ function drawDetail() {
             .attr("x1", (detail_margin * 2) + (((total_width / 2) - (detail_margin * 3)) / 2))
             .attr("y1", detail_margin)
             .attr("x2", (total_width / 4) + (detail_margin / 2) - 0.5)
-            .attr("y2", total_height - (detail_margin * 2))
+            .attr("y2", total_height - detail_margin)
             .attr("stroke", "blue")
             .attr("stroke-width", 1);
         svg.append("line")
             .attr("class", "detail")
             .attr("x1", detail_margin)
             .attr("y1", (total_height / 2) - 0.5)
-            .attr("x2", total_width - (detail_margin * 2))
+            .attr("x2", total_width - detail_margin)
             .attr("y2", (total_height / 2) - 0.5)
             .attr("stroke", "blue")
             .attr("stroke-width", 1);
@@ -933,7 +893,7 @@ function drawDetail() {
     svg.append("rect")
         .attr("class", "detail compare-button")
         .attr("x", (total_width / 4) + (detail_margin / 2) - (compareWidth / 2))
-        .attr("y", (detail_margin * 3) + HEIGHT)
+        .attr("y", (detail_margin * 4) + HEIGHT)
         .attr("width", compareWidth + 5)
         .attr("height", HEIGHT)
         .attr("rx", 5)
@@ -943,14 +903,14 @@ function drawDetail() {
     svg.append("text")
         .attr("class", "detail compare-button")
         .attr("x", (total_width / 4) + (detail_margin / 2) - (compareWidth / 2) + 2.5)
-        .attr("y", (detail_margin * 3) + HEIGHT + (HEIGHT * .7))
+        .attr("y", (detail_margin * 4) + HEIGHT + (HEIGHT * .7))
         .style("font-size", "14px")
         .style("fill", black)
         .text("compared to..");
     svg.append("rect")
         .attr("class", "detail compare-button")
         .attr("x", (total_width / 4) + (detail_margin / 2) - (compareWidth / 2))
-        .attr("y", (detail_margin * 3) + HEIGHT)
+        .attr("y", (detail_margin * 4) + HEIGHT)
         .attr("width", compareWidth + 5)
         .attr("height", HEIGHT)
         .attr("rx", 5)
@@ -1442,115 +1402,11 @@ function highlightActivations(percent, similar) {
     $(".compare-dial-count").text(count);
 }
 
-function drawMainSequence() {
-    var y_placement = detail_margin + (HEIGHT * 0.7);
-    $(".main-wheel").remove();
-    var position = 0;
-    var datums = main_sequence.map(word => ({position: position++, word: word}));
-    svg.selectAll(".main-wheel")
-        .data(datums)
-        .enter()
-            .append("text")
-            .attr("id", function (d) { return "main-wheel-position-" + d.position; })
-            .attr("class", "main-wheel")
-            .attr("x", 0)
-            .attr("y", -20)
-            .style("font-size", "16px")
-            .style("fill", black)
-            .text(function(d) { return d.word; });
-    var middle_index = Math.floor(main_sequence.length / 2);
-    var center_item_width = textWidth(main_sequence[middle_index], 16);
-    var running_width = (center_item_width / 2);
-    $("#main-wheel-position-" + middle_index)
-        .attr("x", (total_width / 2) - running_width)
-        .attr("y", y_placement);
-    var space_width = textWidth("&nbsp;", 16) + 2;
-    for (var i = 1; i <= middle_index; i++) {
-        var item_width = textWidth(main_sequence[middle_index - i], 16);
-        running_width += item_width + space_width;
-        $("#main-wheel-position-" + (middle_index - i))
-            .attr("x", (total_width / 2) - running_width)
-            .attr("y", y_placement);
-    }
-    running_width = (center_item_width / 2) + space_width;
-    for (var i = middle_index + 1; i <= main_sequence.length; i++) {
-        $("#main-wheel-position-" + i)
-            .attr("x", (total_width / 2) + running_width)
-            .attr("y", y_placement);
-        var item_width = textWidth(main_sequence[i], 16);
-        running_width += item_width + space_width;
-    }
-    $(".edit-button").remove();
-    var inputWidth = textWidth("edit..", 16);
-    svg.append("rect")
-        .attr("class", "edit-button")
-        .attr("x", (total_width / 2) + running_width - 20)
-        .attr("y", y_placement - (HEIGHT * .7))
-        .attr("width", inputWidth + 5)
-        .attr("height", HEIGHT)
-        .attr("rx", 5)
-        .attr("ry", 5)
-        .attr("stroke", "none")
-        .attr("fill", light_grey);
-    svg.append("text")
-        .attr("class", "edit-button")
-        .attr("x", (total_width / 2) + running_width + 2.5 - 20)
-        .attr("y", y_placement)
-        .style("font-size", "16px")
-        .style("fill", black)
-        .text("edit..");
-    svg.append("rect")
-        .attr("class", "edit-button")
-        .attr("x", (total_width / 2) + running_width - 20)
-        .attr("y", y_placement - (HEIGHT * .7))
-        .attr("width", inputWidth + 5)
-        .attr("height", HEIGHT)
-        .attr("rx", 5)
-        .attr("ry", 5)
-        .attr("stroke", dark_grey)
-        .attr("stroke-width", 1)
-        .attr("fill", "transparent")
-        .style("pointer-events", "bounding-box")
-        .on("mouseover", function(d) {
-            d3.select(this)
-                .style("cursor", "pointer");
-            d3.select(this)
-                .transition()
-                .duration(100)
-                .attr("stroke-width", 2);
-        })
-        .on("mouseout", function(d) {
-            d3.select(this)
-                .style("cursor", "auto");
-            d3.select(this)
-                .transition()
-                .duration(50)
-                .attr("stroke-width", 1);
-        })
-        .on("click", function(d) {
-            function acceptMainInput(sequence) {
-                $(".edit-button").remove();
-                var tail = main_sequence.length;
-                main_sequence = sequence;
-                trimSequenceTail(tail, main_sequence.length);
-                drawMainSequence();
-                drawWeightsFromSequence(0);
-                for (var timestep = 0; timestep < main_sequence.length; timestep++) {
-                    drawAutocomplete(timestep);
-                    var autocomplete = $("#autocomplete-" + timestep);
-                    autocomplete.find("input").val(main_sequence[timestep]);
-                }
-                drawAutocomplete(timestep);
-            }
-            drawInputModal(acceptMainInput, main_sequence);
-        });
-}
-
 var back_width_main = null;
 var back_width_compare = null;
 function drawSequenceWheel(main, sequence, timestep) {
     var x_offset = detail_margin * 2;
-    var y_offset = (detail_margin * 2) + (main ? 0 : HEIGHT + detail_margin);
+    var y_offset = (detail_margin * 3) + (main ? 0 : HEIGHT + detail_margin);
     var width = (total_width / 2) - (detail_margin * 3);
     var height = HEIGHT;
     var type_suffix = main ? "-main" : "-compare";
@@ -1622,21 +1478,29 @@ function drawSequenceWheel(main, sequence, timestep) {
         .style("fill", "none");
     var space_width = textWidth("&nbsp;", 14) + 2;
     for (var i = 1; i <= timestep; i++) {
-        var item_width = textWidth(sequence[timestep - i], 14);
-        back_width += item_width + space_width;
-        $("#position-" + (timestep - i) + type_suffix)
-            .attr("x", x_offset + (width / 2) - back_width)
-            .attr("y", y_offset + (height / 2) + (height / 4))
-            .css("opacity", 1.0 - (Math.max(i - 3, 0) * .2));
+        var opacity = 1.0 - (Math.max(i - 3, 0) * .2);
+
+        if (opacity > 0.0) {
+            var item_width = textWidth(sequence[timestep - i], 14);
+            back_width += item_width + space_width;
+            $("#position-" + (timestep - i) + type_suffix)
+                .attr("x", x_offset + (width / 2) - back_width)
+                .attr("y", y_offset + (height / 2) + (height / 4))
+                .css("opacity", opacity);
+        }
     }
     for (var i = timestep + 1; i < sequence.length; i++) {
-        front_width += space_width;
-        $("#position-" + i + type_suffix)
-            .attr("x", x_offset + (width / 2) + front_width)
-            .attr("y", y_offset + (height / 2) + (height / 4))
-            .css("opacity", 1.0 - (Math.max(i - timestep - 3, 0) * .2));
-        var item_width = textWidth(sequence[i], 14);
-        front_width += item_width;
+        var opacity = 1.0 - (Math.max(i - timestep - 3, 0) * .2);
+
+        if (opacity > 0) {
+            front_width += space_width;
+            $("#position-" + i + type_suffix)
+                .attr("x", x_offset + (width / 2) + front_width)
+                .attr("y", y_offset + (height / 2) + (height / 4))
+                .css("opacity", opacity);
+            var item_width = textWidth(sequence[i], 14);
+            front_width += item_width;
+        }
     }
 
     if (main) {
@@ -1653,14 +1517,14 @@ function drawSequenceWheel(main, sequence, timestep) {
         svg.append("text")
             .attr("class", "detail wheel-label")
             .attr("x", x_offset + (width / 2) - Math.max(back_width_main, back_width_compare) - item_width - 2)
-            .attr("y", (detail_margin * 2) + (height / 2) + (height / 4))
+            .attr("y", (detail_margin * 3) + (height / 2) + (height / 4))
             .style("font-size", "16px")
             .style("fill", black)
             .text(labelA);
         svg.append("text")
             .attr("class", "detail wheel-label")
             .attr("x", x_offset + (width / 2) - Math.max(back_width_main, back_width_compare) - item_width)
-            .attr("y", (detail_margin * 2) + HEIGHT + detail_margin + (height / 2) + (height / 4))
+            .attr("y", (detail_margin * 3) + HEIGHT + detail_margin + (height / 2) + (height / 4))
             .style("font-size", "16px")
             .style("fill", black)
             .text(labelB);
@@ -1784,7 +1648,7 @@ function drawAutocomplete(timestep) {
     $("#autocomplete-" + timestep).parent().remove();
     svg.append("foreignObject")
         .attr("class", "autocomplete")
-        .attr("transform", "translate(" + x_offset + "," + (y_offset + state_height - (HEIGHT / 2) - 1) + ")")
+        .attr("transform", "translate(" + x_offset + "," + (y_offset + state_height + (state_height / 4) - (HEIGHT / 2) - 1) + ")")
         .attr("width", input_width)
         .attr("height", HEIGHT)
         .append("xhtml:div")
@@ -1814,13 +1678,13 @@ function drawAutocomplete(timestep) {
 
             if (timestep >= main_sequence.length) {
                 main_sequence.push(textContent);
-                drawMainSequence();
                 drawAutocomplete(timestep + 1);
             } else {
                 main_sequence[timestep] = textContent;
             }
 
             drawWeightsFromSequence(0);
+            $("#main_input").val(main_sequence.join(" "));
         });
     })
     .on("keydown", function(e) {
@@ -1860,7 +1724,6 @@ function drawAutocomplete(timestep) {
                 } else {
                     if (timestep >= main_sequence.length) {
                         main_sequence.push(textContent);
-                        drawMainSequence();
                         drawAutocomplete(timestep + 1);
                     } else {
                         main_sequence[timestep] = textContent;
@@ -1868,6 +1731,7 @@ function drawAutocomplete(timestep) {
                 }
 
                 drawWeightsFromSequence(0);
+                $("#main_input").val(main_sequence.join(" "));
             }
         }
 
@@ -1891,6 +1755,8 @@ function trimSequenceTail(old_sequence_length, new_sequence_length) {
 
 function drawWeightsFromSequence(timestep) {
     console.log("Full sequence: " + main_sequence);
+    $(".components").remove();
+    drawSubTitle("Components", "components");
 
     for (var s = timestep; s < main_sequence.length; s++) {
         var slice = main_sequence.slice(0, s + 1);
@@ -1915,7 +1781,7 @@ function drawInputModal(callback, edit_sequence) {
         .attr("stroke", black)
         .attr("stroke-width", 2)
         .attr("fill", "white");
-    drawClose(x_offset + width, y_offset, (state_width / 4), "modal", function () {
+    drawClose(x_offset, y_offset, (state_width / 4), "modal", function () {
         $(".modal").remove();
     });
     svg.append("foreignObject")
@@ -1927,6 +1793,7 @@ function drawInputModal(callback, edit_sequence) {
         .attr("id", "sequence-inputter");
     var sequenceInputter = $("#sequence-inputter");
     sequenceInputter.append("<input class=':focus'/>");
+    sequenceInputter.find("input").focus();
 
     if (edit_sequence != null) {
         sequenceInputter.find("input").val(edit_sequence.join(" "));
@@ -1938,7 +1805,7 @@ function drawInputModal(callback, edit_sequence) {
             sequence = sequenceInputter.find("input")
                 .val()
                 .toLowerCase()
-                .split(" ");
+                .split(/\W+/);
             $(".modal").remove();
             callback(sequence);
         }
@@ -1993,7 +1860,7 @@ function getGeometry(timestep, part, layer) {
             break;
         case "softmax":
             // For the 2 layers v
-            b = {x: x_offset + (2 * state_width * 17) + (state_width * 3 / 2), y: y_offset + (state_height * 3 / 4)};
+            b = {x: x_offset + (state_width * 19) + layer_offset, y: y_offset + (state_height * 3 / 4)};
             break;
         default:
             return null;
