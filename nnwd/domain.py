@@ -136,6 +136,8 @@ class NeuralNetwork:
         self.test_xys = [mlbase.Xy(*pair) for pair in test_xys]
         self.epoch_threshold = epoch_threshold
         self.setup_complete = False
+        self.embedding_padding = tuple([0] * max(0, NeuralNetwork.HIDDEN_WIDTH - NeuralNetwork.EMBEDDING_WIDTH))
+        self.hidden_padding = tuple([0] * max(0, NeuralNetwork.EMBEDDING_WIDTH - NeuralNetwork.HIDDEN_WIDTH))
         self._background_setup = threading.Thread(target=self._setup)
         self._background_setup.daemon = True
         self._background_setup.start()
@@ -244,7 +246,7 @@ class NeuralNetwork:
     def _train_predictor(self):
         part_labels = mlbase.Labels(set(NeuralNetwork.INSTRUMENTS))
         layer_labels = mlbase.Labels(set(range(NeuralNetwork.LAYERS)))
-        hidden_vector = mlbase.VectorField(NeuralNetwork.HIDDEN_WIDTH)
+        hidden_vector = mlbase.VectorField(max(NeuralNetwork.HIDDEN_WIDTH, NeuralNetwork.EMBEDDING_WIDTH))
         predictor_input = mlbase.ConcatField([part_labels, layer_labels, hidden_vector])
         predictor_output = mlbase.Labels(set(self.words.labels()))
         hyper_parameters = ffnn.HyperParameters() \
@@ -283,13 +285,13 @@ class NeuralNetwork:
                     # We need predictor samples for both "was" and "is", but if we use the actual lstm prediction this will fixate on just one of these.
                     prediction = xy.y[i]
                     result, instruments = stepwise_lstm.step(word, NeuralNetwork.INSTRUMENTS)
-                    x = ("embedding", 0, tuple(instruments["embedding"]))
+                    x = ("embedding", 0, tuple(instruments["embedding"]) + self.embedding_padding)
                     train_xy = mlbase.Xy(x, prediction)
                     predictor_xys += [train_xy]
 
                     for part in NeuralNetwork.LSTM_PARTS:
                         for layer in range(NeuralNetwork.LAYERS):
-                            point = tuple(instruments[part][layer])
+                            point = tuple(instruments[part][layer]) + self.hidden_padding
                             x = (part, layer, point)
                             train_xy = mlbase.Xy(x, prediction)
                             predictor_xys += [train_xy]
@@ -432,7 +434,7 @@ class NeuralNetwork:
         return mappings
 
     def predict_distributions(self, distance, points):
-        xs = [self.decode_key(key) + (point,) for key, point in points.items()]
+        xs = [self.decode_key(key) + (tuple(point) + (self.embedding_padding if self.decode_key(key)[0] == "embedding" else self.hidden_padding),) for key, point in points.items()]
         results = self.predictor.evaluate(xs)
         distribution_predictions = {}
 
@@ -696,6 +698,8 @@ class NeuralNetwork:
 
 
 class QueryEngine:
+    TOP = 25
+
     def __init__(self):
         self.activation_data = None
         self.thresholds = {}
@@ -757,7 +761,7 @@ class QueryEngine:
 
             rollups[(matched_words, elides)] += 1
 
-        return SequenceRollup([SequenceMatch(key[0], key[1], value) for key, value in sorted(rollups.items(), key=lambda item: item[1], reverse=True)])
+        return SequenceRollup([SequenceMatch(key[0], key[1], value) for key, value in sorted(rollups.items(), key=lambda item: item[1], reverse=True)[:QueryEngine.TOP]])
 
     def find_matches(self, predicates):
         required_level_units = []
@@ -854,7 +858,6 @@ class QueryEngine:
     def _get_threshold(self, size):
         if size not in self.thresholds:
             self.thresholds[size] = geometry.distance([0] * size, [.1] * size)
-            print(self.thresholds)
 
         return self.thresholds[size]
 
