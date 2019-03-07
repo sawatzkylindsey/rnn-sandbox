@@ -824,7 +824,7 @@ class QueryEngine:
             previous_level = required_level_units[requirement_index - 1][0]
             assert previous_level <= current_level_unit[0]
 
-            if previous_level == current_requirment[0]:
+            if previous_level == current_level_unit[0]:
                 monotonically_increasing = lambda ap: ap.index == match_index
             else:
                 monotonically_increasing = lambda ap: ap.index > match_index

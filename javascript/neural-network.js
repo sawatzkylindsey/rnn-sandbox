@@ -1,6 +1,7 @@
 
 var MEMORY_CHIP_HEIGHT = 5;
 var MEMORY_CHIP_WIDTH = 2;
+var DETAIL_CHIP_WIDTH = 5;
 var total_width = null;
 var total_height = null;
 var detail_margin = 10;
@@ -12,6 +13,7 @@ var HEIGHT = 20;
 var circle_radius = 8;
 var state_width = 30;
 var state_height = layer_height / 3.0;
+state_height = 50;
 if ((state_height / MEMORY_CHIP_HEIGHT) != (state_width / MEMORY_CHIP_WIDTH)) {
     throw "chips aren't square (" + (state_width / MEMORY_CHIP_WIDTH) + ", " + (state_height / MEMORY_CHIP_HEIGHT) + ")";
 }
@@ -1609,9 +1611,9 @@ function drawWeightDetail(data, placement) {
     /*if ((h / MEMORY_CHIP_HEIGHT) != (w / MEMORY_CHIP_WIDTH)) {
         throw "chips aren't square (" + (w / MEMORY_CHIP_WIDTH) + ", " + (h / MEMORY_CHIP_HEIGHT) + ")";
     }*/
-    if (data.full.vector.length % 5 != 0) {
-        throw "vector length (" + data.full.vector.length + ") must be divisible by 2";
-    }
+    /*if (data.full.vector.length % MEMORY_CHIP_WIDTH != 0) {
+        throw "vector length (" + data.full.vector.length + ") must be divisible by " + MEMORY_CHIP_WIDTH;
+    }*/
     var classes = "detail load" + (placement == null ? "" : " " + placement);
     var linker_suffix = placement == null ? "-top" : "-" + placement;
     drawStateWidget(null, miniGeometry, null, data.mini.minimum, data.mini.maximum, data.mini.vector, data.mini.colour, data.mini.predictions, classes, MEMORY_CHIP_WIDTH, MEMORY_CHIP_HEIGHT, null, null, null, linker_suffix, null);
@@ -1638,7 +1640,7 @@ function drawWeightDetail(data, placement) {
     var new_variance_minimum = Math.min(variance_lower_top, variance_lower_bottom);
     var new_variance_maximum = Math.max(variance_upper_top, variance_upper_bottom);
     classes += " comparison";
-    drawStateWidget(null, fullGeometry, null, new_variance_minimum, new_variance_maximum, data.full.vector, null, null, classes, 5, data.full.vector.length / 5, null, null, data.back_links, linker_suffix, placement);
+    drawStateWidget(null, fullGeometry, null, new_variance_minimum, new_variance_maximum, data.full.vector, null, null, classes, DETAIL_CHIP_WIDTH, data.full.vector.length / DETAIL_CHIP_WIDTH, null, null, data.back_links, linker_suffix, placement);
 
     if (new_variance_minimum != variance_minimum || new_variance_maximum != variance_maximum) {
         variance_minimum = new_variance_minimum;
