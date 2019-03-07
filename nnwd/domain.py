@@ -182,7 +182,7 @@ class NeuralNetwork:
                 else:
                     best_loss = None
                     self.lstm.load(lstm_dir, version)
-                    mini_epochs = max(5, int(self.epoch_threshold * 0.25))
+                    mini_epochs = 5
                     smaller_batch = max(8, int(batch * 0.8))
                     smaller_loss, smaller_perplexity = self.lstm_train_loop(smaller_batch, mini_epochs, False)
                     logging.debug("mini train lstm smaller (batch %d): (loss, perplexity) (%s, %s)" % (smaller_batch, smaller_loss, smaller_perplexity))
@@ -259,7 +259,7 @@ class NeuralNetwork:
         else:
             self.predictor_xys = self._get_predictor_data()
             training_parameters = mlbase.TrainingParameters() \
-                .epochs(self.epoch_threshold) \
+                .epochs(100) \
                 .batch(32)
             # Technically not complete yet, but with the predictor setup it can start answering queries.
             self.setup_complete = True
