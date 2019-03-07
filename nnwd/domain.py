@@ -161,18 +161,20 @@ class NeuralNetwork:
             self.lstm.load(lstm_dir)
         else:
             perplexity_validation = None
+            best_perplexity = None
             best_loss = None
             batch = 32
             arc = -1
             version = -1
 
-            while arc < 6:
+            while arc < 12:
                 arc += 1
                 logging.debug("train lstm arc %d (batch %d)" % (arc, batch))
                 loss, perplexity = self.lstm_train_loop(batch, self.epoch_threshold, True)
                 logging.debug("train lstm arc %d (batch %d): (loss, perplexity) (%s, %s)" % (arc, batch, loss, perplexity))
 
-                if best_loss is None or loss < best_loss:
+                if best_perplexity is None or perplexity < best_perplexity:
+                    best_perplexity = perplexity
                     best_loss = loss
                     perplexity_validation = perplexity
                     version += 1
@@ -180,7 +182,7 @@ class NeuralNetwork:
                 else:
                     best_loss = None
                     self.lstm.load(lstm_dir, version)
-                    mini_epochs = max(1, int(self.epoch_threshold * 0.25))
+                    mini_epochs = max(5, int(self.epoch_threshold * 0.25))
                     smaller_batch = max(8, int(batch * 0.8))
                     smaller_loss, smaller_perplexity = self.lstm_train_loop(smaller_batch, mini_epochs, False)
                     logging.debug("mini train lstm smaller (batch %d): (loss, perplexity) (%s, %s)" % (smaller_batch, smaller_loss, smaller_perplexity))
@@ -322,6 +324,7 @@ class NeuralNetwork:
                             activation_data += [ActivationPoint(sequence=sequence, expectation=xy.y[i], prediction=result.prediction, part=part, layer=layer, index=i, point=point)]
 
             pickler.dump(activation_data, activation_data_file)
+            pickler.dump({}, activation_data_file + ".marker")
 
         logging.debug("Activation data: %d." % len(activation_data))
         return activation_data
@@ -703,7 +706,7 @@ class QueryEngine:
     def _setup(self):
         activation_data_file = os.path.join(RESUME_DIR, "activation_data.pickle")
 
-        while not os.path.exists(activation_data_file):
+        while not os.path.exists(activation_data_file + ".marker"):
             time.sleep(1)
 
         self.activation_data = pickler.load(activation_data_file)
