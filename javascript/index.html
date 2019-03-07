@@ -4,9 +4,8 @@
     <link rel="stylesheet" type="text/css" href="style.css"/>
 </head>
 <script src="js/d3.min.js"></script>
-<script  src="js/jquery-3.2.1.min.js"></script>
+<script src="js/jquery-3.2.1.min.js"></script>
 <script src="neural-network.js"></script>
-<script src="https://d3js.org/d3.v4.min.js"></script>
 <script>
 var TOTAL_WIDTH=1420;
 var TOTAL_HEIGHT=720;
@@ -21,8 +20,14 @@ var TOP_HEIGHT=40;
         </div>
     </div>
     <div id="lefter" class="floating" style="width: 220px;">
-        <div style="text-align: center; margin: 5px;">Notation</div>
-        <table style="border-spacing: 5px;" align="center">
+        <div id="query" style="text-align: center; padding: 1px; border-bottom-style: solid; border-width: 1px;">Query</div>
+        <div id="query-content" style="display: none;" align="center">
+            <span id="query-starter">View unit details to start building.</span>
+            <svg id="query-builder" style="width: 200px; height: 600px; display: none;"/>
+        </div>
+        <div id="notation" style="text-align: center; padding: 1px; border-width: 1px;">Notation</div>
+        <div id="notation-content" align="center">
+        <table style="border-spacing: 5px;">
             <tr>
             <td>
                 <img src="latex-fixed/embedding.png" style="transform: translateX(8px);"/>
@@ -79,6 +84,7 @@ var TOP_HEIGHT=40;
             </td>
             </tr>
         </table>
+        </div>
     </div>
 </body>
 

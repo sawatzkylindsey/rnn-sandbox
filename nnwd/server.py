@@ -101,6 +101,7 @@ def run(port, words, neural_network):
         "weights": handlers.Weights(neural_network),
         "weight-detail": handlers.WeightDetail(neural_network),
         "words": handlers.Words(words.labels()),
+        "sequences": handlers.Sequences(domain.QueryEngine()),
     }
     user_log.info('Starting httpd %d...' % port)
     httpd.serve_forever()

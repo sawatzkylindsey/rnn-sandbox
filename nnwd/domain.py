@@ -11,14 +11,16 @@ import os
 import pdb
 import random
 from sklearn.manifold import TSNE
+import string
 import threading
+import time
 
 from ml import base as mlbase
 from ml import nlp
 from ml import nn as ffnn
 from nnwd import geometry
 from nnwd import latex
-from nnwd.models import Timestep, WeightExplain, WeightDetail, HiddenState, LabelDistribution
+from nnwd.models import Timestep, WeightExplain, WeightDetail, HiddenState, LabelDistribution, SequenceRollup, SequenceMatch
 from nnwd import pickler
 from nnwd import rnn
 from pytils.log import setup_logging, user_log
@@ -27,6 +29,7 @@ from pytils import adjutant, check
 
 RESUME_DIR = ".resume"
 ActivationPoint = collections.namedtuple("ActivationPoint", ["sequence", "expectation", "prediction", "part", "layer", "index", "point"])
+MatchPoint = collections.namedtuple("MatchPoint", ["distance", "word", "index", "prediction", "expectation"])
 
 
 def create(corpus_stream, epochs, verbose):
@@ -687,4 +690,168 @@ class NeuralNetwork:
             return "x_%d^%d" % (timestep, layer)
         elif part == "softmax":
             return "y_%d" % timestep
+
+
+class QueryEngine:
+    def __init__(self):
+        self.activation_data = None
+        self.thresholds = {}
+        self._background_setup = threading.Thread(target=self._setup)
+        self._background_setup.daemon = True
+        self._background_setup.start()
+
+    def _setup(self):
+        activation_data_file = os.path.join(RESUME_DIR, "activation_data.pickle")
+
+        while not os.path.exists(activation_data_file):
+            time.sleep(1)
+
+        self.activation_data = pickler.load(activation_data_file)
+        self.units = {}
+        self.sequence_units = {}
+
+        for activation_point in self.activation_data:
+            sequence = tuple(activation_point.sequence)
+            unit = (activation_point.part, activation_point.layer)
+            sequence_unit = (sequence,) + unit
+
+            if sequence_unit not in self.sequence_units:
+                self.sequence_units[sequence_unit] = []
+
+            if unit not in self.units:
+                self.units[unit] = []
+
+            self.sequence_units[sequence_unit] += [activation_point]
+            self.units[unit] += [activation_point]
+
+    def find(self, predicates):
+        matches = self.find_matches(predicates)
+        rollups = {}
+
+        for sequence, result in matches:
+            matched_words = []
+            elides = []
+            last_index = None
+
+            for match_point in result:
+                matched_words += [sequence[match_point.index]]
+
+                if last_index is None:
+                    elides += [match_point.index != 0]
+                elif last_index + 1 == match_point.index:
+                    elides += [False]
+                else:
+                    elides += [True]
+
+                last_index = match_point.index
+
+            elides += [last_index + 1 != len(sequence)]
+            matched_words = tuple(matched_words)
+            elides = tuple(elides)
+
+            if (matched_words, elides) not in rollups:
+                rollups[(matched_words, elides)] = 0
+
+            rollups[(matched_words, elides)] += 1
+
+        return SequenceRollup([SequenceMatch(key[0], key[1], value) for key, value in sorted(rollups.items(), key=lambda item: item[1], reverse=True)])
+
+    def find_matches(self, predicates):
+        required_level_units = []
+        matched_activations = {}
+        matched_sequences = None
+
+        for level, predicate in enumerate(predicates):
+            for unit, features in predicate.items():
+                level_unit = (level,) + unit
+                required_level_units += [level_unit]
+                found = set()
+
+                for activation_point in self._candidates(unit, matched_sequences):
+                    sub_point = [activation_point.point[axis] for axis, target in features]
+                    target_point = [target for axis, target in features]
+                    distance = geometry.distance(sub_point, target_point)
+                    threshold = self._get_threshold(len(features))
+
+                    if distance < threshold:
+                        sequence = tuple(activation_point.sequence)
+                        found.add(sequence)
+
+                        if sequence not in matched_activations:
+                            matched_activations[sequence] = {}
+
+                        if level_unit not in matched_activations[sequence]:
+                            matched_activations[sequence][level_unit] = []
+
+                        matched_activations[sequence][level_unit] += [(distance, activation_point)]
+
+                if matched_sequences is None:
+                    matched_sequences = found
+                    logging.debug("matched_sequences: %d" % len(matched_sequences))
+                else:
+                    matched_sequences.intersection_update(found)
+                    logging.debug("matched_sequences: %d" % len(matched_sequences))
+
+        logging.debug("matched_activation keys: %s" % str([key for key in matched_activations.keys()]))
+        logging.debug("matched_activation units: %s" % str([subd.keys() for subd in matched_activations.values()]))
+        matches = []
+
+        for sequence, level_unit_instances in matched_activations.items():
+            results = self.find_match_points(required_level_units, level_unit_instances, 0, None)
+
+            for result in results:
+                logging.debug("matched %.8f: %s" % (sum([match_point[0] for match_point in result]), result))
+                matches += [(sequence, result)]
+
+        return matches
+
+    def find_match_points(self, required_level_units, level_unit_instances, requirement_index, match_index):
+        results = []
+        current_level_unit = required_level_units[requirement_index]
+
+        # This case doesn't even have instances across all the constraining level_units (level, part, layer) - definitely can't be satisified.
+        if len(level_unit_instances) < len(required_level_units):
+            return []
+
+        if requirement_index > 0:
+            previous_level = required_level_units[requirement_index - 1][0]
+            assert previous_level <= current_level_unit[0]
+
+            if previous_level == current_requirment[0]:
+                monotonically_increasing = lambda ap: ap.index == match_index
+            else:
+                monotonically_increasing = lambda ap: ap.index > match_index
+        else:
+            monotonically_increasing = lambda ap: True
+
+        for instance in level_unit_instances[current_level_unit]:
+            distance, activation_point = instance
+
+            if match_index is None or monotonically_increasing(activation_point):
+                word = activation_point.sequence[activation_point.index]
+
+                # If we're at the final constraint.
+                if requirement_index + 1 == len(required_level_units):
+                    # Found
+                    results += [[MatchPoint(distance=distance, word=word, index=activation_point.index, prediction=activation_point.prediction, expectation=activation_point.expectation)]]
+                else:
+                    sub_results = self.find_match_points(required_level_units, level_unit_instances, requirement_index + 1, activation_point.index)
+
+                    for r in sub_results:
+                        results += [[MatchPoint(distance=distance, word=word, index=activation_point.index, prediction=None, expectation=None)] + r]
+
+        return results
+
+    def _candidates(self, unit, matched_sequences):
+        if matched_sequences is None:
+            return self.units[unit]
+        else:
+            return adjutant.flat_map([self.sequence_units[(sequence,) + unit] for sequence in matched_sequences])
+
+    def _get_threshold(self, size):
+        if size not in self.thresholds:
+            self.thresholds[size] = geometry.distance([0] * size, [.1] * size)
+            print(self.thresholds)
+
+        return self.thresholds[size]
 

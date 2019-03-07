@@ -122,6 +122,31 @@ class WeightDetail:
         }
 
 
+class SequenceRollup:
+    def __init__(self, sequence_matches):
+        self.sequence_matches = sequence_matches
+
+    def as_json(self):
+        return {
+            "sequences": [sm.as_json() for sm in self.sequence_matches]
+        }
+
+
+class SequenceMatch:
+    def __init__(self, matches, elides, count):
+        assert len(elides) == len(matches) + 1
+        self.matches = matches
+        self.elides = elides
+        self.count = check.check_gte(count, 1)
+
+    def as_json(self):
+        return {
+            "matches": self.matches,
+            "elides": self.elides,
+            "count": self.count
+        }
+
+
 def canonicalize_bounds(min_max, vector):
     if min_max[0] is None:
         minimum = min(vector)

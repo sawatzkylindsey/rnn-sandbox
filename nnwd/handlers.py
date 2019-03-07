@@ -59,3 +59,29 @@ class WeightExplain:
         return self.neural_network.weight_explain(sequence, name, column)
 
 
+class Sequences:
+    def __init__(self, query_engine):
+        self.query_engine = query_engine
+
+    def get(self, data):
+        predicate_strs = data["predicate"]
+        predicates = []
+
+        for predicate_str in predicate_strs:
+            parts = {}
+
+            for unit_targets in predicate_str.split(";"):
+                unit, targets = unit_targets.split("|")
+                part, layer = unit.split(",")
+                features = set()
+
+                for target in targets.split(","):
+                    axis, value = target.split(":")
+                    features.add((int(axis), float(value)))
+
+                parts[(part, int(layer))] = features
+
+            predicates += [parts]
+
+        return self.query_engine.find(predicates)
+

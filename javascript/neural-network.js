@@ -22,6 +22,7 @@ var dark_grey = "#7e7e7e";
 var light_grey = "#bdbdbd";
 var dark_red = "#e60000";
 var light_red = "#ff1919";
+var dark_blue = "#0000e6";
 var debug = window.location.hash.substring(1) == "debug";
 var svg = null;
 var main_sequence = [];
@@ -31,6 +32,15 @@ var compare_timestep = null;
 var input_part = null;
 var input_layer = null;
 var words = null;
+var qb_width = 200;
+var qb_height = 600;
+var predicate_margin = 10;
+var predicate_width = qb_width - (predicate_margin * 2);
+var predicate_height = 40;
+var queryBuilder = null;
+var query = null;
+var query_timestep = null;
+var maximum_query_length = 6;
 
 $(document).ready(function () {
     total_width = TOTAL_WIDTH - LEFT_WIDTH;
@@ -43,6 +53,7 @@ $(document).ready(function () {
         .style('position', 'absolute')
         .style("width", total_width)
         .style('height', total_height);
+    queryBuilder = d3.select("#query-builder");
 
     // arrow head definition
     svg.insert('defs', ':first-child')
@@ -83,7 +94,265 @@ $(document).ready(function () {
             acceptMainInput(sequence);
         }
     });
+    $("#query").css("cursor", "pointer")
+        .on("click", function(d) {
+            swapTab($(this), $("#notation"));
+            $("#query-content").css("display", "block");
+            $("#notation-content").css("display", "none");
+        });
+    $("#notation")
+        .on("click", function(d) {
+            swapTab($(this), $("#query"));
+            $("#query-content").css("display", "none");
+            $("#notation-content").css("display", "block");
+        });
+    queryBuilderControls();
+    addPredicateTemplate();
 });
+
+function queryBuilderControls() {
+    queryBuilder.append("text")
+        .attr("x", (qb_width / 2) - (textWidth("execute", 14) / 2))
+        .attr("y", predicate_margin + 14)
+        .style("font-size", "14px")
+        .style("fill", black)
+        .text("execute");
+    queryBuilder.append("rect")
+        .attr("x", (qb_width / 2) - (textWidth("execute", 14) / 2) - 5)
+        .attr("y", predicate_margin)
+        .attr("width", textWidth("execute", 14) + 10)
+        .attr("height", HEIGHT)
+        .attr("rx", 5)
+        .attr("ry", 5)
+        .attr("stroke", dark_grey)
+        .attr("stroke-width", 1)
+        .attr("fill", "transparent")
+        .on("mouseover", function(d) {
+            if (query != null && query.length > 0) {
+                d3.select(this)
+                    .style("cursor", "pointer");
+                d3.select(this)
+                    .transition()
+                    .duration(100)
+                    .attr("stroke-width", 2);
+            }
+        })
+        .on("mouseout", function(d) {
+            if (query != null && query.length > 0) {
+                d3.select(this)
+                    .style("cursor", "auto");
+                d3.select(this)
+                    .transition()
+                    .duration(50)
+                    .attr("stroke-width", 1);
+            }
+        })
+        .on("click", function(d) {
+            if (query != null && query.length > 0) {
+                d3.selectAll(".predicate")
+                    .style("stroke", dark_grey);
+                d3.select(this)
+                    .style("cursor", "auto");
+                d3.select(this)
+                    .transition()
+                    .duration(50)
+                    .attr("stroke-width", 1);
+                closeDetail();
+                drawView("Sequence View", "sequence", function() {
+                    console.log("Drawing sequence for query:");
+                    console.log(query);
+                    d3.json("sequences?" + query.map(p => "predicate=" + predicateString(p)).join("&"))
+                        .get(function (error, data) { drawSequences(data); });
+                });
+            }
+        });
+}
+
+function predicateString(predicate) {
+    var units = [];
+
+    for (var unit in predicate) {
+        var values = [];
+
+        for (var feature in predicate[unit]) {
+            values.push(feature + ":" + predicate[unit][feature]);
+        }
+
+        units.push(unit + "|" + values.join(","));
+    }
+
+    return units.join(";");
+}
+
+function addPredicateTemplate() {
+    if (query == null) {
+        query = [];
+    }
+
+    if (query.length == maximum_query_length) {
+        return;
+    }
+
+    var index = query.length;
+    var x_offset = predicate_margin;
+    var y_offset = 60 + (index * predicate_height) + (index * predicate_margin * 2);
+    queryBuilder.append("circle")
+        .attr("class", "predicate predicate-highlightable predicate-" + index)
+        .attr("cx", x_offset + (predicate_width / 4))
+        .attr("cy", y_offset + (predicate_height / 2))
+        .attr("r", 5)
+        .attr("stroke", dark_grey)
+        .attr("stroke-width", 1)
+        .attr("fill", "transparent")
+        .on("mouseover", function(d) {
+            if (input_part != null) {
+                d3.select(this)
+                    .style("cursor", "pointer");
+                d3.select(this)
+                    .transition()
+                    .duration(100)
+                    .attr("stroke-width", 2);
+            }
+        })
+        .on("mouseout", function(d) {
+            if (input_part != null) {
+                d3.select(this)
+                    .style("cursor", "auto");
+                d3.select(this)
+                    .transition()
+                    .duration(50)
+                    .attr("stroke-width", 1);
+            }
+        })
+        .on("click", function(d) {
+            if (input_part != null) {
+                query_timestep = index;
+                d3.selectAll(".predicate-highlightable")
+                    .attr("stroke", dark_grey);
+                d3.selectAll(".activation-box")
+                    .attr("stroke", light_grey);
+                d3.selectAll(".predicate-" + index)
+                    .attr("stroke", dark_blue);
+            }
+        });
+    queryBuilder.append("line")
+        .attr("class", "predicate")
+        .attr("x1", x_offset + (predicate_width / 2))
+        .attr("y1", y_offset)
+        .attr("x2", x_offset + (predicate_width / 2))
+        .attr("y2", y_offset + predicate_height)
+        .attr("stroke", dark_grey)
+        .attr("stroke-width", 1);
+    queryBuilder.append("rect")
+        .attr("class", "predicate predicate-highlightable predicate-" + index)
+        .attr("x", x_offset)
+        .attr("y", y_offset)
+        .attr("width", predicate_width)
+        .attr("height", predicate_height)
+        .attr("rx", 5)
+        .attr("ry", 5)
+        .attr("stroke", dark_grey)
+        .attr("stroke-width", 1)
+        .attr("fill", "none");
+    updatePredicateCounts(index);
+    queryBuilder.append("line")
+        .attr("class", "predicate")
+        .attr("x1", x_offset + (predicate_width / 2) + (predicate_width / 4))
+        .attr("y1", y_offset + 10)
+        .attr("x2", x_offset + (predicate_width / 2) + (predicate_width / 4))
+        .attr("y2", y_offset + predicate_height - 10)
+        .attr("stroke", black)
+        .attr("stroke-width", 1);
+}
+
+function updatePredicateCounts(query_timestep) {
+    var units = 0;
+    var activations = 0;
+
+    for (var unit in query[query_timestep]) {
+        units += 1;
+
+        for (var feature in query[query_timestep][unit]) {
+            activations += 1;
+        }
+    }
+
+    $("#predicate-units-" + query_timestep).remove();
+    var x_offset = predicate_margin;
+    var y_offset = 60 + (query_timestep * predicate_height) + (query_timestep * predicate_margin * 2);
+    queryBuilder.append("text")
+        .attr("id", "predicate-units-" + query_timestep)
+        .attr("class", "predicate")
+        .attr("x", x_offset + (predicate_width / 2) + (predicate_width * 1 / 8) - (textWidth(units, 14) / 2))
+        .attr("y", y_offset + (predicate_height / 2) + 5)
+        .style("font-size", "14px")
+        .style("fill", black)
+        .text(units);
+    $("#predicate-activations-" + query_timestep).remove();
+    queryBuilder.append("text")
+        .attr("id", "predicate-activations-" + query_timestep)
+        .attr("class", "predicate")
+        .attr("x", x_offset + (predicate_width / 2) + (predicate_width * 3 / 8) - (textWidth(activations, 14) / 2))
+        .attr("y", y_offset + (predicate_height / 2) + 5)
+        .style("font-size", "14px")
+        .style("fill", black)
+        .text(activations);
+}
+
+function drawPredicateChip(query_timestep, x_offset, y_offset, width, height) {
+    var units = 0;
+    var activations = 0;
+
+    for (var unit in query[query_timestep]) {
+        units += 1;
+
+        for (var feature in query[query_timestep][unit]) {
+            activations += 1;
+        }
+    }
+
+    svg.append("rect")
+        .attr("class", "sequence")
+        .attr("x", x_offset)
+        .attr("y", y_offset)
+        .attr("width", width)
+        .attr("height", height)
+        .attr("rx", 5)
+        .attr("ry", 5)
+        .attr("stroke", dark_grey)
+        .attr("stroke-width", 1)
+        .attr("fill", light_grey);
+    svg.append("text")
+        .attr("class", "sequence")
+        .attr("x", x_offset + (width * 1 / 4) - (textWidth(units, 12) / 2))
+        .attr("y", y_offset + (height / 2) + 4)
+        .style("font-size", "12px")
+        .style("fill", black)
+        .text(units);
+    svg.append("text")
+        .attr("class", "sequence")
+        .attr("x", x_offset + (width * 3 / 4) - (textWidth(activations, 12) / 2))
+        .attr("y", y_offset + (height / 2) + 4)
+        .style("font-size", "12px")
+        .style("fill", black)
+        .text(activations);
+    svg.append("line")
+        .attr("class", "sequence")
+        .attr("x1", x_offset + (width / 2))
+        .attr("y1", y_offset + 5)
+        .attr("x2", x_offset + (width / 2))
+        .attr("y2", y_offset + height - 5)
+        .attr("stroke", black)
+        .attr("stroke-width", 1);
+}
+
+function swapTab(focused, other) {
+    focused.css("cursor", "auto")
+        .css("border-bottom-style", "none");
+    other.css("cursor", "pointer")
+        .css("border-bottom-style", "solid");
+    $("#lefter").prepend(other);
+}
 
 function drawTimestep(fake_timestep, data) {
     console.log("Timestep (fake, actual): (" + fake_timestep + ", " + data.timestep + ")");
@@ -92,7 +361,7 @@ function drawTimestep(fake_timestep, data) {
     $(".timestep-" + data.timestep).remove();
 
     if (data.timestep == 0) {
-        drawSubTitle("Components", "timestep-0 components");
+        drawSubTitle("Component View", "timestep-0 component");
     }
 
     /*for (var t=0; t < main_sequence.length - 1; t++) {
@@ -101,7 +370,7 @@ function drawTimestep(fake_timestep, data) {
 
     if (data.x_word != main_sequence[data.timestep]) {
         svg.append("text")
-            .attr("class", "timestep-" + data.timestep + " components")
+            .attr("class", "timestep-" + data.timestep + " component")
             .attr("x", x_margin + (input_width * 1 / 3))
             .attr("y", y_margin + (data.timestep * layer_height) + state_height + (state_height / 5) + HEIGHT + 5)
             .style("font-size", "14px")
@@ -119,7 +388,7 @@ function drawTimestep(fake_timestep, data) {
         // gridlines
         for (var x = 0; x <= total_width; x += state_width) {
             svg.append("line")
-                .attr("class", "timestep-" + data.timestep + " components")
+                .attr("class", "timestep-" + data.timestep + " component")
                 .attr("x1", x_offset + x - 0.05)
                 .attr("y1", y_offset)
                 .attr("x2", x_offset + x - 0.05)
@@ -130,7 +399,7 @@ function drawTimestep(fake_timestep, data) {
         }
         for (var y = 0; y <= layer_height; y += (state_height / 2.0)) {
             svg.append("line")
-                .attr("class", "timestep-" + data.timestep + " components")
+                .attr("class", "timestep-" + data.timestep + " component")
                 .attr("x1", x_offset)
                 .attr("y1", y_offset + y - 0.05)
                 .attr("x2", x_offset + total_width)
@@ -173,7 +442,7 @@ function drawHiddenState(data, part, layer) {
             hiddenState = data.units[part][layer];
         }
 
-        var classes = "timestep-" + data.timestep + " components";
+        var classes = "timestep-" + data.timestep + " component";
         drawStateWidget(data.timestep, geometry, hiddenState.name, hiddenState.minimum, hiddenState.maximum, hiddenState.vector, hiddenState.colour, hiddenState.predictions, classes,
             MEMORY_CHIP_WIDTH, MEMORY_CHIP_HEIGHT, part, layer, null, null, null);
     }
@@ -256,7 +525,7 @@ function drawStateWidget(timestep, geometry, name, min, max, vector, colour, pre
             main_timestep = timestep;
             input_part = part;
             input_layer = layer;
-            drawDetail();
+            drawView("Detail View", "detail", drawDetail);
         });
     }
 
@@ -313,12 +582,13 @@ function drawStateWidget(timestep, geometry, name, min, max, vector, colour, pre
             })
             .attr("stroke", "none")
             .attr("fill", dark_grey);
+    var active_unit = input_part + "," + (input_layer == null ? 0 : input_layer);
     // Chip's scaling box.
     svg.selectAll(".chip")
         .data(vector)
         .enter()
             .append("rect")
-            .attr("class", function(d) { return classes + " linker-" + (linker == null ? d.position : linker[d.position]) + (linker_suffix == null ? "" : linker_suffix); })
+            .attr("class", function(d) { return classes + " linker-" + (linker == null ? d.position : linker[d.position]) + (linker_suffix == null ? "" : linker_suffix) + " activation-box"; })
             .attr("x", function (d) { return x(d.position); })
             .attr("y", function (d) {
                 if (placement == null || placement == "top") {
@@ -341,22 +611,68 @@ function drawStateWidget(timestep, geometry, name, min, max, vector, colour, pre
             .style("pointer-events", "bounding-box")
             .on("mouseover", function(d) {
                 if (timestep == null) {
-                    var prefix = input_part + "," + input_layer + "|";
-                    console.log(prefix + d.position + ":" + d.value.toFixed(6));
-                    d3.selectAll(".linker-" + (linker == null ? d.position : linker[d.position]) + linker_suffix)
-                        .transition()
-                        .duration(100)
-                        .attr("stroke", black)
-                        .attr("stroke-width", stroke_width * 2);
+                    if (query_timestep != null) {
+                        if (linker != null) {
+                            $(this).css("cursor", "cell");
+                        }
+                    } else {
+                        d3.selectAll(".linker-" + (linker == null ? d.position : linker[d.position]) + linker_suffix)
+                            .transition()
+                            .duration(100)
+                            .attr("stroke", black)
+                            .attr("stroke-width", stroke_width * 2);
+                    }
                 }
             })
             .on("mouseout", function(d) {
                 if (timestep == null) {
-                    d3.selectAll(".linker-" + (linker == null ? d.position : linker[d.position]) + linker_suffix)
-                        .transition()
-                        .duration(50)
-                        .attr("stroke", light_grey)
-                        .attr("stroke-width", stroke_width);
+                    if (query_timestep != null) {
+                        if (linker != null) {
+                            $(this).css("cursor", "auto");
+                        }
+                    } else {
+                        d3.selectAll(".linker-" + (linker == null ? d.position : linker[d.position]) + linker_suffix)
+                            .transition()
+                            .duration(50)
+                            .attr("stroke", light_grey)
+                            .attr("stroke-width", stroke_width);
+                    }
+                }
+            })
+            .on("click", function(d) {
+                if (timestep == null) {
+                    if (query_timestep != null && linker != null) {
+                        if (query_timestep == query.length) {
+                            query.push({});
+                        }
+
+                        var predicate = query[query_timestep];
+
+                        if (!(active_unit in predicate)) {
+                            predicate[active_unit] = {};
+                        }
+
+                        var predicate_unit = predicate[active_unit];
+
+                        if (!(d.position in predicate_unit)) {
+                            predicate_unit[d.position] = d.value.toFixed(6);
+                            d3.select(this).attr("stroke", dark_blue);
+                        } else {
+                            delete predicate_unit[d.position];
+
+                            if (Object.keys(predicate_unit).length == 0) {
+                                delete predicate[active_unit];
+                            }
+
+                            d3.select(this).attr("stroke", light_grey);
+                        }
+
+                        updatePredicateCounts(query_timestep);
+
+                        if (query_timestep + 1 == query.length) {
+                            addPredicateTemplate();
+                        }
+                    }
                 }
             });
     // Chip's direction line.
@@ -413,7 +729,7 @@ function drawStateWidget(timestep, geometry, name, min, max, vector, colour, pre
 function drawSoftmax(data, part) {
     var geometry = getGeometry(data.timestep, part, 1);
     var labelWeightVector = data[part];
-    var classes = "timestep-" + data.timestep + " components";
+    var classes = "timestep-" + data.timestep + " component";
     drawPredictionWidget(data.timestep, geometry, labelWeightVector.name, labelWeightVector.minimum, labelWeightVector.maximum, labelWeightVector.vector, classes, false);
 }
 
@@ -465,15 +781,12 @@ function drawPredictionWidget(timestep, geometry, name, min, max, predictions, c
         .enter()
             .append("rect")
             .attr("class", classes + (subtle ? "" : " softmax") + " " + id_class)
-            .attr("x", function (d) {
-                return x(Math.min(0, d.value));
-            })
+            .attr("x", x(0))
             .attr("y", function (d) {
                 return y(d.position);
             })
-            .attr("width", function (d) {
-                return Math.abs(x(Math.min(0, d.value)) - x(Math.max(0, d.value)));
-            })
+            // TODO: Why is this more complicated than it needs to be?
+            .attr("width", function (d) { return x(d.value) - x(0); })
             .attr("height", y.bandwidth())
             .attr("stroke", black)
             .attr("stroke-width", stroke_width)
@@ -838,30 +1151,49 @@ function drawSubTitle(title, classes) {
         .text(title);
 }
 
-function drawDetail() {
-    $(".components").remove();
+function drawView(view_name, view_class, viewCallback) {
+    $(".component").remove();
+    $(".detail").remove();
+    $(".result").remove();
     $("#main_input").prop("disabled", true);
     svg.append("rect")
-        .attr("id", "detail-box")
-        .attr("class", "detail")
+        .attr("id", "view-box")
+        .attr("class", view_class)
         .attr("x", 0)
         .attr("y", 0)
         .attr("width", total_width)
         .attr("height", total_height)
         .attr("stroke", "none")
         .attr("fill", "white");
-    drawSubTitle("Detail", "detail");
+    drawSubTitle(view_name, view_class);
     $("svg").height(total_height);
-    drawClose(x_margin - circle_radius + 5, y_margin - circle_radius, circle_radius, "detail", function () {
-        $(".detail").remove();
+    drawClose(x_margin - circle_radius + 5, y_margin - circle_radius, circle_radius, view_class, function () {
+        $("." + view_class).remove();
         $(".modal").remove();
-        compare_sequence = [];
-        compare_timestep = null;
-        input_part = null;
-        input_layer = null;
+        closeSequence();
+        closeDetail();
         drawWeightsFromSequence(0);
         $("#main_input").prop("disabled", false);
     });
+    viewCallback()
+}
+
+function closeDetail() {
+    input_part = null;
+    input_layer = null;
+    compare_sequence = [];
+    compare_timestep = null;
+}
+
+function closeSequence() {
+    query_timestep = null;
+    d3.selectAll(".predicate-highlightable")
+        .attr("stroke", dark_grey);
+}
+
+function drawDetail() {
+    $("#query-starter").css("display", "none");
+    $("#query-builder").css("display", "block");
 
     if (debug) {
         svg.append("line")
@@ -1073,12 +1405,12 @@ function drawInsetPart(x_offset, y_offset, width, height, part, layer, colour, p
         })
         .on("mouseout", function(d) {
             if (input_part != part || (input_layer != layer)) {
-            d3.select(this)
-                .style("cursor", "auto");
-            d3.select(this)
-                .transition()
-                .duration(50)
-                .attr("stroke-width", 1);
+                d3.select(this)
+                    .style("cursor", "auto");
+                d3.select(this)
+                    .transition()
+                    .duration(50)
+                    .attr("stroke-width", 1);
             }
         })
         .on("click", function(d) {
@@ -1396,7 +1728,7 @@ function highlightActivations(percent, similar) {
             }
         }
 
-        var prefix = input_part + "," + input_layer + "|";
+        var prefix = input_part + "," + (input_layer == null ? 0 : input_layer) + "|";
         console.log("top: " + prefix + queryTop.join(","));
         console.log("bottom: " + prefix + queryBottom.join(","));
     }
@@ -1426,6 +1758,12 @@ function drawSequenceWheel(main, sequence, timestep) {
             .style("fill", "none");
     }
 
+    if (main) {
+        main_timestep = timestep;
+    } else {
+        compare_timestep = timestep;
+    }
+
     var position = 0;
     var datums = sequence.map(word => ({position: position++, word: word}));
     svg.selectAll(".wheel")
@@ -1450,12 +1788,6 @@ function drawSequenceWheel(main, sequence, timestep) {
                     .style("cursor", "auto");
             })
             .on("click", function(d) {
-                if (main) {
-                    main_timestep = d.position;
-                } else {
-                    compare_timestep = d.position;
-                }
-
                 drawSequenceWheel(main, sequence, d.position);
 
                 if (compare_sequence.length > 0) {
@@ -1881,5 +2213,97 @@ function textWidth(text, fontSize) {
     document.body.removeChild(temporaryDiv);
     temporaryDiv = null;
     return width;
+}
+
+function drawSequences(data) {
+    console.log(data);
+    var x_offset = 20;
+    var y_offset = 50;
+
+    for (var i=0; i < query.length; i++) {
+        drawPredicateChip(i, x_offset + (i * 2 * 80) + 80, y_offset, 80, 20);
+    }
+
+    function y(i) { return y_offset + 30 + (i * 20); }
+    var counts = [];
+    var total_count = 0;
+
+    for (var index in data.sequences) {
+        drawSequence(data.sequences[index], x_offset, y(index), 80, 20);
+        counts.push({position: index, count: data.sequences[index].count});
+        total_count += data.sequences[index].count;
+    }
+
+    var max = d3.max(counts, function(d) { return d.count; })
+    var x = d3.scaleLinear()
+        .domain([0, max])
+        .range([0, 80]);
+
+    svg.selectAll(".bar")
+        .data(counts)
+        .enter()
+            .append("rect")
+            .attr("class", "sequence")
+            .attr("x", x_offset + (query.length * 2 * 80) + 80)
+            .attr("y", function (d) {
+                return y(d.position);
+            })
+            .attr("width", function(d) {
+                return x(d.count);
+            })
+            .attr("height", 20)
+            .attr("stroke", black)
+            .attr("stroke-width", 1)
+            .attr("fill", "none");
+    svg.append("text")
+        .attr("class", "sequence")
+        .attr("x", x_offset + (query.length * 2 * 80) + 85)
+        .attr("y", function (d) {
+            return y(0) - 15;
+        })
+        .style("font-size", "14px")
+        .style("fill", black)
+        .text(total_count);
+    svg.selectAll(".bar")
+        .data(counts)
+        .enter()
+            .append("text")
+            .attr("class", "sequence")
+            .attr("x", x_offset + (query.length * 2 * 80) + 85)
+            .attr("y", function (d) {
+                return y(d.position) + 15;
+            })
+            .style("font-size", "14px")
+            .style("fill", black)
+            .text(function (d) { return d.count; });
+    closeSequence();
+    query = null;
+    $(".predicate").remove();
+    addPredicateTemplate();
+}
+
+function drawSequence(sequence_match, x_offset, y_offset, width, height) {
+    for (var i=0; i <= query.length; i++) {
+        if (sequence_match.elides[i]) {
+            svg.append("text")
+                .attr("class", "sequence")
+                .attr("x", x_offset + (i * 2 * width) + (width / 2) - (textWidth("...", 14) / 2))
+                .attr("y", y_offset + 15)
+                .style("font-size", "14px")
+                .style("fill", black)
+                .text("...");
+        }
+    }
+
+    for (var i=0; i < query.length; i++) {
+        var word = sequence_match.matches[i];
+        svg.append("text")
+            .attr("class", "sequence")
+            .attr("x", x_offset + (i * 2 * width) + 80 + (width / 2) - (textWidth(word, 14) / 2))
+            .attr("y", y_offset + 15)
+            .style("font-size", "14px")
+            .style("fill", black)
+            .text(word);
+    }
 }
 
