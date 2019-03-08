@@ -147,6 +147,16 @@ class SequenceMatch:
         }
 
 
+class Count:
+    def __init__(self, value):
+        self.value = value
+
+    def as_json(self):
+        return {
+            "count": self.value,
+        }
+
+
 def canonicalize_bounds(min_max, vector):
     if min_max[0] is None:
         minimum = min(vector)

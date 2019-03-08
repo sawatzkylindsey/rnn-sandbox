@@ -9,8 +9,16 @@ from pytils import check
 
 
 def distance(a, b):
+    return hypotenuse(deltas(a, b))
+
+
+def deltas(a, b):
     assert len(a) == len(b)
-    return math.sqrt(sum([(a[i] - b[i])**2 for i in range(0, len(a))]))
+    return [a[i] - b[i] for i in range(0, len(a))]
+
+
+def hypotenuse(vector):
+    return math.sqrt(sum([part**2 for part in vector]))
 
 
 def fit_point(reference_points, target_distances, epsilon=0.00001, visualize=False):

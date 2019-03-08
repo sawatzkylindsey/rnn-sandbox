@@ -59,12 +59,23 @@ class WeightExplain:
         return self.neural_network.weight_explain(sequence, name, column)
 
 
-class Sequences:
+class SequenceQuery:
     def __init__(self, query_engine):
         self.query_engine = query_engine
 
-    def get(self, data):
+    def parse(self, data):
         predicate_strs = data["predicate"]
+
+        if "tolerance" in data:
+            tolerance = float(data["tolerance"][0])
+        else:
+            tolerance = 0.1
+
+        if "method" in data:
+            method = data["method"][0]
+        else:
+            method = "flexible"
+
         predicates = []
 
         for predicate_str in predicate_strs:
@@ -83,5 +94,23 @@ class Sequences:
 
             predicates += [parts]
 
-        return self.query_engine.find(predicates)
+        return tolerance, method, predicates
+
+
+class SequenceMatchLowerBound(SequenceQuery):
+    def __init__(self, *args, **kwargs):
+        super(SequenceMatchLowerBound, self).__init__(*args, **kwargs)
+
+    def get(self, data):
+        tolerance, method, predicates = self.parse(data)
+        return self.query_engine.find_lower_bound(tolerance, method, predicates)
+
+
+class SequenceMatches(SequenceQuery):
+    def __init__(self, *args, **kwargs):
+        super(SequenceMatches, self).__init__(*args, **kwargs)
+
+    def get(self, data):
+        tolerance, method, predicates = self.parse(data)
+        return self.query_engine.find(tolerance, method, predicates)
 

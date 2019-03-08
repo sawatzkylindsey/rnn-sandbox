@@ -87,7 +87,7 @@ class ServerHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
 
-def run(port, words, neural_network):
+def run(port, words, neural_network, query_engine):
     class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
         pass
 
@@ -101,7 +101,8 @@ def run(port, words, neural_network):
         "weights": handlers.Weights(neural_network),
         "weight-detail": handlers.WeightDetail(neural_network),
         "words": handlers.Words(words.labels()),
-        "sequences": handlers.Sequences(domain.QueryEngine()),
+        "sequence-matches": handlers.SequenceMatches(query_engine),
+        "sequence-match-lower-bound": handlers.SequenceMatchLowerBound(query_engine),
     }
     user_log.info('Starting httpd %d...' % port)
     httpd.serve_forever()
@@ -120,7 +121,7 @@ def main(argv):
     setup_logging(".%s.log" % os.path.splitext(os.path.basename(__file__))[0], aargs.verbose, False, True, True)
     logging.debug(aargs)
     words, neural_network = domain.create(stream_input(aargs.corpus), aargs.epochs, aargs.verbose)
-    run(aargs.port, words, neural_network)
+    run(aargs.port, words, neural_network, domain.QueryEngine())
 
 
 def stream_input(input_file):

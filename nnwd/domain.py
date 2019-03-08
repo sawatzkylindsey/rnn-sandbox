@@ -20,7 +20,7 @@ from ml import nlp
 from ml import nn as ffnn
 from nnwd import geometry
 from nnwd import latex
-from nnwd.models import Timestep, WeightExplain, WeightDetail, HiddenState, LabelDistribution, SequenceRollup, SequenceMatch
+from nnwd.models import Timestep, WeightExplain, WeightDetail, HiddenState, LabelDistribution, SequenceRollup, SequenceMatch, Count
 from nnwd import pickler
 from nnwd import rnn
 from pytils.log import setup_logging, user_log
@@ -731,8 +731,12 @@ class QueryEngine:
             self.sequence_units[sequence_unit] += [activation_point]
             self.units[unit] += [activation_point]
 
-    def find(self, predicates):
-        matches = self.find_matches(predicates)
+    def find_lower_bound(self, tolerance, method, predicates):
+        matches = self.find_matches(tolerance, method, True, predicates)
+        return Count(len(matches))
+
+    def find(self, tolerance, method, predicates):
+        matches = self.find_matches(tolerance, method, False, predicates)
         rollups = {}
 
         for sequence, result in matches:
@@ -763,7 +767,7 @@ class QueryEngine:
 
         return SequenceRollup([SequenceMatch(key[0], key[1], value) for key, value in sorted(rollups.items(), key=lambda item: item[1], reverse=True)[:QueryEngine.TOP]])
 
-    def find_matches(self, predicates):
+    def find_matches(self, tolerance, method, first_only, predicates):
         required_level_units = []
         matched_activations = {}
         matched_sequences = None
@@ -775,12 +779,11 @@ class QueryEngine:
                 found = set()
 
                 for activation_point in self._candidates(unit, matched_sequences):
-                    sub_point = [activation_point.point[axis] for axis, target in features]
+                    candidate_point = [activation_point.point[axis] for axis, target in features]
                     target_point = [target for axis, target in features]
-                    distance = geometry.distance(sub_point, target_point)
-                    threshold = self._get_threshold(len(features))
+                    within, distance = self._measure(candidate_point, target_point, tolerance, method)
 
-                    if distance < threshold:
+                    if within:
                         sequence = tuple(activation_point.sequence)
                         found.add(sequence)
 
@@ -804,16 +807,15 @@ class QueryEngine:
         matches = []
 
         for sequence, level_unit_instances in matched_activations.items():
-            results = self.find_match_points(required_level_units, level_unit_instances, 0, None)
+            results = self.find_match_points(required_level_units, level_unit_instances, 0, None, first_only)
 
             for result in results:
-                logging.debug("matched %.8f: %s" % (sum([match_point[0] for match_point in result]), result))
+                logging.debug("matched %.8f: %s\n  %s" % (sum([match_point[0] for match_point in result]), result, " ".join(sequence)))
                 matches += [(sequence, result)]
 
         return matches
 
-    def find_match_points(self, required_level_units, level_unit_instances, requirement_index, match_index):
-        results = []
+    def find_match_points(self, required_level_units, level_unit_instances, requirement_index, match_index, first_only):
         current_level_unit = required_level_units[requirement_index]
 
         # This case doesn't even have instances across all the constraining level_units (level, part, layer) - definitely can't be satisified.
@@ -831,6 +833,8 @@ class QueryEngine:
         else:
             monotonically_increasing = lambda ap: True
 
+        results = []
+
         for instance in level_unit_instances[current_level_unit]:
             distance, activation_point = instance
 
@@ -841,11 +845,18 @@ class QueryEngine:
                 if requirement_index + 1 == len(required_level_units):
                     # Found
                     results += [[MatchPoint(distance=distance, word=word, index=activation_point.index, prediction=activation_point.prediction, expectation=activation_point.expectation)]]
+
+                    if first_only:
+                        break
                 else:
-                    sub_results = self.find_match_points(required_level_units, level_unit_instances, requirement_index + 1, activation_point.index)
+                    sub_results = self.find_match_points(required_level_units, level_unit_instances, requirement_index + 1, activation_point.index, first_only)
 
                     for r in sub_results:
+                        # Note, we don't need to worry about only adding to results once if first_only, because by definition len(sub_results) must only be 0 or 1.
                         results += [[MatchPoint(distance=distance, word=word, index=activation_point.index, prediction=None, expectation=None)] + r]
+
+                    if first_only and len(sub_results) > 0:
+                        break
 
         return results
 
@@ -855,9 +866,19 @@ class QueryEngine:
         else:
             return adjutant.flat_map([self.sequence_units[(sequence,) + unit] for sequence in matched_sequences])
 
-    def _get_threshold(self, size):
-        if size not in self.thresholds:
-            self.thresholds[size] = geometry.distance([0] * size, [.1] * size)
+    def _measure(self, candidate, target, tolerance, method):
+        check.check_lte(check.check_gte(tolerance, 0), 1)
+        check.check_one_of(method, ["flexible", "rigid"])
+        deltas = geometry.deltas(candidate, target)
+        distance = geometry.hypotenuse(deltas)
 
-        return self.thresholds[size]
+        if method == "flexible":
+            size = len(target)
+
+            if size not in self.thresholds:
+                self.thresholds[size] = geometry.distance([0] * size, [tolerance] * size)
+
+            return distance < self.thresholds[size], distance
+        else:
+            return all([part < tolerance for part in deltas]), distance
 

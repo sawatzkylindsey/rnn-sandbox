@@ -1,6 +1,6 @@
 
 var MEMORY_CHIP_HEIGHT = 5;
-var MEMORY_CHIP_WIDTH = 2;
+var MEMORY_CHIP_WIDTH = 3;
 var DETAIL_CHIP_WIDTH = 5;
 var total_width = null;
 var total_height = null;
@@ -25,7 +25,8 @@ var light_grey = "#bdbdbd";
 var dark_red = "#e60000";
 var light_red = "#ff1919";
 var dark_blue = "#0000e6";
-var debug = window.location.hash.substring(1) == "debug";
+var hash_parts = window.location.hash.substring(1).split(",");
+var debug = hash_parts.indexOf("debug") >= 0;
 var svg = null;
 var main_sequence = [];
 var main_timestep = null;
@@ -114,15 +115,30 @@ $(document).ready(function () {
 
 function queryBuilderControls() {
     queryBuilder.append("text")
-        .attr("x", (qb_width / 2) - (textWidth("execute", 14) / 2))
+        .attr("x", (qb_width / 2) - textWidth("execute", 14) - 10)
         .attr("y", predicate_margin + 14)
         .style("font-size", "14px")
         .style("fill", black)
         .text("execute");
+    queryBuilder.append("line")
+        .attr("x1", (qb_width / 2))
+        .attr("y1", predicate_margin)
+        .attr("x2", (qb_width / 2))
+        .attr("y2", predicate_margin + 20)
+        .attr("stroke", dark_grey)
+        .attr("stroke-width", 1);
+    queryBuilder.append("text")
+        .attr("id", "sequence-match-expected")
+        .attr("x", (qb_width / 2) + 10)
+        .attr("y", predicate_margin + 14)
+        .style("font-size", "14px")
+        .style("fill", black)
+        .text("-");
     queryBuilder.append("rect")
-        .attr("x", (qb_width / 2) - (textWidth("execute", 14) / 2) - 5)
+        .attr("id", "execute-box")
+        .attr("x", (qb_width / 2) - (textWidth("execute", 14)) - 15)
         .attr("y", predicate_margin)
-        .attr("width", textWidth("execute", 14) + 10)
+        .attr("width", textWidth("execute", 14) + textWidth("-", 14) + 30)
         .attr("height", HEIGHT)
         .attr("rx", 5)
         .attr("ry", 5)
@@ -160,10 +176,19 @@ function queryBuilderControls() {
                     .duration(50)
                     .attr("stroke-width", 1);
                 closeDetail();
-                drawView("Sequence View", "sequence", function() {
+                drawView("Sequence Matches View", "sequence", function() {
                     console.log("Drawing sequence for query:");
                     console.log(query);
-                    d3.json("sequences?" + query.map(p => "predicate=" + predicateString(p)).join("&"))
+                    var params = "";
+                    for (var index in hash_parts) {
+                        if (hash_parts[index].startsWith("tolerance=")) {
+                            params += "&" + hash_parts[index];
+                        }
+                        if (hash_parts[index].startsWith("method=")) {
+                            params += "&" + hash_parts[index];
+                        }
+                    }
+                    d3.json("sequence-matches?" + query.map(p => "predicate=" + predicateString(p)).join("&") + params)
                         .get(function (error, data) { drawSequences(data); });
                 });
             }
@@ -299,6 +324,31 @@ function updatePredicateCounts(query_timestep) {
         .style("font-size", "14px")
         .style("fill", black)
         .text(activations);
+}
+
+function updateSequenceMatchLowerBound() {
+    var params = "";
+    for (var index in hash_parts) {
+        if (hash_parts[index].startsWith("tolerance=")) {
+            params += "&" + hash_parts[index];
+        }
+        if (hash_parts[index].startsWith("method=")) {
+            params += "&" + hash_parts[index];
+        }
+    }
+    /*d3.json("sequence-match-lower-bound?" + query.map(p => "predicate=" + predicateString(p)).join("&") + params)
+        .get(function (error, data) {
+            d3.select("#sequence-match-expected").text(data.count);
+            d3.select("#execute-box").attr("width", textWidth("execute", 14) + textWidth(data.count, 14) + 30)
+        });*/
+    d3.select("#sequence-match-expected").text("...");
+    d3.select("#execute-box").attr("width", textWidth("execute", 14) + textWidth("...", 14) + 30)
+    d3.json("sequence-matches?" + query.map(p => "predicate=" + predicateString(p)).join("&") + params)
+        .get(function (error, data) {
+            var count = data.sequences.map(m => m.count).reduce((a, b) => a + b, 0);
+            d3.select("#sequence-match-expected").text(count);
+            d3.select("#execute-box").attr("width", textWidth("execute", 14) + textWidth(count, 14) + 30)
+        });
 }
 
 function drawPredicateChip(query_timestep, x_offset, y_offset, width, height) {
@@ -670,6 +720,7 @@ function drawStateWidget(timestep, geometry, name, min, max, vector, colour, pre
                         }
 
                         updatePredicateCounts(query_timestep);
+                        updateSequenceMatchLowerBound();
 
                         if (query_timestep + 1 == query.length) {
                             addPredicateTemplate();
@@ -1191,6 +1242,8 @@ function closeSequence() {
     query_timestep = null;
     d3.selectAll(".predicate-highlightable")
         .attr("stroke", dark_grey);
+    d3.select("#sequence-match-expected").text("-");
+    d3.select("#execute-box").attr("width", textWidth("execute", 14) + textWidth("-", 14) + 30)
 }
 
 function drawDetail() {
