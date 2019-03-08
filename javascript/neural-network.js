@@ -44,6 +44,7 @@ var queryBuilder = null;
 var query = null;
 var query_timestep = null;
 var maximum_query_length = 6;
+var estimate_latest = null;
 
 $(document).ready(function () {
     total_width = TOTAL_WIDTH - LEFT_WIDTH;
@@ -223,19 +224,43 @@ function addPredicateTemplate() {
     var index = query.length;
     var x_offset = predicate_margin;
     var y_offset = 60 + (index * predicate_height) + (index * predicate_margin * 2);
+    // Crosshair
     queryBuilder.append("circle")
         .attr("class", "predicate predicate-highlightable predicate-" + index)
-        .attr("cx", x_offset + (predicate_width / 4))
+        .attr("cx", x_offset + (predicate_width / 8))
         .attr("cy", y_offset + (predicate_height / 2))
-        .attr("r", 5)
+        .attr("r", 1)
         .attr("stroke", dark_grey)
         .attr("stroke-width", 1)
+        .attr("fill", "none");
+    queryBuilder.append("line")
+        .attr("class", "predicate predicate-highlightable predicate-" + index)
+        .attr("x1", x_offset + (predicate_width / 8))
+        .attr("y1", y_offset + (predicate_height / 2) - 8)
+        .attr("x2", x_offset + (predicate_width / 8))
+        .attr("y2", y_offset + (predicate_height / 2) + 8)
+        .attr("stroke", dark_grey)
+        .attr("stroke-width", 1);
+    queryBuilder.append("line")
+        .attr("class", "predicate predicate-highlightable predicate-" + index)
+        .attr("x1", x_offset + (predicate_width / 8) - 8)
+        .attr("y1", y_offset + (predicate_height / 2))
+        .attr("x2", x_offset + (predicate_width / 8) + 8)
+        .attr("y2", y_offset + (predicate_height / 2))
+        .attr("stroke", dark_grey)
+        .attr("stroke-width", 1);
+    queryBuilder.append("circle")
+        .attr("class", "predicate")
+        .attr("cx", x_offset + (predicate_width / 8))
+        .attr("cy", y_offset + (predicate_height / 2))
+        .attr("r", 8)
+        .attr("stroke", "none")
         .attr("fill", "transparent")
         .on("mouseover", function(d) {
             if (input_part != null) {
                 d3.select(this)
                     .style("cursor", "pointer");
-                d3.select(this)
+                d3.selectAll(".predicate-" + index)
                     .transition()
                     .duration(100)
                     .attr("stroke-width", 2);
@@ -245,7 +270,7 @@ function addPredicateTemplate() {
             if (input_part != null) {
                 d3.select(this)
                     .style("cursor", "auto");
-                d3.select(this)
+                d3.selectAll(".predicate-" + index)
                     .transition()
                     .duration(50)
                     .attr("stroke-width", 1);
@@ -262,6 +287,54 @@ function addPredicateTemplate() {
                     .attr("stroke", dark_blue);
             }
         });
+    // Select all
+    queryBuilder.append("line")
+        .attr("class", "predicate predicate-highlightable predicate-" + index)
+        .attr("x1", x_offset + (predicate_width / 8) - 8)
+        .attr("y1", y_offset + (predicate_height / 2))
+        .attr("x2", x_offset + (predicate_width / 8) + 8)
+        .attr("y2", y_offset + (predicate_height / 2))
+        .attr("stroke", dark_grey)
+        .attr("stroke-width", 1);
+    queryBuilder.append("circle")
+        .attr("class", "predicate")
+        .attr("cx", x_offset + (predicate_width / 8))
+        .attr("cy", y_offset + (predicate_height / 2))
+        .attr("r", 8)
+        .attr("stroke", "none")
+        .attr("fill", "transparent")
+        .on("mouseover", function(d) {
+            if (input_part != null) {
+                d3.select(this)
+                    .style("cursor", "pointer");
+                d3.selectAll(".predicate-" + index)
+                    .transition()
+                    .duration(100)
+                    .attr("stroke-width", 2);
+            }
+        })
+        .on("mouseout", function(d) {
+            if (input_part != null) {
+                d3.select(this)
+                    .style("cursor", "auto");
+                d3.selectAll(".predicate-" + index)
+                    .transition()
+                    .duration(50)
+                    .attr("stroke-width", 1);
+            }
+        })
+        .on("click", function(d) {
+            if (input_part != null) {
+                query_timestep = index;
+                d3.selectAll(".predicate-highlightable")
+                    .attr("stroke", dark_grey);
+                d3.selectAll(".activation-box")
+                    .attr("stroke", light_grey);
+                d3.selectAll(".predicate-" + index)
+                    .attr("stroke", dark_blue);
+            }
+        });
+    // Separator line
     queryBuilder.append("line")
         .attr("class", "predicate")
         .attr("x1", x_offset + (predicate_width / 2))
@@ -326,7 +399,7 @@ function updatePredicateCounts(query_timestep) {
         .text(activations);
 }
 
-function updateSequenceMatchLowerBound() {
+function updateSequenceMatchesEstimate() {
     var params = "";
     for (var index in hash_parts) {
         if (hash_parts[index].startsWith("tolerance=")) {
@@ -341,8 +414,14 @@ function updateSequenceMatchLowerBound() {
     }
     d3.select("#sequence-match-expected").text("...");
     d3.select("#execute-box").attr("width", textWidth("execute", 14) + textWidth("...", 14) + 30)
+    var now = new Date();
+    estimate_latest = now;
     d3.json("sequence-matches-estimate?" + query.map(p => "predicate=" + predicateString(p)).join("&") + params)
         .get(function (error, data) {
+            if (query_timestep == null || now < estimate_latest) {
+                return;
+            }
+
             var estimate = "";
 
             if (data.exact != null) {
@@ -355,9 +434,9 @@ function updateSequenceMatchLowerBound() {
                 if (data.lower != null && data.upper != null) {
                     estimate += " - " + data.upper;
                 } else if (data.upper != null) {
-                    estimate += ".. " + data.upper;
+                    estimate += "? - " + data.upper;
                 } else {
-                    estimate += " ..";
+                    estimate += " - ?";
                 }
             }
 
@@ -682,7 +761,7 @@ function drawStateWidget(timestep, geometry, name, min, max, vector, colour, pre
                 if (timestep == null && $(this).css("opacity") == 1) {
                     if (query_timestep != null) {
                         if (linker != null) {
-                            $(this).css("cursor", "cell");
+                            $(this).css("cursor", "crosshair");
                         }
                     } else {
                         d3.selectAll(".linker-" + (linker == null ? d.position : linker[d.position]) + linker_suffix)
@@ -736,8 +815,8 @@ function drawStateWidget(timestep, geometry, name, min, max, vector, colour, pre
                             d3.select(this).attr("stroke", light_grey);
                         }
 
+                        updateSequenceMatchesEstimate();
                         updatePredicateCounts(query_timestep);
-                        updateSequenceMatchLowerBound();
 
                         if (query_timestep + 1 == query.length) {
                             addPredicateTemplate();
