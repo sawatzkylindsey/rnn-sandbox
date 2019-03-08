@@ -4,6 +4,7 @@ import logging
 import pdb
 import threading
 
+from nnwd.models import Estimate
 from pytils import check
 from pytils.log import setup_logging, user_log
 
@@ -97,13 +98,18 @@ class SequenceQuery:
         return tolerance, method, predicates
 
 
-class SequenceMatchLowerBound(SequenceQuery):
+class SequenceMatchesEstimate(SequenceQuery):
     def __init__(self, *args, **kwargs):
-        super(SequenceMatchLowerBound, self).__init__(*args, **kwargs)
+        super(SequenceMatchesEstimate, self).__init__(*args, **kwargs)
 
     def get(self, data):
         tolerance, method, predicates = self.parse(data)
-        return self.query_engine.find_lower_bound(tolerance, method, predicates)
+
+        if "exact" in data:
+            rollup = self.query_engine.find(tolerance, method, predicates)
+            return Estimate(exact=sum([sequence_match.count for sequence_match in rollup.sequence_matches]))
+        else:
+            return self.query_engine.find_estimate(tolerance, method, predicates)
 
 
 class SequenceMatches(SequenceQuery):

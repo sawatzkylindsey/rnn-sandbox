@@ -335,19 +335,34 @@ function updateSequenceMatchLowerBound() {
         if (hash_parts[index].startsWith("method=")) {
             params += "&" + hash_parts[index];
         }
+        if (hash_parts[index] == "exact") {
+            params += "&exact=True";
+        }
     }
-    /*d3.json("sequence-match-lower-bound?" + query.map(p => "predicate=" + predicateString(p)).join("&") + params)
-        .get(function (error, data) {
-            d3.select("#sequence-match-expected").text(data.count);
-            d3.select("#execute-box").attr("width", textWidth("execute", 14) + textWidth(data.count, 14) + 30)
-        });*/
     d3.select("#sequence-match-expected").text("...");
     d3.select("#execute-box").attr("width", textWidth("execute", 14) + textWidth("...", 14) + 30)
-    d3.json("sequence-matches?" + query.map(p => "predicate=" + predicateString(p)).join("&") + params)
+    d3.json("sequence-matches-estimate?" + query.map(p => "predicate=" + predicateString(p)).join("&") + params)
         .get(function (error, data) {
-            var count = data.sequences.map(m => m.count).reduce((a, b) => a + b, 0);
-            d3.select("#sequence-match-expected").text(count);
-            d3.select("#execute-box").attr("width", textWidth("execute", 14) + textWidth(count, 14) + 30)
+            var estimate = "";
+
+            if (data.exact != null) {
+                estimate += data.exact;
+            } else {
+                if (data.lower != null) {
+                    estimate += data.lower;
+                }
+
+                if (data.lower != null && data.upper != null) {
+                    estimate += " - " + data.upper;
+                } else if (data.upper != null) {
+                    estimate += ".. " + data.upper;
+                } else {
+                    estimate += " ..";
+                }
+            }
+
+            d3.select("#sequence-match-expected").text(estimate);
+            d3.select("#execute-box").attr("width", textWidth("execute", 14) + textWidth(estimate, 14) + 30)
         });
 }
 
@@ -2283,10 +2298,10 @@ function drawSequences(data) {
     var counts = [];
     var total_count = 0;
 
-    for (var index in data.sequences) {
-        drawSequence(data.sequences[index], x_offset, y(index), 80, 20);
-        counts.push({position: index, count: data.sequences[index].count});
-        total_count += data.sequences[index].count;
+    for (var index in data.sequence_matches) {
+        drawSequence(data.sequence_matches[index], x_offset, y(index), 80, 20);
+        counts.push({position: index, count: data.sequence_matches[index].count});
+        total_count += data.sequence_matches[index].count;
     }
 
     var max = d3.max(counts, function(d) { return d.count; })
@@ -2351,7 +2366,7 @@ function drawSequence(sequence_match, x_offset, y_offset, width, height) {
     }
 
     for (var i=0; i < query.length; i++) {
-        var word = sequence_match.matches[i];
+        var word = sequence_match.words[i];
         svg.append("text")
             .attr("class", "sequence")
             .attr("x", x_offset + (i * 2 * width) + 80 + (width / 2) - (textWidth(word, 14) / 2))

@@ -128,32 +128,36 @@ class SequenceRollup:
 
     def as_json(self):
         return {
-            "sequences": [sm.as_json() for sm in self.sequence_matches]
+            "sequence_matches": [sm.as_json() for sm in self.sequence_matches]
         }
 
 
 class SequenceMatch:
-    def __init__(self, matches, elides, count):
-        assert len(elides) == len(matches) + 1
-        self.matches = matches
+    def __init__(self, words, elides, count):
+        assert len(elides) == len(words) + 1
+        self.words = words
         self.elides = elides
         self.count = check.check_gte(count, 1)
 
     def as_json(self):
         return {
-            "matches": self.matches,
+            "words": self.words,
             "elides": self.elides,
             "count": self.count
         }
 
 
-class Count:
-    def __init__(self, value):
-        self.value = value
+class Estimate:
+    def __init__(self, lower=None, upper=None, exact=None):
+        self.lower = lower
+        self.upper = upper
+        self.exact = exact
 
     def as_json(self):
         return {
-            "count": self.value,
+            "lower": self.lower,
+            "upper": self.upper,
+            "exact": self.exact,
         }
 
 

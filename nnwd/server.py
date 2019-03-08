@@ -102,7 +102,7 @@ def run(port, words, neural_network, query_engine):
         "weight-detail": handlers.WeightDetail(neural_network),
         "words": handlers.Words(words.labels()),
         "sequence-matches": handlers.SequenceMatches(query_engine),
-        "sequence-match-lower-bound": handlers.SequenceMatchLowerBound(query_engine),
+        "sequence-matches-estimate": handlers.SequenceMatchesEstimate(query_engine),
     }
     user_log.info('Starting httpd %d...' % port)
     httpd.serve_forever()

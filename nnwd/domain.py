@@ -20,7 +20,7 @@ from ml import nlp
 from ml import nn as ffnn
 from nnwd import geometry
 from nnwd import latex
-from nnwd.models import Timestep, WeightExplain, WeightDetail, HiddenState, LabelDistribution, SequenceRollup, SequenceMatch, Count
+from nnwd.models import Timestep, WeightExplain, WeightDetail, HiddenState, LabelDistribution, SequenceRollup, SequenceMatch, Estimate
 from nnwd import pickler
 from nnwd import rnn
 from pytils.log import setup_logging, user_log
@@ -731,9 +731,10 @@ class QueryEngine:
             self.sequence_units[sequence_unit] += [activation_point]
             self.units[unit] += [activation_point]
 
-    def find_lower_bound(self, tolerance, method, predicates):
+    def find_estimate(self, tolerance, method, predicates):
         matches = self.find_matches(tolerance, method, True, predicates)
-        return Count(len(matches))
+        lower = len(matches)
+        return Estimate(lower=lower, upper=None if lower > 10 else lower * 10)
 
     def find(self, tolerance, method, predicates):
         matches = self.find_matches(tolerance, method, False, predicates)
@@ -808,9 +809,9 @@ class QueryEngine:
 
         for sequence, level_unit_instances in matched_activations.items():
             results = self.find_match_points(required_level_units, level_unit_instances, 0, None, first_only)
+            logging.debug("matched sequence %d times: %s" % (len(results), " ".join(sequence)))
 
             for result in results:
-                logging.debug("matched %.8f: %s\n  %s" % (sum([match_point[0] for match_point in result]), result, " ".join(sequence)))
                 matches += [(sequence, result)]
 
         return matches
