@@ -92,7 +92,7 @@ $(document).ready(function () {
         if (e.keyCode == 13) {
             var sequence = $(this).val()
                 .toLowerCase()
-                .split(/\W+/);
+                .split(/\s+/);
             $(".modal").remove();
             acceptMainInput(sequence);
         }
@@ -621,7 +621,7 @@ function drawStateWidget(timestep, geometry, name, min, max, vector, colour, pre
         .data(vector)
         .enter()
             .append("rect")
-            .attr("class", classes + " activation")
+            .attr("class", function(d) { return classes + " activation-" + d.position; })
             .attr("data-activation", function(d) { return d.value; })
             .attr("x", function (d) {
                 var base_x = x(d.position);
@@ -655,7 +655,9 @@ function drawStateWidget(timestep, geometry, name, min, max, vector, colour, pre
         .data(vector)
         .enter()
             .append("rect")
-            .attr("class", function(d) { return classes + " linker-" + (linker == null ? d.position : linker[d.position]) + (linker_suffix == null ? "" : linker_suffix) + " activation-box"; })
+            .attr("class", function(d) {
+                return classes + " linker-" + (linker == null ? d.position : linker[d.position]) + (linker_suffix == null ? "" : linker_suffix) + " activation-box activation-" + d.position;
+            })
             .attr("x", function (d) { return x(d.position); })
             .attr("y", function (d) {
                 if (placement == null || placement == "top") {
@@ -677,7 +679,7 @@ function drawStateWidget(timestep, geometry, name, min, max, vector, colour, pre
             .attr("fill", "transparent")
             .style("pointer-events", "bounding-box")
             .on("mouseover", function(d) {
-                if (timestep == null) {
+                if (timestep == null && $(this).css("opacity") == 1) {
                     if (query_timestep != null) {
                         if (linker != null) {
                             $(this).css("cursor", "cell");
@@ -692,7 +694,7 @@ function drawStateWidget(timestep, geometry, name, min, max, vector, colour, pre
                 }
             })
             .on("mouseout", function(d) {
-                if (timestep == null) {
+                if (timestep == null && $(this).css("opacity") == 1) {
                     if (query_timestep != null) {
                         if (linker != null) {
                             $(this).css("cursor", "auto");
@@ -707,7 +709,7 @@ function drawStateWidget(timestep, geometry, name, min, max, vector, colour, pre
                 }
             })
             .on("click", function(d) {
-                if (timestep == null) {
+                if (timestep == null && $(this).css("opacity") == 1) {
                     if (query_timestep != null && linker != null) {
                         if (query_timestep == query.length) {
                             query.push({});
@@ -748,7 +750,7 @@ function drawStateWidget(timestep, geometry, name, min, max, vector, colour, pre
         .data(vector)
         .enter()
             .append("line")
-            .attr("class", classes)
+            .attr("class", function(d) { return classes + " activation-" + d.position; })
             .attr("x1", function(d) {
                 var base_x = x(d.position);
 
@@ -1238,7 +1240,7 @@ function drawView(view_name, view_class, viewCallback) {
     drawClose(x_margin - circle_radius + 5, y_margin - circle_radius, circle_radius, view_class, function () {
         $("." + view_class).remove();
         $(".modal").remove();
-        closeSequence();
+        closeSequence(false);
         closeDetail();
         drawWeightsFromSequence(0);
         $("#main_input").prop("disabled", false);
@@ -1251,14 +1253,21 @@ function closeDetail() {
     input_layer = null;
     compare_sequence = [];
     compare_timestep = null;
+    activationsTop = null;
+    activationsBottom = null;
 }
 
-function closeSequence() {
+function closeSequence(clear) {
     query_timestep = null;
     d3.selectAll(".predicate-highlightable")
         .attr("stroke", dark_grey);
-    d3.select("#sequence-match-expected").text("-");
-    d3.select("#execute-box").attr("width", textWidth("execute", 14) + textWidth("-", 14) + 30)
+
+    if (clear) {
+        query = null;
+        $(".predicate").remove();
+        d3.select("#sequence-match-expected").text("-");
+        d3.select("#execute-box").attr("width", textWidth("execute", 14) + textWidth("-", 14) + 30)
+    }
 }
 
 function drawDetail() {
@@ -1343,7 +1352,7 @@ function drawDetail() {
             function acceptCompareInput(sequence) {
                 compare_sequence = sequence;
                 $(".compare-button").remove();
-                var count = $(".detail.comparison.activation").length;
+                var count = activationsTop.length;
                 $(".detail.load").remove();
                 $(".detail.inset").remove();
                 loadInset(true);
@@ -1397,7 +1406,7 @@ function drawInset(data, placement) {
         svg.append("text")
             .attr("class", classes)
             .attr("x", inset_x_offset - (inset_unit_width * 2) + 2 - (placement == "top" ? 0.5 : 0))
-            .attr("y", inset_y_offset + (inset_height / 2) - (inset_unit_height / 2) + HEIGHT - 2 + (placement == "bottom" ? (inset_unit_height / 2) : 0))
+            .attr("y", inset_y_offset + (inset_height / 2) - (inset_unit_height / 2) + HEIGHT - 2 + (placement == "bottom" ? (inset_unit_height / 2) : 0) + 3)
             .style("font-size", "16px")
             .style("fill", black)
             .text(label);
@@ -1490,7 +1499,7 @@ function drawInsetPart(x_offset, y_offset, width, height, part, layer, colour, p
             loadDetail(true);
 
             if (compare_sequence.length != 0) {
-                var count = $(".detail.comparison.top.activation").length;
+                var count = activationsTop.length;
                 drawCompareDial(count);
                 loadInset(false);
                 loadDetail(false);
@@ -1498,6 +1507,8 @@ function drawInsetPart(x_offset, y_offset, width, height, part, layer, colour, p
         });
 }
 
+var activationsTop = null;
+var activationsBottom = null;
 var compare_dial_y_min = null;
 var compare_dial_y_max = null;
 var compare_dial_y_middle = null;
@@ -1698,9 +1709,11 @@ function drawWeightDetail(data, placement) {
     }
 
     if (placement == "bottom") {
+        activationsBottom = data.full.vector;
         variance_lower_bottom = data.full.minimum;
         variance_upper_bottom = data.full.maximum;
     } else {
+        activationsTop = data.full.vector;
         variance_lower_top = data.full.minimum;
         variance_upper_top = data.full.maximum;
     }
@@ -1734,14 +1747,6 @@ function highlightDifferentActivations(percent) {
     highlightActivations(percent, false);
 }
 
-function sortByPosition(a, b) {
-    if (a.__data__.position == b.__data__.position) {
-        return 0;
-    }
-
-    return a.__data__.position < b.__data__.position ? 1 : -1;
-}
-
 function highlightActivations(percent, similar) {
     var count = 0;
     var scaler = similar ? 1.0 - percent : percent;
@@ -1750,21 +1755,17 @@ function highlightActivations(percent, similar) {
     var unmatched_opacity = similar ? 1.0 : 0.0;
     var matched_counter = similar ? 0 : 1;
     var unmatched_counter = similar ? 1 : 0;
-    var activationsTop = $(".comparison.top.activation");
-    var activationsBottom = $(".comparison.bottom.activation");
-    activationsTop.sort(sortByPosition);
-    activationsBottom.sort(sortByPosition);
     var queryTop = [];
     var queryBottom = [];
 
     for (var i = 0; i < activationsTop.length; i++) {
         var activationTop = activationsTop[i];
         var activationBottom = activationsBottom[i];
-        var value_top = activationTop.__data__.value;
-        var value_bottom = activationBottom.__data__.value;
-        var position = activationTop.__data__.position;
-        if (position != activationBottom.__data__.position) {
-            throw position + " != " + activationBottom.__data__.position;
+        var value_top = activationTop.value;
+        var value_bottom = activationBottom.value;
+        var position = activationTop.position;
+        if (position != activationBottom.position) {
+            throw position + " != " + activationBottom.position;
         }
         var absolute_target_value = Math.max(Math.abs(value_top), Math.abs(value_bottom));
         var target_value = value_top;
@@ -1779,8 +1780,7 @@ function highlightActivations(percent, similar) {
         var max_matching = target_value + threshold;
 
         if (comparison_value < min_matching || comparison_value > max_matching) {
-            activationTop.style.opacity = matched_opacity;
-            activationBottom.style.opacity = matched_opacity;
+            setOpacities(i, matched_opacity);
             count += matched_counter;
 
             if (matched_counter == 1) {
@@ -1788,8 +1788,7 @@ function highlightActivations(percent, similar) {
                 queryBottom.push(position + ":" + value_bottom.toFixed(6));
             }
         } else {
-            activationTop.style.opacity = unmatched_opacity;
-            activationBottom.style.opacity = unmatched_opacity;
+            setOpacities(i, unmatched_opacity);
             count += unmatched_counter;
 
             if (unmatched_counter == 1) {
@@ -1797,13 +1796,13 @@ function highlightActivations(percent, similar) {
                 queryBottom.push(position + ":" + value_bottom.toFixed(6));
             }
         }
-
-        var prefix = input_part + "," + (input_layer == null ? 0 : input_layer) + "|";
-        console.log("top: " + prefix + queryTop.join(","));
-        console.log("bottom: " + prefix + queryBottom.join(","));
     }
 
     $(".compare-dial-count").text(count);
+}
+
+function setOpacities(index, opacity) {
+    $(".comparison.activation-" + index).css("opacity", opacity);
 }
 
 var back_width_main = null;
@@ -1861,7 +1860,7 @@ function drawSequenceWheel(main, sequence, timestep) {
                 drawSequenceWheel(main, sequence, d.position);
 
                 if (compare_sequence.length > 0) {
-                    var count = $(".detail.comparison.top.activation").length;
+                    var count = activationsTop.length;
                     drawCompareDial(count);
                 }
             });
@@ -2207,7 +2206,7 @@ function drawInputModal(callback, edit_sequence) {
             sequence = sequenceInputter.find("input")
                 .val()
                 .toLowerCase()
-                .split(/\W+/);
+                .split(/\s+/);
             $(".modal").remove();
             callback(sequence);
         }
@@ -2346,9 +2345,7 @@ function drawSequences(data) {
             .style("font-size", "14px")
             .style("fill", black)
             .text(function (d) { return d.count; });
-    closeSequence();
-    query = null;
-    $(".predicate").remove();
+    closeSequence(true);
     addPredicateTemplate();
 }
 

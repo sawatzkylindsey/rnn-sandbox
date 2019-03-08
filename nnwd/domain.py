@@ -809,7 +809,9 @@ class QueryEngine:
 
         for sequence, level_unit_instances in matched_activations.items():
             results = self.find_match_points(required_level_units, level_unit_instances, 0, None, first_only)
-            logging.debug("matched sequence %d times: %s" % (len(results), " ".join(sequence)))
+
+            if len(results) > 0:
+                logging.debug("matched sequence %d times: %s" % (len(results), " ".join(sequence)))
 
             for result in results:
                 matches += [(sequence, result)]
