@@ -41,10 +41,20 @@ var predicate_margin = 10;
 var predicate_width = qb_width - (predicate_margin * 2);
 var predicate_height = 40;
 var queryBuilder = null;
-var query = null;
+var query = [];
 var query_timestep = null;
 var maximum_query_length = 6;
 var estimate_latest = null;
+var active_components = {
+    "embedding_hidden": true,
+    "input_hat": false,
+    "forget": false,
+    "remember": false,
+    "cell": false,
+    "output": true,
+    "softmax": true,
+};
+var notationOff = 0.5;
 
 $(document).ready(function () {
     total_width = TOTAL_WIDTH - LEFT_WIDTH;
@@ -110,9 +120,50 @@ $(document).ready(function () {
             $("#query-content").css("display", "none");
             $("#notation-content").css("display", "block");
         });
+    componentSwitch("embedding_hidden");
+    componentSwitch("input_hat");
+    componentSwitch("forget");
+    componentSwitch("remember");
+    componentSwitch("cell");
+    componentSwitch("output");
     queryBuilderControls();
     addPredicateTemplate();
 });
+
+function componentSwitch(name) {
+    var flag = active_components[name];
+    $("#notation-" + name)
+        .on("mouseover", function(d) {
+            if (flag) {
+                $(this).css("opacity", notationOff);
+            } else {
+                $(this).css("opacity", 1);
+            }
+            $(this).css("cursor", "pointer");
+        })
+        .on("mouseout", function(d) {
+            if (flag) {
+                $(this).css("opacity", 1);
+            } else {
+                $(this).css("opacity", notationOff);
+            }
+            $(this).css("cursor", "auto");
+        })
+        .on("click", function(d) {
+            flag = !flag;
+            active_components[name] = flag;
+
+            if (flag) {
+                d3.select(this).style("opacity", 1.0);
+                d3.selectAll("." + name).style("opacity", 1);
+                d3.selectAll("image." + name).style("opacity", notationOff);
+                d3.selectAll(".subtle." + name).style("opacity", 0.2);
+            } else {
+                d3.select(this).style("opacity", notationOff);
+                d3.selectAll("." + name).style("opacity", 0);
+            }
+        });
+}
 
 function queryBuilderControls() {
     queryBuilder.append("text")
@@ -147,7 +198,7 @@ function queryBuilderControls() {
         .attr("stroke-width", 1)
         .attr("fill", "transparent")
         .on("mouseover", function(d) {
-            if (query != null && query.length > 0) {
+            if (query.length > 0) {
                 d3.select(this)
                     .style("cursor", "pointer");
                 d3.select(this)
@@ -157,7 +208,7 @@ function queryBuilderControls() {
             }
         })
         .on("mouseout", function(d) {
-            if (query != null && query.length > 0) {
+            if (query.length > 0) {
                 d3.select(this)
                     .style("cursor", "auto");
                 d3.select(this)
@@ -167,7 +218,7 @@ function queryBuilderControls() {
             }
         })
         .on("click", function(d) {
-            if (query != null && query.length > 0) {
+            if (query.length > 0) {
                 d3.selectAll(".predicate")
                     .style("stroke", dark_grey);
                 d3.select(this)
@@ -206,17 +257,15 @@ function predicateString(predicate) {
             values.push(feature + ":" + predicate[unit][feature]);
         }
 
-        units.push(unit + "|" + values.join(","));
+        if (values.length > 0) {
+            units.push(unit + "|" + values.join(","));
+        }
     }
 
     return units.join(";");
 }
 
 function addPredicateTemplate() {
-    if (query == null) {
-        query = [];
-    }
-
     if (query.length == maximum_query_length) {
         return;
     }
@@ -250,7 +299,7 @@ function addPredicateTemplate() {
         .attr("stroke", dark_grey)
         .attr("stroke-width", 1);
     queryBuilder.append("circle")
-        .attr("class", "predicate")
+        .attr("class", "predicate predicate-" + index)
         .attr("cx", x_offset + (predicate_width / 8))
         .attr("cy", y_offset + (predicate_height / 2))
         .attr("r", 8)
@@ -283,12 +332,12 @@ function addPredicateTemplate() {
                     .attr("stroke", dark_grey);
                 d3.selectAll(".activation-box")
                     .attr("stroke", light_grey);
-                d3.selectAll(".predicate-" + index)
+                d3.selectAll(".predicate-highlightable.predicate-" + query_timestep)
                     .attr("stroke", dark_blue);
             }
         });
     // Select all
-    queryBuilder.append("line")
+    /*queryBuilder.append("line")
         .attr("class", "predicate predicate-highlightable predicate-" + index)
         .attr("x1", x_offset + (predicate_width / 8) - 8)
         .attr("y1", y_offset + (predicate_height / 2))
@@ -297,7 +346,7 @@ function addPredicateTemplate() {
         .attr("stroke", dark_grey)
         .attr("stroke-width", 1);
     queryBuilder.append("circle")
-        .attr("class", "predicate")
+        .attr("class", "predicate predicate-" + index)
         .attr("cx", x_offset + (predicate_width / 8))
         .attr("cy", y_offset + (predicate_height / 2))
         .attr("r", 8)
@@ -330,13 +379,13 @@ function addPredicateTemplate() {
                     .attr("stroke", dark_grey);
                 d3.selectAll(".activation-box")
                     .attr("stroke", light_grey);
-                d3.selectAll(".predicate-" + index)
+                d3.selectAll(".predicate-highlightable.predicate-" + query_timestep)
                     .attr("stroke", dark_blue);
             }
-        });
+        });*/
     // Separator line
     queryBuilder.append("line")
-        .attr("class", "predicate")
+        .attr("class", "predicate predicate-" + index)
         .attr("x1", x_offset + (predicate_width / 2))
         .attr("y1", y_offset)
         .attr("x2", x_offset + (predicate_width / 2))
@@ -356,7 +405,7 @@ function addPredicateTemplate() {
         .attr("fill", "none");
     updatePredicateCounts(index);
     queryBuilder.append("line")
-        .attr("class", "predicate")
+        .attr("class", "predicate predicate-" + index)
         .attr("x1", x_offset + (predicate_width / 2) + (predicate_width / 4))
         .attr("y1", y_offset + 10)
         .attr("x2", x_offset + (predicate_width / 2) + (predicate_width / 4))
@@ -369,11 +418,13 @@ function updatePredicateCounts(query_timestep) {
     var units = 0;
     var activations = 0;
 
-    for (var unit in query[query_timestep]) {
-        units += 1;
+    if (query.length > 0) {
+        for (var unit in query[query_timestep]) {
+            units += 1;
 
-        for (var feature in query[query_timestep][unit]) {
-            activations += 1;
+            for (var feature in query[query_timestep][unit]) {
+                activations += 1;
+            }
         }
     }
 
@@ -382,7 +433,7 @@ function updatePredicateCounts(query_timestep) {
     var y_offset = 60 + (query_timestep * predicate_height) + (query_timestep * predicate_margin * 2);
     queryBuilder.append("text")
         .attr("id", "predicate-units-" + query_timestep)
-        .attr("class", "predicate")
+        .attr("class", "predicate predicate-" + query_timestep)
         .attr("x", x_offset + (predicate_width / 2) + (predicate_width * 1 / 8) - (textWidth(units, 14) / 2))
         .attr("y", y_offset + (predicate_height / 2) + 5)
         .style("font-size", "14px")
@@ -391,7 +442,7 @@ function updatePredicateCounts(query_timestep) {
     $("#predicate-activations-" + query_timestep).remove();
     queryBuilder.append("text")
         .attr("id", "predicate-activations-" + query_timestep)
-        .attr("class", "predicate")
+        .attr("class", "predicate predicate-" + query_timestep)
         .attr("x", x_offset + (predicate_width / 2) + (predicate_width * 3 / 8) - (textWidth(activations, 14) / 2))
         .attr("y", y_offset + (predicate_height / 2) + 5)
         .style("font-size", "14px")
@@ -401,6 +452,7 @@ function updatePredicateCounts(query_timestep) {
 
 function updateSequenceMatchesEstimate() {
     var params = "";
+
     for (var index in hash_parts) {
         if (hash_parts[index].startsWith("tolerance=")) {
             params += "&" + hash_parts[index];
@@ -412,37 +464,42 @@ function updateSequenceMatchesEstimate() {
             params += "&exact=True";
         }
     }
+
     d3.select("#sequence-match-expected").text("...");
     d3.select("#execute-box").attr("width", textWidth("execute", 14) + textWidth("...", 14) + 30)
-    var now = new Date();
-    estimate_latest = now;
-    d3.json("sequence-matches-estimate?" + query.map(p => "predicate=" + predicateString(p)).join("&") + params)
-        .get(function (error, data) {
-            if (query_timestep == null || now < estimate_latest) {
-                return;
-            }
+    var predicates_qp = query.map(p => "predicate=" + predicateString(p)).join("&");
 
-            var estimate = "";
-
-            if (data.exact != null) {
-                estimate += data.exact;
-            } else {
-                if (data.lower != null) {
-                    estimate += data.lower;
+    if (predicates_qp.length > "predicate=".length * query.length) {
+        var now = new Date();
+        estimate_latest = now;
+        d3.json("sequence-matches-estimate?" + predicates_qp + params)
+            .get(function (error, data) {
+                if (now < estimate_latest) {
+                    return;
                 }
 
-                if (data.lower != null && data.upper != null) {
-                    estimate += " - " + data.upper;
-                } else if (data.upper != null) {
-                    estimate += "? - " + data.upper;
+                var estimate = "";
+
+                if (data.exact != null) {
+                    estimate += data.exact;
                 } else {
-                    estimate += " - ?";
-                }
-            }
+                    if (data.lower != null) {
+                        estimate += data.lower;
+                    }
 
-            d3.select("#sequence-match-expected").text(estimate);
-            d3.select("#execute-box").attr("width", textWidth("execute", 14) + textWidth(estimate, 14) + 30)
-        });
+                    if (data.lower != null && data.upper != null) {
+                        estimate += " - " + data.upper;
+                    } else if (data.upper != null) {
+                        estimate += "? - " + data.upper;
+                    } else {
+                        estimate += " - ?";
+                    }
+                }
+
+                d3.select("#sequence-match-expected").text(estimate);
+                d3.select("#execute-box").attr("width", textWidth("execute", 14) + textWidth(estimate, 14) + 30)
+            });
+    }
 }
 
 function drawPredicateChip(query_timestep, x_offset, y_offset, width, height) {
@@ -588,9 +645,19 @@ function drawHiddenState(data, part, layer) {
             hiddenState = data.units[part][layer];
         }
 
-        var classes = "timestep-" + data.timestep + " component";
+        var componentName = nameOf(hiddenState.name);
+        var classes = "timestep-" + data.timestep + " component " + componentName;
         drawStateWidget(data.timestep, geometry, hiddenState.name, hiddenState.minimum, hiddenState.maximum, hiddenState.vector, hiddenState.colour, hiddenState.predictions, classes,
             MEMORY_CHIP_WIDTH, MEMORY_CHIP_HEIGHT, part, layer, null, null, null);
+
+        var flag = active_components[componentName];
+        if (flag) {
+            d3.selectAll("." + componentName).style("opacity", 1);
+            d3.selectAll("image." + componentName).style("opacity", notationOff);
+            d3.selectAll(".subtle." + componentName).style("opacity", 0.2);
+        } else {
+            d3.selectAll("." + componentName).style("opacity", 0);
+        }
     }
 }
 
@@ -652,7 +719,7 @@ function drawStateWidget(timestep, geometry, name, min, max, vector, colour, pre
             width: geometry.width / 3,
             height: geometry.height / 3,
         };
-        drawPredictionWidget(timestep, predictionGeometry, null, predictions.minimum, predictions.maximum, predictions.vector, classes, true);
+        drawPredictionWidget(timestep, predictionGeometry, null, predictions.minimum, predictions.maximum, predictions.vector, classes, true, name == null ? null : nameOf(name));
         // Draw colour prediction.
         svg.append("rect")
             .attr("class", classes)
@@ -682,7 +749,35 @@ function drawStateWidget(timestep, geometry, name, min, max, vector, colour, pre
             .attr("xlink:href", "latex/" + name + ".png")
             .attr("x", geometry.x + (geometry.width / 2) - 6)
             .attr("y", geometry.y + geometry.height + 2 + (name.startsWith("e_") ? 5 : 0))
-            .style("opacity", 0.7);
+            .style("opacity", notationOff)
+            .on("mouseover", function(d) {
+                if (active_components[nameOf(name)]) {
+                    d3.select(this)
+                        .style("opacity", 1.0);
+                    var componentName = nameOf(name);
+
+                    if (name.startsWith("c_-")) {
+                        componentName = "cell_hidden";
+                    }
+
+                    $("#notation-" + componentName).parent()
+                        .css("border-color", "black");
+                }
+            })
+            .on("mouseout", function(d) {
+                if (active_components[nameOf(name)]) {
+                    d3.select(this)
+                        .style("opacity", notationOff);
+                    var componentName = nameOf(name);
+
+                    if (name.startsWith("c_-")) {
+                        componentName = "cell_hidden";
+                    }
+
+                    $("#notation-" + componentName).parent()
+                        .css("border-color", "transparent");
+                }
+            });
     }
 
     // Boundary box
@@ -807,11 +902,6 @@ function drawStateWidget(timestep, geometry, name, min, max, vector, colour, pre
                             d3.select(this).attr("stroke", dark_blue);
                         } else {
                             delete predicate_unit[d.position];
-
-                            if (Object.keys(predicate_unit).length == 0) {
-                                delete predicate[active_unit];
-                            }
-
                             d3.select(this).attr("stroke", light_grey);
                         }
 
@@ -879,10 +969,10 @@ function drawSoftmax(data, part) {
     var geometry = getGeometry(data.timestep, part, 1);
     var labelWeightVector = data[part];
     var classes = "timestep-" + data.timestep + " component";
-    drawPredictionWidget(data.timestep, geometry, labelWeightVector.name, labelWeightVector.minimum, labelWeightVector.maximum, labelWeightVector.vector, classes, false);
+    drawPredictionWidget(data.timestep, geometry, labelWeightVector.name, labelWeightVector.minimum, labelWeightVector.maximum, labelWeightVector.vector, classes, false, null);
 }
 
-function drawPredictionWidget(timestep, geometry, name, min, max, predictions, classes, subtle) {
+function drawPredictionWidget(timestep, geometry, name, min, max, predictions, classes, subtle, backComponentName) {
     var found_min = d3.min(predictions, function(d) { return d.value; });
     if (found_min < min) {
         throw "found value " + found_min + " exceeding min " + min;
@@ -913,11 +1003,27 @@ function drawPredictionWidget(timestep, geometry, name, min, max, predictions, c
             .attr("xlink:href", "latex/" + name + ".png")
             .attr("x", geometry.x + (geometry.width / 2) - (textWidth(name, 12) / 2))
             .attr("y", geometry.y + geometry.height + 10)
-            .style("opacity", 0.7);
+            .style("opacity", notationOff)
+            .on("mouseover", function(d) {
+                if (active_components[nameOf(name)]) {
+                    d3.select(this)
+                        .style("opacity", 1.0);
+                    $("#notation-" + nameOf(name)).parent()
+                        .css("border-color", "black");
+                }
+            })
+            .on("mouseout", function(d) {
+                if (active_components[nameOf(name)]) {
+                    d3.select(this)
+                        .style("opacity", notationOff);
+                    $("#notation-" + nameOf(name)).parent()
+                        .css("border-color", "transparent");
+                }
+            });
     }
 
     svg.append("line")
-        .attr("class", classes + (subtle ? "" : " softmax") + " " + id_class)
+        .attr("class", classes + (subtle ? " subtle" : " softmax") + " " + id_class)
         .attr("x1", x(0))
         .attr("y1", y.range()[0] - 2)   // Make the center line stand out slightly by pushing it beyond the rectangle.
         .attr("x2", x(0))
@@ -929,7 +1035,7 @@ function drawPredictionWidget(timestep, geometry, name, min, max, predictions, c
         .data(predictions)
         .enter()
             .append("rect")
-            .attr("class", classes + (subtle ? "" : " softmax") + " " + id_class)
+            .attr("class", classes + (subtle ? " subtle" : " softmax") + " " + id_class)
             .attr("x", x(0))
             .attr("y", function (d) {
                 return y(d.position);
@@ -948,22 +1054,26 @@ function drawPredictionWidget(timestep, geometry, name, min, max, predictions, c
             })
             .style("opacity", baseOpacity)
             .on("mouseover", function(d) {
-                d3.selectAll("." + id_class)
-                    .transition()
-                    .duration(100)
-                    .style("opacity", 1.0);
+                if (backComponentName == null || active_components[backComponentName]) {
+                    d3.selectAll("." + id_class)
+                        .transition()
+                        .duration(100)
+                        .style("opacity", 1.0);
+                }
             })
             .on("mouseout", function(d) {
-                d3.selectAll("." + id_class)
-                    .transition()
-                    .duration(50)
-                    .style("opacity", baseOpacity);
+                if (backComponentName == null || active_components[backComponentName]) {
+                    d3.selectAll("." + id_class)
+                        .transition()
+                        .duration(50)
+                        .style("opacity", baseOpacity);
+                }
             });
     svg.selectAll(".bar")
         .data(predictions)
         .enter()
             .append("text")
-            .attr("class", classes + (subtle ? "" : " softmax") + " " + id_class)
+            .attr("class", classes + (subtle ? " subtle" : " softmax") + " " + id_class)
             .attr("x", function (d) {
                 return geometry.x + Math.abs(x(d.value) - x(min)) + 5;
             })
@@ -1342,7 +1452,7 @@ function closeSequence(clear) {
         .attr("stroke", dark_grey);
 
     if (clear) {
-        query = null;
+        query = [];
         $(".predicate").remove();
         d3.select("#sequence-match-expected").text("-");
         d3.select("#execute-box").attr("width", textWidth("execute", 14) + textWidth("-", 14) + 30)
@@ -1505,32 +1615,32 @@ function drawInset(data, placement) {
     var y_middle = inset_y_offset + (inset_height / 2) - (inset_unit_height / 2);
     var y_top = inset_y_offset + 10;
     var y_bottom = inset_y_offset + inset_height - 10 - inset_unit_height;
-    drawInsetPart(x, y_middle, inset_unit_width, inset_unit_height, "embedding", null, data.embedding.colour, placement, classes);
+    drawInsetPart(x, y_middle, inset_unit_width, inset_unit_height, "embedding", null, data.embedding.colour, placement, classes, "embedding_hidden");
     x += inset_separator + inset_unit_width;
-    drawInsetPart(x, y_top, inset_unit_width, inset_unit_height, "cell_previouses", 0, data.units["cell_previouses"][0].colour, placement, classes);
-    drawInsetPart(x, y_bottom, inset_unit_width, inset_unit_height, "input_hats", 0, data.units["input_hats"][0].colour, placement, classes);
+    drawInsetPart(x, y_top, inset_unit_width, inset_unit_height, "cell_previouses", 0, data.units["cell_previouses"][0].colour, placement, classes, "cell");
+    drawInsetPart(x, y_bottom, inset_unit_width, inset_unit_height, "input_hats", 0, data.units["input_hats"][0].colour, placement, classes, "input_hat");
     x += inset_separator + inset_unit_width;
-    drawInsetPart(x, y_top, inset_unit_width, inset_unit_height, "forgets", 0, data.units["forgets"][0].colour, placement, classes);
-    drawInsetPart(x, y_bottom, inset_unit_width, inset_unit_height, "remembers", 0, data.units["remembers"][0].colour, placement, classes);
+    drawInsetPart(x, y_top, inset_unit_width, inset_unit_height, "forgets", 0, data.units["forgets"][0].colour, placement, classes, "forget");
+    drawInsetPart(x, y_bottom, inset_unit_width, inset_unit_height, "remembers", 0, data.units["remembers"][0].colour, placement, classes, "remember");
     x += inset_separator + inset_unit_width;
-    drawInsetPart(x, y_middle, inset_unit_width, inset_unit_height, "cells", 0, data.units["cells"][0].colour, placement, classes);
+    drawInsetPart(x, y_middle, inset_unit_width, inset_unit_height, "cells", 0, data.units["cells"][0].colour, placement, classes, "cell");
     x += inset_separator + inset_unit_width;
-    drawInsetPart(x, y_middle, inset_unit_width, inset_unit_height, "outputs", 0, data.units["outputs"][0].colour, placement, classes);
+    drawInsetPart(x, y_middle, inset_unit_width, inset_unit_height, "outputs", 0, data.units["outputs"][0].colour, placement, classes, "output");
     x += inset_separator + inset_unit_width;
-    drawInsetPart(x, y_top, inset_unit_width, inset_unit_height, "cell_previouses", 1, data.units["cell_previouses"][1].colour, placement, classes);
-    drawInsetPart(x, y_bottom, inset_unit_width, inset_unit_height, "input_hats", 1, data.units["input_hats"][1].colour, placement, classes);
+    drawInsetPart(x, y_top, inset_unit_width, inset_unit_height, "cell_previouses", 1, data.units["cell_previouses"][1].colour, placement, classes, "cell");
+    drawInsetPart(x, y_bottom, inset_unit_width, inset_unit_height, "input_hats", 1, data.units["input_hats"][1].colour, placement, classes, "input_hat");
     x += inset_separator + inset_unit_width;
-    drawInsetPart(x, y_top, inset_unit_width, inset_unit_height, "forgets", 1, data.units["forgets"][1].colour, placement, classes);
-    drawInsetPart(x, y_bottom, inset_unit_width, inset_unit_height, "remembers", 1, data.units["remembers"][1].colour, placement, classes);
+    drawInsetPart(x, y_top, inset_unit_width, inset_unit_height, "forgets", 1, data.units["forgets"][1].colour, placement, classes, "forget");
+    drawInsetPart(x, y_bottom, inset_unit_width, inset_unit_height, "remembers", 1, data.units["remembers"][1].colour, placement, classes, "remember");
     x += inset_separator + inset_unit_width;
-    drawInsetPart(x, y_middle, inset_unit_width, inset_unit_height, "cells", 1, data.units["cells"][1].colour, placement, classes);
+    drawInsetPart(x, y_middle, inset_unit_width, inset_unit_height, "cells", 1, data.units["cells"][1].colour, placement, classes, "cell");
     x += inset_separator + inset_unit_width;
-    drawInsetPart(x, y_middle, inset_unit_width, inset_unit_height, "outputs", 1, data.units["outputs"][1].colour, placement, classes);
+    drawInsetPart(x, y_middle, inset_unit_width, inset_unit_height, "outputs", 1, data.units["outputs"][1].colour, placement, classes, "output");
 }
 
-function drawInsetPart(x_offset, y_offset, width, height, part, layer, colour, placement, classes) {
+function drawInsetPart(x_offset, y_offset, width, height, part, layer, colour, placement, classes, componentName) {
     svg.append("rect")
-        .attr("class", classes)
+        .attr("class", classes + " " + componentName)
         .attr("x", x_offset)
         .attr("y", placement == "bottom" ? y_offset + (height / 2) + 0.5 : y_offset)
         .attr("width", width)
@@ -1542,7 +1652,7 @@ function drawInsetPart(x_offset, y_offset, width, height, part, layer, colour, p
     var part_class = "part-" + part + (layer == null ? "" : "-" + layer);
     $("." + part_class).remove();
     svg.append("rect")
-        .attr("class", classes + " " + part_class)
+        .attr("class", classes + " " + part_class + " " + componentName)
         .attr("x", x_offset)
         .attr("y", y_offset)
         .attr("width", width)
@@ -1552,7 +1662,7 @@ function drawInsetPart(x_offset, y_offset, width, height, part, layer, colour, p
         .attr("fill", "transparent")
         .style("pointer-events", "bounding-box")
         .on("mouseover", function(d) {
-            if (input_part != part || (input_layer != layer)) {
+            if ((input_part != part || (input_layer != layer)) && active_components[componentName]) {
                 d3.select(this)
                     .style("cursor", "pointer");
                 d3.select(this)
@@ -1560,9 +1670,14 @@ function drawInsetPart(x_offset, y_offset, width, height, part, layer, colour, p
                     .duration(100)
                     .attr("stroke-width", 2);
             }
+
+            if (active_components[componentName]) {
+                $("#notation-" + componentName).parent()
+                    .css("border-color", "black");
+            }
         })
         .on("mouseout", function(d) {
-            if (input_part != part || (input_layer != layer)) {
+            if ((input_part != part || (input_layer != layer)) && active_components[componentName]) {
                 d3.select(this)
                     .style("cursor", "auto");
                 d3.select(this)
@@ -1570,20 +1685,36 @@ function drawInsetPart(x_offset, y_offset, width, height, part, layer, colour, p
                     .duration(50)
                     .attr("stroke-width", 1);
             }
+
+            if (active_components[componentName]) {
+                $("#notation-" + componentName).parent()
+                    .css("border-color", "transparent");
+            }
         })
         .on("click", function(d) {
-            input_part = part;
-            input_layer = layer;
-            loadInset(true);
-            loadDetail(true);
+            if (active_components[componentName]) {
+                input_part = part;
+                input_layer = layer;
+                loadInset(true);
+                loadDetail(true);
 
-            if (compare_sequence.length != 0) {
-                var count = activationsTop.length;
-                drawCompareDial(count);
-                loadInset(false);
-                loadDetail(false);
+                if (compare_sequence.length != 0) {
+                    var count = activationsTop.length;
+                    drawCompareDial(count);
+                    loadInset(false);
+                    loadDetail(false);
+                }
             }
         });
+
+        var flag = active_components[componentName];
+        if (flag) {
+            d3.selectAll("." + componentName).style("opacity", 1);
+            d3.selectAll("image." + componentName).style("opacity", notationOff);
+            d3.selectAll(".subtle." + componentName).style("opacity", 0.2);
+        } else {
+            d3.selectAll("." + componentName).style("opacity", 0);
+        }
 }
 
 var activationsTop = null;
@@ -2453,3 +2584,22 @@ function drawSequence(sequence_match, x_offset, y_offset, width, height) {
     }
 }
 
+function nameOf(name) {
+    if (name.startsWith("e_")) {
+        return "embedding_hidden";
+    } else if (name.startsWith("z_")) {
+        return "input_hat";
+    } else if (name.startsWith("j_")) {
+        return "remember";
+    } else if (name.startsWith("g_")) {
+        return "forget";
+    } else if (name.startsWith("c_")) {
+        return "cell";
+    } else if (name.startsWith("h_")) {
+        return "output";
+    } else if (name.startsWith("y_")) {
+        return "softmax";
+    } else {
+        return null;
+    }
+}

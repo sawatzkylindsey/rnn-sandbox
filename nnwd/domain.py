@@ -687,12 +687,9 @@ class NeuralNetwork:
         elif part == "cell_hats":
             return "cellhat_%d^%d" % (timestep, layer)
         elif part == "cell_previouses":
-            if timestep == 0:
-                return None
-
             return "c_%d^%d" % (timestep - 1, layer)
         elif part == "outputs":
-            return "x_%d^%d" % (timestep, layer)
+            return "h_%d^%d" % (timestep, layer)
         elif part == "softmax":
             return "y_%d" % timestep
 

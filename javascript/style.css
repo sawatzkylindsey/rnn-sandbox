@@ -57,3 +57,16 @@ tr {
 span {
     font-size: 10px;
 }
+
+img {
+    opacity: 0.5;
+    padding-top: 4px;
+}
+
+.notation-border {
+    border: solid;
+    border-width: 1px;
+    border-color: transparent;
+    width: 210px;
+    transform: translateX(-2px);
+}
