@@ -72,11 +72,6 @@ class SequenceQuery:
         else:
             tolerance = 0.1
 
-        if "method" in data:
-            method = data["method"][0]
-        else:
-            method = "flexible"
-
         predicates = []
 
         for predicate_str in predicate_strs:
@@ -95,7 +90,7 @@ class SequenceQuery:
 
             predicates += [parts]
 
-        return tolerance, method, predicates
+        return tolerance, predicates
 
 
 class SequenceMatchesEstimate(SequenceQuery):
@@ -103,13 +98,13 @@ class SequenceMatchesEstimate(SequenceQuery):
         super(SequenceMatchesEstimate, self).__init__(*args, **kwargs)
 
     def get(self, data):
-        tolerance, method, predicates = self.parse(data)
+        tolerance, predicates = self.parse(data)
 
         if "exact" in data:
-            rollup = self.query_engine.find(tolerance, method, predicates)
+            rollup = self.query_engine.find(tolerance, predicates)
             return Estimate(exact=sum([sequence_match.count for sequence_match in rollup.sequence_matches]))
         else:
-            return self.query_engine.find_estimate(tolerance, method, predicates)
+            return self.query_engine.find_estimate(tolerance, predicates)
 
 
 class SequenceMatches(SequenceQuery):
@@ -117,6 +112,6 @@ class SequenceMatches(SequenceQuery):
         super(SequenceMatches, self).__init__(*args, **kwargs)
 
     def get(self, data):
-        tolerance, method, predicates = self.parse(data)
-        return self.query_engine.find(tolerance, method, predicates)
+        tolerance, predicates = self.parse(data)
+        return self.query_engine.find(tolerance, predicates)
 

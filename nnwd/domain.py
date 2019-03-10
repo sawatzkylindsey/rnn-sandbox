@@ -723,18 +723,27 @@ class QueryEngine:
                 self.sequence_units[sequence_unit] = []
 
             if unit not in self.units:
-                self.units[unit] = []
+                self.units[unit] = {}
 
             self.sequence_units[sequence_unit] += [activation_point]
-            self.units[unit] += [activation_point]
 
-    def find_estimate(self, tolerance, method, predicates):
-        matches = self.find_matches(tolerance, method, True, predicates)
+            for axis, value in enumerate(activation_point.point):
+                if axis not in self.units[unit]:
+                    self.units[unit][axis] = []
+
+                self.units[unit][axis] += [activation_point]
+
+        for unit, subd in self.units.items():
+            for axis, points in subd.items():
+                self.units[unit][axis] = sorted(points, key=lambda ap: ap.point[axis])
+
+    def find_estimate(self, tolerance, predicates):
+        matches = self.find_matches(tolerance, True, predicates)
         lower = len(matches)
         return Estimate(lower=lower, upper=None if lower > 10 else lower * 10)
 
-    def find(self, tolerance, method, predicates):
-        matches = self.find_matches(tolerance, method, False, predicates)
+    def find(self, tolerance, predicates):
+        matches = self.find_matches(tolerance, False, predicates)
         rollups = {}
 
         for sequence, result in matches:
@@ -765,7 +774,7 @@ class QueryEngine:
 
         return SequenceRollup([SequenceMatch(key[0], key[1], value) for key, value in sorted(rollups.items(), key=lambda item: item[1], reverse=True)[:QueryEngine.TOP]])
 
-    def find_matches(self, tolerance, method, first_only, predicates):
+    def find_matches(self, tolerance, first_only, predicates):
         required_level_units = []
         matched_activations = {}
         matched_sequences = None
@@ -776,10 +785,10 @@ class QueryEngine:
                 required_level_units += [level_unit]
                 found = set()
 
-                for activation_point in self._candidates(unit, matched_sequences):
+                for activation_point in self._candidates(unit, next(iter(features)), tolerance, matched_sequences):
                     candidate_point = [activation_point.point[axis] for axis, target in features]
                     target_point = [target for axis, target in features]
-                    within, distance = self._measure(candidate_point, target_point, tolerance, method)
+                    within, distance = self._measure(candidate_point, target_point, tolerance)
 
                     if within:
                         sequence = tuple(activation_point.sequence)
@@ -860,25 +869,53 @@ class QueryEngine:
 
         return results
 
-    def _candidates(self, unit, matched_sequences):
+    def _candidates(self, unit, axis_target, tolerance, matched_sequences):
         if matched_sequences is None:
-            return self.units[unit]
+            axis, target = axis_target
+            sorted_activation_points = self.units[unit][axis]
+            bottom_index = self._binary_search(axis, target - tolerance, sorted_activation_points, True)
+            top_index = self._binary_search(axis, target + tolerance, sorted_activation_points, False)
+            return self.units[unit][axis][bottom_index:top_index + 1]
         else:
             return adjutant.flat_map([self.sequence_units[(sequence,) + unit] for sequence in matched_sequences])
 
-    def _measure(self, candidate, target, tolerance, method):
+    def _binary_search(self, axis, target, activation_points, find_lower):
+        lower = 0
+        upper = len(activation_points) - 1
+        found = upper if activation_points[upper].point[axis] == target else None
+
+        while found is None:
+            if activation_points[lower].point[axis] > target:
+                found = lower
+            elif activation_points[upper].point[axis] < target:
+                found = upper
+            else:
+                current = int((upper + lower) / 2.0)
+                observation = activation_points[current].point[axis]
+
+                if observation == target:
+                    found = current
+                elif observation < target:
+                    if lower == current:
+                        if activation_points[upper].point[axis] <= target:
+                            found = upper
+                        else:
+                            found = lower if find_lower else upper
+                    else:
+                        lower = current
+                else:
+                    upper = current
+
+        direction = -1 if find_lower else 1
+
+        while found + direction < len(activation_points) and activation_points[found + direction].point[axis] == target:
+            found += direction
+
+        return found
+
+    def _measure(self, candidate, target, tolerance):
         check.check_lte(check.check_gte(tolerance, 0), 1)
-        check.check_one_of(method, ["flexible", "rigid"])
         deltas = geometry.deltas(candidate, target)
         distance = geometry.hypotenuse(deltas)
-
-        if method == "flexible":
-            size = len(target)
-
-            if size not in self.thresholds:
-                self.thresholds[size] = geometry.distance([0] * size, [tolerance] * size)
-
-            return distance < self.thresholds[size], distance
-        else:
-            return all([part < tolerance for part in deltas]), distance
+        return all([part < tolerance for part in deltas]), distance
 

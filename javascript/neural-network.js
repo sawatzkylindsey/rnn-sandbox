@@ -236,9 +236,6 @@ function queryBuilderControls() {
                         if (hash_parts[index].startsWith("tolerance=")) {
                             params += "&" + hash_parts[index];
                         }
-                        if (hash_parts[index].startsWith("method=")) {
-                            params += "&" + hash_parts[index];
-                        }
                     }
                     d3.json("sequence-matches?" + query.map(p => "predicate=" + predicateString(p)).join("&") + params)
                         .get(function (error, data) { drawSequences(data); });
@@ -455,9 +452,6 @@ function updateSequenceMatchesEstimate() {
 
     for (var index in hash_parts) {
         if (hash_parts[index].startsWith("tolerance=")) {
-            params += "&" + hash_parts[index];
-        }
-        if (hash_parts[index].startsWith("method=")) {
             params += "&" + hash_parts[index];
         }
         if (hash_parts[index] == "exact") {
