@@ -332,13 +332,15 @@ class NeuralNetwork:
         return activation_data
 
     def _setup_colour_embeddings(self):
-        # Pallet from: http://colorbrewer2.org/#type=qualitative&scheme=Accent&n=3
+        # Pallet from: http://colorbrewer2.org/#type=qualitative&scheme=Accent&n=4
         #  0: 127,201,127
         #  1: 190,174,212
         #  2: 253,192,134
+        #  3: 255,255,153
         parens_open = (127, 201, 127)
         parens_close = (190, 174, 212)
         numeral = (253, 192, 134)
+        other = (255, 255, 153)
         self.colour_embeddings = {
             "(": parens_open,
             ")": parens_close,
@@ -347,6 +349,8 @@ class NeuralNetwork:
             "2": numeral,
             "3": numeral,
             "4": numeral,
+            mlbase.BLANK: other,
+            nlp.UNKNOWN: other,
         }
 
     def _dummy(self):
