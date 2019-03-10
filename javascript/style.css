@@ -3,7 +3,7 @@
     text-align: right;
 }
 
-input {
+.textbox {
     border: none;
     background-color: #dee0e2;
     font-size: 14px;
@@ -42,31 +42,36 @@ body {
     border-width: 1px;
 }
 
-img {
-    //position: absolute;
-    //left: 50%;
-    //transform: translateX(-50%);
-    //width: 100%;
-    height: 16px;
-}
-
 tr {
     height: 16px;
 }
 
-span {
+.note {
     font-size: 10px;
 }
 
-img {
+.notation-item {
     opacity: 0.5;
+}
+
+.notation-name {
+    position: absolute;
+    padding-left: 25px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 15px;
+}
+
+.notation-equation {
     padding-top: 4px;
+    height: 16px;
 }
 
 .notation-border {
     border: solid;
     border-width: 1px;
     border-color: transparent;
-    width: 210px;
+    width: 200px;
+    height: 24px;
     transform: translateX(-2px);
 }

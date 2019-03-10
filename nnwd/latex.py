@@ -15,12 +15,13 @@ def generate_png(function):
             file_path = os.path.join(LATEX_DIR, "%s.png" % result)
 
             if not os.path.exists(file_path):
-                m = re.match("(\w+)_(-?\d+)(\^(\d+)|)", result)
+                m = re.match("(tilde_)?(\w+)_(-?\d+)(\^(\d+))?", result)
+                base = m.group(2) if m.group(1) is None else r"\tilde{%s}" % m.group(2)
 
-                if m.group(3) == "":
-                    sympy.preview(r"$$%s_{%s}$$" % (m.group(1), m.group(2)), viewer="file", filename=file_path)
+                if m.group(4) is None:
+                    sympy.preview(r"$$%s_{%s}$$" % (base, m.group(2)), viewer="file", filename=file_path)
                 else:
-                    sympy.preview(r"$$%s_{%s}^{%s}$$" % (m.group(1), m.group(2), m.group(4)), viewer="file", filename=file_path)
+                    sympy.preview(r"$$%s_{%s}^{%s}$$" % (base, m.group(2), m.group(5)), viewer="file", filename=file_path)
 
         return result
 

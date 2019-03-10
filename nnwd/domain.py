@@ -677,11 +677,11 @@ class NeuralNetwork:
         elif part == "output_gates":
             return "o_%d^%d" % (timestep, layer)
         elif part == "input_hats":
-            return "z_%d^%d" % (timestep, layer)
+            return "tilde_c_%d^%d" % (timestep, layer)
         elif part == "remembers":
-            return "j_%d^%d" % (timestep, layer)
+            return "s_%d^%d" % (timestep, layer)
         elif part == "forgets":
-            return "g_%d^%d" % (timestep, layer)
+            return "l_%d^%d" % (timestep, layer)
         elif part == "cells":
             return "c_%d^%d" % (timestep, layer)
         elif part == "cell_hats":

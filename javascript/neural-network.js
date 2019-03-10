@@ -132,34 +132,34 @@ $(document).ready(function () {
 
 function componentSwitch(name) {
     var flag = active_components[name];
-    $("#notation-" + name)
+    $(".notation-" + name)
         .on("mouseover", function(d) {
             if (flag) {
-                $(this).css("opacity", notationOff);
+                $(".notation-" + name).css("opacity", notationOff);
             } else {
-                $(this).css("opacity", 1);
+                $(".notation-" + name).css("opacity", 1);
             }
-            $(this).css("cursor", "pointer");
+            $(".notation-" + name).css("cursor", "pointer");
         })
         .on("mouseout", function(d) {
             if (flag) {
-                $(this).css("opacity", 1);
+                $(".notation-" + name).css("opacity", 1);
             } else {
-                $(this).css("opacity", notationOff);
+                $(".notation-" + name).css("opacity", notationOff);
             }
-            $(this).css("cursor", "auto");
+            $(".notation-" + name).css("cursor", "auto");
         })
         .on("click", function(d) {
             flag = !flag;
             active_components[name] = flag;
 
             if (flag) {
-                d3.select(this).style("opacity", 1.0);
+                d3.selectAll(".notation-" + name).style("opacity", 1.0);
                 d3.selectAll("." + name).style("opacity", 1);
                 d3.selectAll("image." + name).style("opacity", notationOff);
                 d3.selectAll(".subtle." + name).style("opacity", 0.2);
             } else {
-                d3.select(this).style("opacity", notationOff);
+                d3.selectAll(".notation-" + name).style("opacity", notationOff);
                 d3.selectAll("." + name).style("opacity", 0);
             }
         });
@@ -754,7 +754,7 @@ function drawStateWidget(timestep, geometry, name, min, max, vector, colour, pre
                         componentName = "cell_hidden";
                     }
 
-                    $("#notation-" + componentName).parent()
+                    $(".notation-" + componentName).parent()
                         .css("border-color", "black");
                 }
             })
@@ -768,7 +768,7 @@ function drawStateWidget(timestep, geometry, name, min, max, vector, colour, pre
                         componentName = "cell_hidden";
                     }
 
-                    $("#notation-" + componentName).parent()
+                    $(".notation-" + componentName).parent()
                         .css("border-color", "transparent");
                 }
             });
@@ -1002,7 +1002,7 @@ function drawPredictionWidget(timestep, geometry, name, min, max, predictions, c
                 if (active_components[nameOf(name)]) {
                     d3.select(this)
                         .style("opacity", 1.0);
-                    $("#notation-" + nameOf(name)).parent()
+                    $(".notation-" + nameOf(name)).parent()
                         .css("border-color", "black");
                 }
             })
@@ -1010,7 +1010,7 @@ function drawPredictionWidget(timestep, geometry, name, min, max, predictions, c
                 if (active_components[nameOf(name)]) {
                     d3.select(this)
                         .style("opacity", notationOff);
-                    $("#notation-" + nameOf(name)).parent()
+                    $(".notation-" + nameOf(name)).parent()
                         .css("border-color", "transparent");
                 }
             });
@@ -1666,7 +1666,7 @@ function drawInsetPart(x_offset, y_offset, width, height, part, layer, colour, p
             }
 
             if (active_components[componentName]) {
-                $("#notation-" + componentName).parent()
+                $(".notation-" + componentName).parent()
                     .css("border-color", "black");
             }
         })
@@ -1681,7 +1681,7 @@ function drawInsetPart(x_offset, y_offset, width, height, part, layer, colour, p
             }
 
             if (active_components[componentName]) {
-                $("#notation-" + componentName).parent()
+                $(".notation-" + componentName).parent()
                     .css("border-color", "transparent");
             }
         })
@@ -2261,7 +2261,7 @@ function drawAutocomplete(timestep) {
         .append("xhtml:div")
         .attr("id", "autocomplete-" + timestep);
     var autocomplete = $("#autocomplete-" + timestep);
-    autocomplete.append("<input class=':focus'/>");
+    autocomplete.append("<input class=':focus textbox'/>");
     autocomplete.find("input").focus();
     autocomplete.on("input", function() {
         autocomplete.find(".autocomplete-option").remove();
@@ -2397,7 +2397,7 @@ function drawInputModal(callback, edit_sequence) {
         .append("xhtml:div")
         .attr("id", "sequence-inputter");
     var sequenceInputter = $("#sequence-inputter");
-    sequenceInputter.append("<input class=':focus'/>");
+    sequenceInputter.append("<input class=':focus textbox'/>");
     sequenceInputter.find("input").focus();
 
     if (edit_sequence != null) {
@@ -2581,11 +2581,11 @@ function drawSequence(sequence_match, x_offset, y_offset, width, height) {
 function nameOf(name) {
     if (name.startsWith("e_")) {
         return "embedding_hidden";
-    } else if (name.startsWith("z_")) {
+    } else if (name.startsWith("tilde_c_")) {
         return "input_hat";
-    } else if (name.startsWith("j_")) {
+    } else if (name.startsWith("s_")) {
         return "remember";
-    } else if (name.startsWith("g_")) {
+    } else if (name.startsWith("l_")) {
         return "forget";
     } else if (name.startsWith("c_")) {
         return "cell";

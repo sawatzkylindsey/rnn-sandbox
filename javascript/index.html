@@ -11,97 +11,200 @@ var TOTAL_WIDTH=1420;
 var TOTAL_HEIGHT=720;
 var LEFT_WIDTH=220;
 var TOP_HEIGHT=40;
+
+function notationChange(event) {
+    if (event.target.value == "math") {
+        $("#notation-names").css("display", "none");
+        $("#notation-math").css("display", "block");
+    } else {
+        $("#notation-names").css("display", "block");
+        $("#notation-math").css("display", "none");
+    }
+}
+
+$(document).ready(function () {
+    $("#radio-names")
+        .prop("checked", true)
+        .change();
+});
 </script>
 <body>
     <div id="header" class="floating" style="height: 40px;">
         <div style="float: left; position: absolute; top: 50%; width: 220px; transform: translateY(-50%); text-align: right;">Input:</div>
         <div style="float: left; position: absolute; top: 50%; left: 225px; width: 970px; height: 20px; transform: translateY(-50%);">
-            <input id="main_input" type="text"/>
+            <input id="main_input" class="textbox" type="text"/>
         </div>
     </div>
-    <div id="lefter" class="floating" style="width: 220px;">
+    <div id="lefter" class="floating" style="width: 210px;">
         <div id="query" style="text-align: center; padding: 1px; border-bottom-style: solid; border-width: 1px;">Query</div>
         <div id="query-content" style="display: none;" align="center">
-            <span id="query-starter">View unit details to start building.</span>
+            <span id="query-starter" class="note">View unit details to start building.</span>
             <svg id="query-builder" style="width: 200px; height: 600px; display: none;"/>
         </div>
         <div id="notation" style="text-align: center; padding: 1px; border-width: 1px;">Notation</div>
         <div id="notation-content" align="center">
-        <table style="border-spacing: 5px;">
+        <div style="text-align: center; font-size: 12px;">
+            Names
+            <input id="radio-names" type="radio" name="kind" value="names" onchange="notationChange(event)"/>
+            &nbsp;
+            <input id="radio-math" type="radio" name="kind" value="math" onchange="notationChange(event)"/>
+            Math
+            &nbsp;
+        </div>
+        <table id="notation-names" style="border-spacing: 5px;">
             <tr>
             <td>
                 <div class="notation-border">
-                <img id="notation-embedding_hidden" src="latex-fixed/embedding_hidden_t_-1.png" style="transform: translateX(10px); opacity: 1;"/>
+                <span class="notation-embedding_hidden notation-item notation-name" style="opacity: 1;">Embedding<span>
                 </div>
             </td>
             </tr>
             <tr>
             <td>
                 <div class="notation-border">
-                <img id="notation-cell_hidden" src="latex-fixed/cell_hidden_-1.png" style="transform: translateX(2px);"/>
+                <span class="notation-cell_hidden notation-item notation-name">Initial State<span>
                 </div>
             </td>
             </tr>
             <tr>
             <td>
                 <div class="notation-border">
-                <img id="notation-forget_gate" src="latex-fixed/forget_gate.png" style="transform: translateX(10px);"/>
+                <span class="notation-forget_gate notation-item notation-name">Forget Gate<span>
                 </div>
             </td>
             </tr>
             <tr>
             <td>
                 <div class="notation-border">
-                <img id="notation-remember_gate" src="latex-fixed/remember_gate.png" style="transform: translateX(11.5px);"/>
+                <span class="notation-remember_gate notation-item notation-name">Remember Gate<span>
                 </div>
             </td>
             </tr>
             <tr>
             <td>
                 <div class="notation-border">
-                <img id="notation-output_gate" src="latex-fixed/output_gate.png" style="transform: translateX(10px);"/>
+                <span class="notation-output_gate notation-item notation-name">Output Gate<span>
                 </div>
             </td>
             </tr>
             <tr>
             <td>
                 <div class="notation-border">
-                <img id="notation-input_hat" src="latex-fixed/input_hat.png" style="transform: translateX(10.5px);"/>
+                <span class="notation-input_hat notation-item notation-name">Cell Tilde<span>
                 </div>
             </td>
             </tr>
             <tr>
             <td>
                 <div class="notation-border">
-                <img id="notation-forget" src="latex-fixed/forget.png" style="transform: translateX(10px);"/>
+                <span class="notation-forget notation-item notation-name">Long-term Memory<span>
                 </div>
             </td>
             </tr>
             <tr>
             <td>
                 <div class="notation-border">
-                <img id="notation-remember" src="latex-fixed/remember.png" style="transform: translateX(10px);"/>
+                <span class="notation-remember notation-item notation-name">Short-term Memory<span>
                 </div>
             </td>
             </tr>
             <tr>
             <td>
                 <div class="notation-border">
-                <img id="notation-cell" src="latex-fixed/cell.png" style="transform: translateX(11px);"/>
+                <span class="notation-cell notation-item notation-name">Cell State<span>
                 </div>
             </td>
             </tr>
             <tr>
             <td>
                 <div class="notation-border">
-                <img id="notation-output" src="latex-fixed/output.png" style="transform: translateX(9px); opacity: 1;"/>
+                <span class="notation-output notation-item notation-name" style="opacity: 1;">Hidden State<span>
                 </div>
             </td>
             </tr>
             <tr>
             <td>
                 <div class="notation-border">
-                <img id="notation-softmax" src="latex-fixed/softmax.png" style="transform: translateX(9px); opacity: 1;"/>
+                <span class="notation-softmax notation-item notation-name" style="opacity: 1;">Softmax<span>
+                </div>
+            </td>
+            </tr>
+        </table>
+        <table id="notation-math" style="border-spacing: 5px;">
+            <tr>
+            <td>
+                <div class="notation-border">
+                <img class="notation-embedding_hidden notation-item notation-equation" src="latex-fixed/embedding_hidden_t_-1.png" style="transform: translateX(10px); opacity: 1;"/>
+                </div>
+            </td>
+            </tr>
+            <tr>
+            <td>
+                <div class="notation-border">
+                <img class="notation-cell_hidden notation-item notation-equation" src="latex-fixed/cell_hidden_-1.png" style="transform: translateX(2px);"/>
+                </div>
+            </td>
+            </tr>
+            <tr>
+            <td>
+                <div class="notation-border">
+                <img class="notation-forget_gate notation-item notation-equation" src="latex-fixed/forget_gate.png" style="transform: translateX(10px);"/>
+                </div>
+            </td>
+            </tr>
+            <tr>
+            <td>
+                <div class="notation-border">
+                <img class="notation-remember_gate notation-item notation-equation" src="latex-fixed/remember_gate.png" style="transform: translateX(11.5px);"/>
+                </div>
+            </td>
+            </tr>
+            <tr>
+            <td>
+                <div class="notation-border">
+                <img class="notation-output_gate notation-item notation-equation" src="latex-fixed/output_gate.png" style="transform: translateX(10px);"/>
+                </div>
+            </td>
+            </tr>
+            <tr>
+            <td>
+                <div class="notation-border">
+                <img class="notation-input_hat notation-item notation-equation" src="latex-fixed/input_hat.png" style="transform: translateX(10.5px);"/>
+                </div>
+            </td>
+            </tr>
+            <tr>
+            <td>
+                <div class="notation-border">
+                <img class="notation-forget notation-item notation-equation" src="latex-fixed/forget.png" style="transform: translateX(10px);"/>
+                </div>
+            </td>
+            </tr>
+            <tr>
+            <td>
+                <div class="notation-border">
+                <img class="notation-remember notation-item notation-equation" src="latex-fixed/remember.png" style="transform: translateX(10px);"/>
+                </div>
+            </td>
+            </tr>
+            <tr>
+            <td>
+                <div class="notation-border">
+                <img class="notation-cell notation-item notation-equation" src="latex-fixed/cell.png" style="transform: translateX(11px);"/>
+                </div>
+            </td>
+            </tr>
+            <tr>
+            <td>
+                <div class="notation-border">
+                <img class="notation-output notation-item notation-equation" src="latex-fixed/output.png" style="transform: translateX(9px); opacity: 1;"/>
+                </div>
+            </td>
+            </tr>
+            <tr>
+            <td>
+                <div class="notation-border">
+                <img class="notation-softmax notation-item notation-equation" src="latex-fixed/softmax.png" style="transform: translateX(9px); opacity: 1;"/>
                 </div>
             </td>
             </tr>
