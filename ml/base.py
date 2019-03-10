@@ -129,7 +129,7 @@ class TrainingParameters:
         #   1. The current epoch exceeds the epochs threshold, or
         #   2. The losses are full, decreasing, and consistently lower than the absolute threshold
         #   3. The losses are full, decreasing, and consistently lower than the relative threshold
-        if epoch > self._epochs:
+        if epoch >= self._epochs:
             return True, TrainingParameters.REASON_EPOCHS
 
         if len(losses) == self._window:

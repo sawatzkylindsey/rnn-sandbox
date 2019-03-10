@@ -228,7 +228,7 @@ class Rnn:
                 logging.debug(epoch_template.format(epoch, epoch_loss))
 
             losses.append(epoch_loss)
-            finished, reason = training_parameters.finished(epoch, losses)
+            finished, reason = training_parameters.finished(epoch + 1, losses)
 
         logging.debug("Training finished due to %s (%s)." % (reason, losses))
         logging.debug(epoch_template.format(epoch, epoch_loss))
