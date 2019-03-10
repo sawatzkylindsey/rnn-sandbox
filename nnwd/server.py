@@ -115,7 +115,7 @@ def main(argv):
                     action="store_true",
                     help="Turn on verbose logging.")
     ap.add_argument("-p", "--port", default=8888, type=int)
-    ap.add_argument("--corpus", default="corpora/the-little-prince-v1.txt")
+    ap.add_argument("--corpus", default="corpora/parens.txt")
     ap.add_argument("--epochs", default=1000, type=int)
     aargs = ap.parse_args(argv)
     setup_logging(".%s.log" % os.path.splitext(os.path.basename(__file__))[0], aargs.verbose, False, True, True)

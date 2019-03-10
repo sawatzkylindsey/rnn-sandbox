@@ -184,7 +184,7 @@ class NeuralNetwork:
                 else:
                     best_loss = None
                     self.lstm.load(lstm_dir, version)
-                    mini_epochs = 5
+                    mini_epochs = min(5, self.epoch_threshold)
                     smaller_batch = max(8, int(batch * 0.8))
                     smaller_loss, smaller_perplexity = self.lstm_train_loop(smaller_batch, mini_epochs, False)
                     logging.debug("mini train lstm smaller (batch %d): (loss, perplexity) (%s, %s)" % (smaller_batch, smaller_loss, smaller_perplexity))
@@ -332,6 +332,24 @@ class NeuralNetwork:
         return activation_data
 
     def _setup_colour_embeddings(self):
+        # Pallet from: http://colorbrewer2.org/#type=qualitative&scheme=Accent&n=3
+        #  0: 127,201,127
+        #  1: 190,174,212
+        #  2: 253,192,134
+        parens_open = (127, 201, 127)
+        parens_close = (190, 174, 212)
+        numeral = (253, 192, 134)
+        self.colour_embeddings = {
+            "(": parens_open,
+            ")": parens_close,
+            "0": numeral,
+            "1": numeral,
+            "2": numeral,
+            "3": numeral,
+            "4": numeral,
+        }
+
+    def _dummy(self):
         weights = []
         order = []
 
