@@ -14,7 +14,7 @@ def distance(a, b):
 
 def deltas(a, b):
     assert len(a) == len(b)
-    return [a[i] - b[i] for i in range(0, len(a))]
+    return [abs(a[i] - b[i]) for i in range(0, len(a))]
 
 
 def hypotenuse(vector):
