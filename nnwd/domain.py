@@ -80,7 +80,7 @@ class NeuralNetwork:
     LAYERS = 2
     HIDDEN_WIDTH = 50
     EMBEDDING_WIDTH = 50
-    OUTPUT_WIDTH = 7
+    OUTPUT_WIDTH = 6
     HIDDEN_REDUCTION = 10
     EMBEDDING_REDUCTION = 10
     TOP_PREDICTIONS = 3
@@ -337,10 +337,12 @@ class NeuralNetwork:
         #  1: 190,174,212
         #  2: 253,192,134
         #  3: 255,255,153
+        #  4: 56,108,176
         parens_open = (127, 201, 127)
         parens_close = (190, 174, 212)
         numeral = (253, 192, 134)
-        other = (255, 255, 153)
+        terminal = (255, 255, 153)
+        other = (56, 108, 176)
         self.colour_embeddings = {
             "(": parens_open,
             ")": parens_close,
@@ -349,6 +351,7 @@ class NeuralNetwork:
             "2": numeral,
             "3": numeral,
             "4": numeral,
+            ".": terminal,
             mlbase.BLANK: other,
             nlp.UNKNOWN: other,
         }

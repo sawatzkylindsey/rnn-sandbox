@@ -14,7 +14,7 @@ for i in range(int(sys.argv[1])):
 
     while True:
         if len(sentence) > 0 and terminal and randbool():
-            print(" ".join(sentence))
+            print(" ".join(sentence + ["."]))
             break
         else:
             if randbool():
