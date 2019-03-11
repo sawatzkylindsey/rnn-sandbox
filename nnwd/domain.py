@@ -33,13 +33,12 @@ MatchPoint = collections.namedtuple("MatchPoint", ["distance", "word", "index", 
 
 
 def create(corpus_stream, epochs, verbose):
-    xys = []
     xys_file = os.path.join(RESUME_DIR, "xys.pickle")
     words_file = os.path.join(RESUME_DIR, "words.pickle")
 
     if os.path.exists(xys_file):
-        xys = pickler.load(xys_file)
-        words = pickler.load(words_file)
+        xys = [xy for xy in pickler.load(xys_file)]
+        words = set([word for word in pickler.load(words_file)])
     else:
         words, xys = nlp.corpus_sequences(corpus_stream)
         pickler.dump(xys, xys_file)
@@ -50,9 +49,9 @@ def create(corpus_stream, epochs, verbose):
     test_xys_file = os.path.join(RESUME_DIR, "xys.test.pickle")
 
     if os.path.exists(train_xys_file):
-        train_xys = pickler.load(train_xys_file)
-        validation_xys = pickler.load(validation_xys_file)
-        test_xys = pickler.load(test_xys_file)
+        train_xys = [xy for xy in pickler.load(train_xys_file)]
+        validation_xys = [xy for xy in pickler.load(validation_xys_file)]
+        test_xys = [xy for xy in pickler.load(test_xys_file)]
     else:
         random.shuffle(xys)
         split_1 = int(len(xys) * 0.8)
@@ -274,7 +273,7 @@ class NeuralNetwork:
         predictor_xys_file = os.path.join(RESUME_DIR, "predictor_xys.pickle")
 
         if os.path.exists(predictor_xys_file):
-            predictor_xys = pickler.load(predictor_xys_file)
+            predictor_xys = [xy for xy in pickler.load(predictor_xys_file)]
         else:
             for xy in self.train_xys:
                 stepwise_lstm = self.lstm.stepwise(False)
@@ -306,7 +305,7 @@ class NeuralNetwork:
         activation_data_file = os.path.join(RESUME_DIR, "activation_data.pickle")
 
         if os.path.exists(activation_data_file):
-            activation_data = pickler.load(activation_data_file)
+            activation_data = [ad for ad in pickler.load(activation_data_file)]
         else:
             for xy in self.train_xys:
                 stepwise_lstm = self.lstm.stepwise(False)
@@ -735,7 +734,7 @@ class QueryEngine:
         while not os.path.exists(activation_data_file + ".marker"):
             time.sleep(1)
 
-        self.activation_data = pickler.load(activation_data_file)
+        self.activation_data = [ad for ad in pickler.load(activation_data_file)]
         self.units = {}
         self.sequence_units = {}
 
