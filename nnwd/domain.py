@@ -144,7 +144,7 @@ class NeuralNetwork:
     def _setup(self):
         self._train_rnn()
         self._setup_colour_embeddings()
-        self._get_activation_data()
+        self._generate_activation_data()
         self._train_predictor()
         # Also set inside self._train_predictor().
         self.setup_complete = True
@@ -159,8 +159,10 @@ class NeuralNetwork:
         lstm_dir = os.path.join(RESUME_DIR, "lstm")
 
         if os.path.exists(lstm_dir):
+            logging.debug("Loading existing lstm parameters.")
             self.lstm.load(lstm_dir)
         else:
+            logging.debug("Training lstm parameters.")
             perplexity_validation = None
             best_perplexity = None
             best_loss = None
@@ -255,10 +257,12 @@ class NeuralNetwork:
         predictor_dir = os.path.join(RESUME_DIR, "predictor")
 
         if os.path.exists(predictor_dir):
+            logging.debug("Loading existing predictor parameters.")
             self.predictor.load(predictor_dir)
             self.setup_complete = True
         else:
             self.predictor_xys = self._get_predictor_data()
+            logging.debug("Training predictor parameters.")
             training_parameters = mlbase.TrainingParameters() \
                 .epochs(100) \
                 .batch(32)
@@ -307,13 +311,15 @@ class NeuralNetwork:
         logging.debug("Predictor data: %d." % len(predictor_xys))
         return predictor_xys
 
-    def _get_activation_data(self):
-        activation_data = []
+    def _generate_activation_data(self):
         activation_data_file = os.path.join(RESUME_DIR, "activation_data.pickle")
 
-        if os.path.exists(activation_data_file):
-            activation_data = [ad for ad in pickler.load(activation_data_file)]
+        if os.path.exists(activation_data_file + ".marker"):
+            logging.debug("Activation data already generated.")
         else:
+            logging.debug("Generating activation data.")
+            activation_data = []
+
             for xy in self.train_xys:
                 stepwise_lstm = self.lstm.stepwise(False)
                 sequence = []
@@ -333,9 +339,8 @@ class NeuralNetwork:
 
             pickler.dump(activation_data, activation_data_file)
             pickler.dump({}, activation_data_file + ".marker")
-
-        logging.debug("Activation data: %d." % len(activation_data))
-        return activation_data
+            logging.debug("Generated activation data: %d." % len(activation_data))
+            del activation_data
 
     def _setup_colour_embeddings(self):
         # Pallet from: http://colorbrewer2.org/#type=qualitative&scheme=Accent&n=4

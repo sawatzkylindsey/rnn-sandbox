@@ -11,6 +11,9 @@ import pdb
 import random
 from socketserver import ThreadingMixIn
 import sys
+# Not used by this module, but loading this up-front seems to be avoiding some very odd threading dealock between the server process and the background setup processes.
+import tensorflow
+import time
 from threading import Thread
 import urllib
 
@@ -121,6 +124,9 @@ def main(argv):
     setup_logging(".%s.log" % os.path.splitext(os.path.basename(__file__))[0], aargs.verbose, False, True, True)
     logging.debug(aargs)
     words, neural_network = domain.create(stream_input(aargs.corpus), aargs.epochs, aargs.verbose)
+    # Also precautionary - the the neural_network start setting up before kicking off the server.
+    # The server can't do anything anyways until the neural_network is ready to handle requests.
+    time.sleep(5)
     run(aargs.port, words, neural_network, domain.QueryEngine())
 
 
