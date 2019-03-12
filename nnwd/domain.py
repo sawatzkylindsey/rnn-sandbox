@@ -273,9 +273,16 @@ class NeuralNetwork:
         predictor_xys_file = os.path.join(RESUME_DIR, "predictor_xys.pickle")
 
         if os.path.exists(predictor_xys_file):
+            logging.debug("Loading existing predictor data.")
             predictor_xys = [xy for xy in pickler.load(predictor_xys_file)]
         else:
-            for xy in self.train_xys:
+            logging.debug("Producing predictor data.")
+            data_quarter = max(1, int(len(self.train_xys) / 4.0))
+
+            for j, xy in enumerate(self.train_xys):
+                if j % data_quarter == 0:
+                    logging.debug("%d%% through.." % int((j + 1) * 100 / len(self.train_xys)))
+
                 stepwise_lstm = self.lstm.stepwise(False)
 
                 for i, word in enumerate(xy.x):
