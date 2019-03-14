@@ -42,7 +42,7 @@ def create(corpus_stream, epochs, verbose):
     else:
         words, xys = nlp.corpus_sequences(corpus_stream)
         pickler.dump(xys, xys_file)
-        pickler.dump(words, words_file)
+        pickler.dump([word for word in words], words_file)
 
     train_xys_file = os.path.join(RESUME_DIR, "xys.train.pickle")
     validation_xys_file = os.path.join(RESUME_DIR, "xys.validation.pickle")
@@ -148,7 +148,7 @@ class NeuralNetwork:
         self._train_predictor()
         # Also set inside self._train_predictor().
         self.setup_complete = True
-        user_log.info("Setup complete")
+        user_log.info("Setup NeuralNetwork")
 
     def is_setup(self):
         return self.setup_complete
@@ -215,7 +215,7 @@ class NeuralNetwork:
                             batch = smaller_batch
 
         logging.debug("Calculating final validation perplexity.")
-        perplexity_validation = self.lstm.test(self.validation_xys, True)
+        perplexity_validation = self.lstm.test(self.validation_xys, False)
         logging.debug("Calculating final test perplexity.")
         perplexity_test = self.lstm.test(self.test_xys, True)
         logging.debug("(v, t): (%s, %s)" % (perplexity_validation, perplexity_test))
@@ -261,16 +261,17 @@ class NeuralNetwork:
             self.predictor.load(predictor_dir)
             self.setup_complete = True
         else:
-            self.predictor_xys = self._get_predictor_data()
+            predictor_xys = self._get_predictor_data()
             logging.debug("Training predictor parameters.")
             training_parameters = mlbase.TrainingParameters() \
                 .epochs(100) \
                 .batch(32)
             # Technically not complete yet, but with the predictor setup it can start answering queries.
             self.setup_complete = True
-            loss = self.predictor.train(self.predictor_xys, training_parameters)
+            loss = self.predictor.train(predictor_xys, training_parameters)
             logging.debug("train predictor %s" % loss)
             self.predictor.save(predictor_dir)
+            del predictor_xys
 
     def _get_predictor_data(self):
         predictor_xys = []
@@ -284,7 +285,7 @@ class NeuralNetwork:
             data_quarter = max(1, int(len(self.train_xys) / 4.0))
 
             for j, xy in enumerate(self.train_xys):
-                if j % data_quarter == 0:
+                if j % data_quarter == 0 or j + 1 == len(self.train_xys):
                     logging.debug("%d%% through.." % int((j + 1) * 100 / len(self.train_xys)))
 
                 stepwise_lstm = self.lstm.stepwise(False)
@@ -314,18 +315,21 @@ class NeuralNetwork:
     def _generate_activation_data(self):
         activation_data_file = os.path.join(RESUME_DIR, "activation_data.pickle")
 
-        if os.path.exists(activation_data_file + ".marker"):
+        if os.path.exists(activation_data_file + "-marker"):
             logging.debug("Activation data already generated.")
         else:
             logging.debug("Generating activation data.")
             activation_data = []
+            data_quarter = max(1, int(len(self.train_xys) / 4.0))
 
-            for xy in self.train_xys:
+            for j, xy in enumerate(self.train_xys):
+                if j % data_quarter == 0 or j + 1 == len(self.train_xys):
+                    logging.debug("%d%% through.." % int((j + 1) * 100 / len(self.train_xys)))
+
                 stepwise_lstm = self.lstm.stepwise(False)
-                sequence = []
+                sequence = tuple(xy.x)
 
                 for i, word in enumerate(xy.x):
-                    sequence += [word]
                     result, instruments = stepwise_lstm.step(word, NeuralNetwork.INSTRUMENTS)
                     part = "embedding"
                     layer = 0
@@ -338,7 +342,10 @@ class NeuralNetwork:
                             activation_data += [ActivationPoint(sequence=sequence, expectation=xy.y[i], prediction=result.prediction, part=part, layer=layer, index=i, point=point)]
 
             pickler.dump(activation_data, activation_data_file)
-            pickler.dump({}, activation_data_file + ".marker")
+
+            with open(activation_data_file + "-marker", "w") as fh:
+                fh.write("noop")
+
             logging.debug("Generated activation data: %d." % len(activation_data))
             del activation_data
 
@@ -734,7 +741,6 @@ class QueryEngine:
     TOP = 25
 
     def __init__(self):
-        self.activation_data = None
         self.thresholds = {}
         self._background_setup = threading.Thread(target=self._setup)
         self._background_setup.daemon = True
@@ -742,15 +748,19 @@ class QueryEngine:
 
     def _setup(self):
         activation_data_file = os.path.join(RESUME_DIR, "activation_data.pickle")
+        logging.debug("Waiting on activation data.")
 
-        while not os.path.exists(activation_data_file + ".marker"):
+        while not os.path.exists(activation_data_file + "-marker"):
             time.sleep(1)
 
-        self.activation_data = [ad for ad in pickler.load(activation_data_file)]
+        logging.debug("Processing activation data for query engine.")
         self.units = {}
         self.sequence_units = {}
 
-        for activation_point in self.activation_data:
+        for i, activation_point in enumerate(pickler.load(activation_data_file)):
+            if i % 1000000 == 0:
+                logging.debug("At the %dMth instance." % int(i / 1000000))
+
             sequence = tuple(activation_point.sequence)
             unit = (activation_point.part, activation_point.layer)
             sequence_unit = (sequence,) + unit
@@ -772,6 +782,8 @@ class QueryEngine:
         for unit, subd in self.units.items():
             for axis, points in subd.items():
                 self.units[unit][axis] = sorted(points, key=lambda ap: ap.point[axis])
+
+        user_log.info("Setup QueryEngine.")
 
     def find_estimate(self, tolerance, predicates):
         matches = self.find_matches(tolerance, True, predicates)

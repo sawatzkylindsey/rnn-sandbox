@@ -1,50 +1,55 @@
 
+import glob
 import pickle
 import os
+import random
 
 from pytils import check
 
 
-item_separator = "d2e40cd5-9437-450e-ab92-740f70c479c5".encode("utf-8")
-# 1073741824 - 1
-max_bytes = (2**30) - 1
 # 2147483648 - 1
-#max_bytes = (2**31) - 1
+max_bytes = (2**31) - 1
+# 100 MB = 100 * 1024 KB
+target_file_size = 100 * 1024 * 1024
 
 
 def dump(data, file_path):
-    check.check_iterable(data)
+    check.check_list(data)
     dirname = os.path.dirname(file_path)
 
     if dirname != "":
         os.makedirs(dirname, exist_ok=True)
 
-    with open(file_path, "wb") as fh:
-        bytes_out = bytearray(0)
+    if len(data) > 0:
+        sample_size = max(1, int(0.1 * len(data)))
+        sample = random.choices(data, k=sample_size)
+        average = len(pickle.dumps(sample)) / float(sample_size)
+        batch_size = max(1, int(target_file_size / average))
 
-        for d in data:
-            bytes_out += pickle.dumps(d)
-            bytes_out += item_separator
+        for i, offset in enumerate(range(0, len(data), batch_size)):
+            bytes_out = pickle.dumps(data[offset:offset + batch_size])
 
-            if len(bytes_out) >= max_bytes:
-                fh.write(bytes_out[:max_bytes])
-                bytes_out = bytes_out[max_bytes:]
-
-        fh.write(bytes_out)
+            with open(file_path + (".%d" % i), "wb") as fh:
+                while len(bytes_out) > 0:
+                    fh.write(bytes_out[:max_bytes])
+                    bytes_out = bytes_out[max_bytes:]
+    else:
+        with open(file_path + ".0", "wb") as fh:
+            fh.write(pickle.dumps([]))
 
 
 def load(file_path):
-    size = os.path.getsize(file_path)
+    sub_files = glob.glob(file_path + ".*")
 
-    with open(file_path, "rb") as fh:
-        bytes_in = bytearray(0)
+    for sub_file in sorted(sub_files, key=lambda item: int(item[item.rindex(".") + 1:])):
+        size = os.path.getsize(sub_file)
 
-        for i in range(0, size, max_bytes):
-            bytes_in += fh.read(max_bytes)
+        with open(sub_file, "rb") as fh:
+            bytes_in = bytearray(0)
 
-            while item_separator in bytes_in:
-                index = bytes_in.index(item_separator)
-                item = pickle.loads(bytes_in[:index])
-                bytes_in = bytes_in[index + len(item_separator):]
+            for i in range(0, size, max_bytes):
+                bytes_in += fh.read(max_bytes)
+
+            for item in pickle.loads(bytes_in):
                 yield item
 

@@ -127,7 +127,8 @@ def main(argv):
     # Also precautionary - the the neural_network start setting up before kicking off the server.
     # The server can't do anything anyways until the neural_network is ready to handle requests.
     time.sleep(5)
-    run(aargs.port, words, neural_network, domain.QueryEngine())
+    query_engine = domain.QueryEngine()
+    run(aargs.port, words, neural_network, query_engine)
 
 
 def stream_input(input_file):
