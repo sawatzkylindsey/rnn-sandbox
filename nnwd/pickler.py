@@ -22,7 +22,12 @@ def dump(data, file_path):
 
     if len(data) > 0:
         sample_size = max(1, int(0.1 * len(data)))
-        sample = random.choices(data, k=sample_size)
+        sample_indices = set()
+
+        while len(sample_indices) < sample_size:
+            sample_indices.add(random.randint(0, len(data) - 1))
+
+        sample = [data[index] for index in sample_indices]
         average = len(pickle.dumps(sample)) / float(sample_size)
         batch_size = max(1, int(target_file_size / average))
 
