@@ -15,6 +15,7 @@ Requirements:
     pip install nltk
     pip install numpy
     pip install sklearn
+    pip install sympy
     pip install tensorflow==1.9.0
     # If above doesn't work (you'll have to manually fix the install tf library):
     #   pip install --upgrade https://storage.googleapis.com/tensorflow/mac/cpu/tensorflow-1.9.0-py3-none-any.whl
