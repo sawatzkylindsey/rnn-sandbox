@@ -25,11 +25,12 @@ class Rnn:
     # we track all the other intermediate gates/states for the weight instrumentation.
     SCAN_STATES = 10
 
-    def __init__(self, layers, width, embedding_width, word_labels, scope="rnn"):
+    def __init__(self, layers, width, embedding_width, word_labels, output_labels, scope="rnn"):
         self.layers = layers
         self.width = width
         self.embedding_width = embedding_width
         self.word_labels = word_labels
+        self.output_labels = output_labels
         self.scope = scope
 
         self.time_dimension = None
@@ -39,8 +40,6 @@ class Rnn:
         #   _c      constant
 
         self.unrolled_inputs_p = self.placeholder("unrolled_inputs_p", [self.time_dimension, self.batch_dimension], tf.int32)
-        self.input_lengths_p = self.placeholder("input_lengths_p", [self.batch_dimension], tf.int32)
-        self.unrolled_outputs_p = self.placeholder("unrolled_outputs_p", [self.time_dimension, self.batch_dimension], tf.int32)
 
         self.initial_state_p = self.placeholder("initial_state_p", [Rnn.SCAN_STATES, self.layers, self.batch_dimension, self.width])
 
@@ -61,9 +60,9 @@ class Rnn:
         self.H_bias = self.variable("H_bias", [self.layers, self.width], initial=0.0)
         tf.identity(tf.reshape(self.H_bias, [-1, self.width]), name="H_bias")
 
-        self.Y = self.variable("Y", [self.width, len(self.word_labels)])
-        self.Y_bias = self.variable("Y_bias", [1, len(self.word_labels)], initial=0.0)
-        tf.identity(tf.reshape(self.Y_bias, [len(self.word_labels)]), name="Y_bias")
+        self.Y = self.variable("Y", [self.width, len(self.output_labels)])
+        self.Y_bias = self.variable("Y_bias", [1, len(self.output_labels)], initial=0.0)
+        tf.identity(tf.reshape(self.Y_bias, [len(self.output_labels)]), name="Y_bias")
 
         self.unrolled_embedded_inputs = tf.nn.embedding_lookup(self.E, self.unrolled_inputs_p)
         assert_shape(self.unrolled_embedded_inputs, [self.time_dimension, self.batch_dimension, self.embedding_width])
@@ -117,8 +116,8 @@ class Rnn:
 
             return tf.stack([output_stack, cell_stack, remember_gate_stack, forget_gate_stack, output_gate_stack, input_hat_stack, remember_stack, cell_previous_stack, forget_stack, cell_hat_stack])
 
-        max_time, batch_size = tf.unstack(tf.shape(self.unrolled_inputs_p))
-        scan_inputs = tf.reshape(self.unrolled_embedded_projected_inputs, [max_time, batch_size, self.width])
+        self.max_time, self.batch_size = tf.unstack(tf.shape(self.unrolled_inputs_p))
+        scan_inputs = tf.reshape(self.unrolled_embedded_projected_inputs, [self.max_time, self.batch_size, self.width])
         assert_shape(scan_inputs, [self.time_dimension, self.batch_dimension, self.width])
         self.unrolled_states = tf.scan(step_lstm, scan_inputs, self.initial_state_p)
         assert_shape(self.unrolled_states, [self.time_dimension, Rnn.SCAN_STATES, self.layers, self.batch_dimension, self.width])
@@ -158,17 +157,15 @@ class Rnn:
         assert_shape(final_state_for_matmul, [self.combine_dimensions(), self.width])
 
         self.output_logits = tf.matmul(final_state_for_matmul, self.Y) + self.Y_bias
-        assert_shape(self.output_logits, [self.combine_dimensions(), len(self.word_labels)])
+        assert_shape(self.output_logits, [self.combine_dimensions(), len(self.output_labels)])
 
-        unrolled_outputs = tf.reshape(self.output_logits, [max_time, batch_size, len(self.word_labels)])
-        assert_shape(unrolled_outputs, [self.time_dimension, self.batch_dimension, len(self.word_labels)])
+        self.unrolled_outputs = tf.reshape(self.output_logits, [self.max_time, self.batch_size, len(self.output_labels)])
+        assert_shape(self.unrolled_outputs, [self.time_dimension, self.batch_dimension, len(self.output_labels)])
 
-        self.output_distributions = tf.nn.softmax(unrolled_outputs)
-        assert_shape(self.output_distributions, [self.time_dimension, self.batch_dimension, len(self.word_labels)])
+        self.output_distributions = tf.nn.softmax(self.unrolled_outputs)
+        assert_shape(self.output_distributions, [self.time_dimension, self.batch_dimension, len(self.output_labels)])
 
-        expected_outputs = tf.reshape(self.output_logits, [max_time, batch_size, len(self.word_labels)])
-        self.mask = tf.sequence_mask(self.input_lengths_p, dtype=tf.float32)
-        self.cost = tf.contrib.seq2seq.sequence_loss(logits=expected_outputs, targets=self.unrolled_outputs_p, weights=self.mask)
+        self.cost = self.computational_graph_cost()
         self.updates = tf.train.AdamOptimizer().minimize(self.cost)
 
         self.session = tf.Session()
@@ -211,16 +208,7 @@ class Rnn:
             while offset < len(shuffled_xys):
                 batch = shuffled_xys[offset:offset + training_parameters.batch()]
                 offset += training_parameters.batch()
-                data_x, data_y = mlbase.as_time_major(batch, True)
-                input_labels = [[self.word_labels.encode(word if word is not None else mlbase.BLANK) for word in timespot] for timespot in data_x]
-                input_lengths = [len(sequence.x) for sequence in batch]
-                output_labels = [[self.word_labels.encode(word if word is not None else mlbase.BLANK) for word in timespot] for timespot in data_y]
-                parameters = {
-                    self.unrolled_inputs_p: np.array(input_labels),
-                    self.input_lengths_p: np.array(input_lengths),
-                    self.initial_state_p: self.initial_state(len(batch)),
-                    self.unrolled_outputs_p: np.array(output_labels),
-                }
+                parameters = self.get_training_parameters(batch)
                 _, total_cost = self.session.run([self.updates, self.cost], feed_dict=parameters)
                 epoch_loss += total_cost
 
@@ -238,37 +226,14 @@ class Rnn:
         assert len(xy_sequences) > 0
         total = 0.0
         case_slot_length = len(str(len(xy_sequences)))
-        case_template = "{{Case {:%dd}}}" % case_slot_length
         offset = 0
 
         while offset < len(xy_sequences):
             batch = xy_sequences[offset:offset + 32]
             offset += 32
-            data_x, data_y = mlbase.as_time_major(batch, True)
-            input_labels = [[self.word_labels.encode(word if word is not None else mlbase.BLANK) for word in timespot] for timespot in data_x]
-            input_lengths = [len(sequence.x) for sequence in batch]
-            parameters = {
-                self.unrolled_inputs_p: np.array(input_labels),
-                self.initial_state_p: self.initial_state(len(batch)),
-            }
+            parameters = self.get_testing_parameters(batch)
             time_distributions = self.session.run(self.output_distributions, feed_dict=parameters)
-            predictions = [[] for case in range(len(batch))]
-            log_probabilities = [0.0 for case in range(len(batch))]
-
-            for timestep, distributions in enumerate(time_distributions):
-                for case, distribution in enumerate(distributions):
-                    if timestep < input_lengths[case]:
-                        predictions[case] += [self.word_labels.vector_decode(distribution)]
-                        probability = self.word_labels.vector_decode_probability(distribution, batch[case].y[timestep])
-                        log_probabilities[case] += math.log2(probability)
-
-            for case, log_probability in enumerate(log_probabilities):
-                perplexity = 2**(-(log_probability / input_lengths[case]))
-                total += perplexity
-
-                if debug:
-                    logging.debug("%s perplexity %.4f.\n   Sequence: %s\n   Predicted: %s" % \
-                        (case_template.format(case), perplexity, " ".join(batch[case].x), " ".join(predictions[case])))
+            total += self.score(batch, parameters, time_distributions, debug, case_slot_length)
 
         return total / len(xy_sequences)
 
@@ -282,7 +247,7 @@ class Rnn:
         assert len(distributions) == 1
         assert len(distributions[0]) == 1
         distribution = distributions[0][0]
-        result = Result(self.word_labels.vector_decode(distribution), self.word_labels.vector_decode_distribution(distribution), self.word_labels.encoding())
+        result = Result(self.output_labels.vector_decode(distribution), self.output_labels.vector_decode_distribution(distribution), self.output_labels.encoding())
         return result, next_state, {name: instrument_values[i] for i, name in enumerate(instrument_names)}
 
     def probe(self, name, layer):
@@ -402,6 +367,127 @@ class Checkpoints:
         with open(save_path, "r") as fh:
             data = json.load(fh)
             return Checkpoints(model_dir, data["versions"], data["latest"], data["step"])
+
+
+class RnnLm(Rnn):
+    def __init__(self, layers, width, embedding_width, word_labels):
+        super(RnnLm, self).__init__(layers, width, embedding_width, word_labels, word_labels)
+        pass
+
+    def computational_graph_cost(self):
+        self.input_lengths_p = self.placeholder("input_lengths_p", [self.batch_dimension], tf.int32)
+        self.unrolled_outputs_p = self.placeholder("unrolled_outputs_p", [self.time_dimension, self.batch_dimension], tf.int32)
+        expected_outputs = tf.reshape(self.output_logits, [self.max_time, self.batch_size, len(self.output_labels)])
+        self.mask = tf.sequence_mask(self.input_lengths_p, dtype=tf.float32)
+        return tf.contrib.seq2seq.sequence_loss(logits=expected_outputs, targets=self.unrolled_outputs_p, weights=self.mask)
+
+    def get_training_parameters(self, batch):
+        data_x, data_y = mlbase.as_time_major(batch, True)
+        input_labels = [[self.word_labels.encode(word if word is not None else mlbase.BLANK) for word in timespot] for timespot in data_x]
+        input_lengths = [len(sequence.x) for sequence in batch]
+        output_labels = [[self.word_labels.encode(word if word is not None else mlbase.BLANK) for word in timespot] for timespot in data_y]
+        return {
+            self.unrolled_inputs_p: np.array(input_labels),
+            self.input_lengths_p: np.array(input_lengths),
+            self.initial_state_p: self.initial_state(len(batch)),
+            self.unrolled_outputs_p: np.array(output_labels),
+        }
+
+    def get_testing_parameters(self, batch):
+        data_x, data_y = mlbase.as_time_major(batch, True)
+        input_labels = [[self.word_labels.encode(word if word is not None else mlbase.BLANK, True) for word in timespot] for timespot in data_x]
+        input_lengths = [len(sequence.x) for sequence in batch]
+        return {
+            self.unrolled_inputs_p: np.array(input_labels),
+            self.input_lengths_p: np.array(input_lengths),
+            self.initial_state_p: self.initial_state(len(batch)),
+        }
+
+    def score(self, batch, parameters, time_distributions, debug, case_slot_length):
+        case_template = "{{Case {:%dd}}}" % case_slot_length
+        input_lengths = parameters[self.input_lengths_p]
+        total_perplexity = 0.0
+        predictions = [[] for case in range(len(batch))]
+        log_probabilities = [0.0 for case in range(len(batch))]
+
+        for timestep, distributions in enumerate(time_distributions):
+            for case, distribution in enumerate(distributions):
+                if timestep < input_lengths[case]:
+                    predictions[case] += [self.output_labels.vector_decode(distribution)]
+                    probability = self.output_labels.vector_decode_probability(distribution, batch[case].y[timestep])
+                    log_probabilities[case] += math.log2(probability)
+
+        for case, log_probability in enumerate(log_probabilities):
+            perplexity = 2**(-(log_probability / input_lengths[case]))
+            total_perplexity += perplexity
+
+            if debug:
+                logging.debug("%s perplexity %.4f.\n   Sequence: %s\n   Predicted: %s" % \
+                    (case_template.format(case), perplexity, " ".join(batch[case].x), " ".join(predictions[case])))
+
+        # Since 'score' means that the higher is better, but with perplexity the lower is better, invert it.
+        return -total_perplexity
+
+
+class RnnSa(Rnn):
+    def __init__(self, layers, width, embedding_width, word_labels, output_labels):
+        super(RnnSa, self).__init__(layers, width, embedding_width, word_labels, output_labels)
+        pass
+
+    def computational_graph_cost(self):
+        self.input_gathers_p = self.placeholder("input_gathers_p", [self.batch_dimension, 2], tf.int32)
+        self.output_p = self.placeholder("output_p", [self.batch_dimension], tf.int32)
+        expected_outputs = tf.gather_nd(self.unrolled_outputs, self.input_gathers_p)
+        return tf.reduce_sum(tf.nn.softmax_cross_entropy_with_logits_v2(logits=expected_outputs, labels=tf.one_hot(self.output_p, len(self.output_labels))))
+
+    def get_training_parameters(self, batch):
+        data_x, data_y = mlbase.as_time_major(batch, False)
+        input_labels = [[self.word_labels.encode(word if word is not None else mlbase.BLANK) for word in timespot] for timespot in data_x]
+        # Gathers are indexes, not lengths.
+        #                                 vvv
+        input_gathers = [[len(sequence.x) - 1, i] for i, sequence in enumerate(batch)]
+        output_labels = [self.output_labels.encode(word if word is not None else mlbase.BLANK) for word in data_y]
+        return {
+            self.unrolled_inputs_p: np.array(input_labels),
+            self.input_gathers_p: np.array(input_gathers),
+            self.initial_state_p: self.initial_state(len(batch)),
+            self.output_p: np.array(output_labels),
+        }
+
+    def get_testing_parameters(self, batch):
+        data_x, data_y = mlbase.as_time_major(batch, False)
+        input_labels = [[self.word_labels.encode(word if word is not None else mlbase.BLANK, True) for word in timespot] for timespot in data_x]
+        # Gathers are indexes, not lengths.
+        #                                 vvv
+        input_gathers = [[len(sequence.x) - 1, i] for i, sequence in enumerate(batch)]
+        return {
+            self.unrolled_inputs_p: np.array(input_labels),
+            self.input_gathers_p: np.array(input_gathers),
+            self.initial_state_p: self.initial_state(len(batch)),
+        }
+
+    def score(self, batch, parameters, time_distributions, debug, case_slot_length):
+        case_template = "{{Case {:%dd}}}" % case_slot_length
+        input_gathers = parameters[self.input_gathers_p]
+        total_correct = 0
+        predictions = [[] for case in range(len(batch))]
+
+        for timestep, distributions in enumerate(time_distributions):
+            for case, distribution in enumerate(distributions):
+                if timestep == input_gathers[case][0]:
+                    prediction = self.output_labels.vector_decode(distribution)
+
+                    if prediction == batch[case].y:
+                        total_correct += 1
+
+                        if debug:
+                            logging.debug("%s passed!\n   Sequence: %s\n   Expected: %s" % \
+                                (case_template.format(case), " ".join(batch[case].x), batch[case].y))
+                    elif debug:
+                        logging.debug("%s failed!\n   Sequence: %s\n   Expected: %s\n  Predicted: %s" % \
+                            (case_template.format(case), " ".join(batch[case].x), batch[case].y, prediction))
+
+        return total_correct
 
 
 class Stepwise:

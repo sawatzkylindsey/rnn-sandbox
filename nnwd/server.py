@@ -118,12 +118,20 @@ def main(argv):
                     action="store_true",
                     help="Turn on verbose logging.")
     ap.add_argument("-p", "--port", default=8888, type=int)
-    ap.add_argument("--corpus", default="corpora/parens.txt")
-    ap.add_argument("--epochs", default=1000, type=int)
+    ap.add_argument("--epochs", default=2, type=int)
+    ap.add_argument("task", help="Either 'sa' or 'lm'.")
+    ap.add_argument("corpus_path")
     aargs = ap.parse_args(argv)
     setup_logging(".%s.log" % os.path.splitext(os.path.basename(__file__))[0], aargs.verbose, False, True, True)
     logging.debug(aargs)
-    words, neural_network = domain.create(stream_input(aargs.corpus), aargs.epochs, aargs.verbose)
+
+    if aargs.task == "sa":
+        words, neural_network = domain.create_sa(lambda: stream_input_stanford(aargs.corpus_path), aargs.epochs, aargs.verbose, domain.sa_colour_mapping())
+    elif aargs.task == "lm":
+        words, neural_network = domain.create_lm(lambda: stream_input_text(aargs.corpus_path), aargs.epochs, aargs.verbose, domain.parens_colour_mapping())
+    else:
+        raise ValueError("Unknown task: %s" % aargs.task)
+
     # Also precautionary - the the neural_network start setting up before kicking off the server.
     # The server can't do anything anyways until the neural_network is ready to handle requests.
     time.sleep(5)
@@ -131,11 +139,79 @@ def main(argv):
     run(aargs.port, words, neural_network, query_engine)
 
 
-def stream_input(input_file):
+def stream_input_text(input_file):
     with open(input_file, "r") as fh:
         for line in fh.readlines():
             if line.strip() != "":
                 yield line
+
+
+def stream_input_stanford(stanford_folder):
+    sentiments = {}
+
+    with open(os.path.join(stanford_folder, "sentiment_labels.txt"), "r") as fh:
+        first = True
+
+        for line in fh.readlines():
+            if first:
+                first = False
+            else:
+                phrase_id, sentiment = line.split("|")
+                sentiment = sentiment.strip()
+                sentiments[phrase_id] = float(sentiment)
+
+    dictionary = {}
+
+    with open(os.path.join(stanford_folder, "dictionary.txt"), "r") as fh:
+        for line in fh.readlines():
+            line = line.strip()
+            index = line.rindex("|")
+            phrase = line[:index].lower()
+            dictionary[phrase] = sentiments[line[index + 1:]]
+            dictionary[phrase + " ."] = sentiments[line[index + 1:]]
+
+    dataset_splits = {}
+
+    with open(os.path.join(stanford_folder, "datasetSplit.txt"), "r") as fh:
+        first = True
+
+        for line in fh.readlines():
+            if first:
+                first = False
+            else:
+                sentence_id, label = line.split(",")
+                label = label.strip()
+                dataset_splits[sentence_id] = "train" if label == "1" else ("test" if label == "2" else "dev")
+
+    train_sentences = []
+
+    with open(os.path.join(stanford_folder, "datasetSentences.txt"), "r") as fh:
+        first = True
+
+        for line in fh.readlines():
+            if first:
+                first = False
+            else:
+                sentence_id, sentence = line.split("\t")
+                sentence = sentence.strip().lower()
+
+                if dataset_splits[sentence_id] == "train":
+                    train_sentences += [sentence]
+
+                yield (dataset_splits[sentence_id], sentence.split(" "), dictionary[sentence])
+
+    data_tenth = max(1, int(len(dictionary) / 10.0))
+
+    for i, phrase_sentiment in enumerate(dictionary.items()):
+        if i % data_tenth == 0 or i + 1 == len(dictionary):
+            print("%d%% through" % int((i + 1) * 100 / len(dictionary)))
+
+        # Sample at 30% rate.
+        if random.randint(0, 9) < 3:
+            phrase, sentiment = phrase_sentiment
+
+            if any([phrase in sentence for sentence in train_sentences]):
+                yield ("train", phrase.split(" "), sentiment)
 
 
 def patch_Thread_for_profiling():

@@ -72,9 +72,9 @@ class HiddenState:
 
 
 class LabelDistribution:
-    def __init__(self, name, label_weights, top_k=None, colour_fn=lambda i: None):
+    def __init__(self, name, label_weights, sort_key=lambda item: -item[1], top_k=None, colour_fn=lambda i: None):
         self.name = name
-        self.label_weights = [(str(item[0]), float(item[1])) for item in sorted(label_weights.items(), key=lambda item: item[1], reverse=True)[:len(label_weights) if top_k is None else top_k]]
+        self.label_weights = [(str(item[0]), float(item[1])) for item in sorted(label_weights.items(), key=sort_key)[:len(label_weights) if top_k is None else top_k]]
         self.minimum = 0
         self.maximum = max(self.label_weights, key=lambda item: item[1])[1] * 1.25
         assert self.minimum < self.maximum, "the minimum (%s) must be less than the maximum (%s)" % (self.minimum, self.maximum)

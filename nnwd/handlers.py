@@ -29,8 +29,8 @@ class Weights:
 
     def get(self, data):
         sequence = data["sequence"]
-        distance = check.check_gte(int(data["distance"][0]), 0)
-        return self.neural_network.weights(sequence, distance)
+        #distance = check.check_gte(int(data["distance"][0]), 0)
+        return self.neural_network.weights(sequence)
 
 
 class WeightDetail:
@@ -39,14 +39,14 @@ class WeightDetail:
 
     def get(self, data):
         sequence = data["sequence"]
-        distance = check.check_gte(int(data["distance"][0]), 0)
+        #distance = check.check_gte(int(data["distance"][0]), 0)
         part = data["part"][0]
         layer = None
 
         if "layer" in data:
             layer = int(data["layer"][0])
 
-        return self.neural_network.weight_detail(sequence, distance, part, layer)
+        return self.neural_network.weight_detail(sequence, part, layer)
 
 
 class WeightExplain:

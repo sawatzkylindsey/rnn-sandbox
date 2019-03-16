@@ -28,47 +28,169 @@ from pytils import adjutant, check
 
 
 RESUME_DIR = ".resume"
+MARKER = "-marker"
 ActivationPoint = collections.namedtuple("ActivationPoint", ["sequence", "expectation", "prediction", "part", "layer", "index", "point"])
 MatchPoint = collections.namedtuple("MatchPoint", ["distance", "word", "index", "prediction", "expectation"])
 
 
-def create(corpus_stream, epochs, verbose):
-    xys_file = os.path.join(RESUME_DIR, "xys.pickle")
-    words_file = os.path.join(RESUME_DIR, "words.pickle")
-
-    if os.path.exists(xys_file):
-        xys = [xy for xy in pickler.load(xys_file)]
-        words = set([word for word in pickler.load(words_file)])
-    else:
-        words, xys = nlp.corpus_sequences(corpus_stream)
-        pickler.dump(xys, xys_file)
-        pickler.dump([word for word in words], words_file)
-
+def create_sa(corpus_stream_fn, epochs, verbose, colour_mapping):
     train_xys_file = os.path.join(RESUME_DIR, "xys.train.pickle")
     validation_xys_file = os.path.join(RESUME_DIR, "xys.validation.pickle")
     test_xys_file = os.path.join(RESUME_DIR, "xys.test.pickle")
+    sentiments_file = os.path.join(RESUME_DIR, "sentiments.pickle")
+    words_file = os.path.join(RESUME_DIR, "words.pickle")
 
-    if os.path.exists(train_xys_file):
+    if os.path.exists(words_file + MARKER):
         train_xys = [xy for xy in pickler.load(train_xys_file)]
         validation_xys = [xy for xy in pickler.load(validation_xys_file)]
         test_xys = [xy for xy in pickler.load(test_xys_file)]
+        sentiments = set([sentiment for sentiment in pickler.load(sentiments_file)])
+        words = set([word for word in pickler.load(words_file)])
     else:
-        random.shuffle(xys)
-        split_1 = int(len(xys) * 0.8)
-        split_2 = split_1 + int(len(xys) * 0.1)
-        train_xys = xys[:split_1]
-        validation_xys = xys[split_1:split_2]
-        test_xys = xys[split_2:]
+        train_xys = []
+        validation_xys = []
+        test_xys = []
+        sentiments = set()
+        words = set()
+
+        for triple in corpus_stream_fn():
+            sentiment = get_sentiment(triple[2])
+            sentiments.add(sentiment)
+            xy = (triple[1], sentiment)
+
+            if triple[0] == "train":
+                for word in triple[1]:
+                    words.add(word)
+
+                train_xys += [xy]
+            elif triple[0] == "dev":
+                validation_xys += [xy]
+            else:
+                test_xys += [xy]
+
         pickler.dump(train_xys, train_xys_file)
         pickler.dump(validation_xys, validation_xys_file)
         pickler.dump(test_xys, test_xys_file)
+        pickler.dump(sorted(sentiments, key=sentiment_sort_key), sentiments_file)
+        pickler.dump([word for word in words], words_file)
+
+        with open(words_file + MARKER, "w") as fh:
+            fh.write("noop")
 
     #print("\n".join([" ".join(i) for i in train_xys]))
     #print("\n".join([" ".join(i) for i in validation_xys]))
     #print("\n".join([" ".join(i) for i in test_xys]))
     logging.debug("data sets (train, validation, test): %d, %d, %d" % (len(train_xys), len(validation_xys), len(test_xys)))
     words = mlbase.Labels(words.union(set([mlbase.BLANK])), unknown=nlp.UNKNOWN)
-    return words, NeuralNetwork(words, xy_sequence(train_xys), epochs, xy_sequence(validation_xys), xy_sequence(test_xys))
+    sentiments = mlbase.Labels(sentiments)
+    return words, NeuralNetwork(words, sentiments, train_xys, epochs, validation_xys, test_xys, colour_mapping, lambda item: sentiment_sort_key(item[0]))
+
+
+def get_sentiment(value):
+    # [0, 0.2], (0.2, 0.4], (0.4, 0.6], (0.6, 0.8], (0.8, 1.0]
+    # for very negative, negative, neutral, positive, very positive, respectively.
+    if value <= 0.2:
+        return "very negative"
+    elif value <= 0.4:
+        return "negative"
+    elif value <= 0.6:
+        return "neutral"
+    elif value <= 0.8:
+        return "positive"
+    else:
+        return "very positive"
+
+
+def sentiment_sort_key(sentiment):
+    if sentiment == "very negative":
+        return 4
+    elif sentiment == "negative":
+        return 4
+    elif sentiment == "neutral":
+        return 2
+    elif sentiment == "positive":
+        return 1
+    else:
+        return 0
+
+
+def sa_colour_mapping():
+    # Pallet from: http://nlp.stanford.edu/sentiment/treebank.html
+    #  very negative: 103, 0, 31
+    #       negative: 214, 96, 77
+    #        neutral: 247, 247, 247
+    #       positive: 67, 147, 195
+    #  very positive: 5, 48, 97
+    return {
+        "very negative": (214, 96, 77),
+        "negative": (214, 96, 77),
+        "neutral": (247, 247, 247),
+        "positive": (67, 147, 195),
+        "very positive": (67, 147, 195),
+    }
+
+
+def create_lm(corpus_stream_fn, epochs, verbose, colour_mapping):
+    train_xys_file = os.path.join(RESUME_DIR, "xys.train.pickle")
+    validation_xys_file = os.path.join(RESUME_DIR, "xys.validation.pickle")
+    test_xys_file = os.path.join(RESUME_DIR, "xys.test.pickle")
+    words_file = os.path.join(RESUME_DIR, "words.pickle")
+
+    if os.path.exists(words_file + MARKER):
+        train_xys = [xy for xy in pickler.load(train_xys_file)]
+        validation_xys = [xy for xy in pickler.load(validation_xys_file)]
+        test_xys = [xy for xy in pickler.load(test_xys_file)]
+        words = set([word for word in pickler.load(words_file)])
+    else:
+        words, xys = nlp.corpus_sequences(corpus_stream_fn())
+        random.shuffle(xys)
+        split_1 = int(len(xys) * 0.8)
+        split_2 = split_1 + int(len(xys) * 0.1)
+        train_xys = xys[:split_1]
+        validation_xys = xys[split_1:split_2]
+        test_xys = xys[split_2:]
+        # Words are actually only the subset from the training data.
+        words = set(adjutant.flat_map([sentence for sentence in train_xys]))
+        pickler.dump(train_xys, train_xys_file)
+        pickler.dump(validation_xys, validation_xys_file)
+        pickler.dump(test_xys, test_xys_file)
+        pickler.dump([word for word in words], words_file)
+
+        with open(words_file + MARKER, "w") as fh:
+            fh.write("noop")
+
+    #print("\n".join([" ".join(i) for i in train_xys]))
+    #print("\n".join([" ".join(i) for i in validation_xys]))
+    #print("\n".join([" ".join(i) for i in test_xys]))
+    logging.debug("data sets (train, validation, test): %d, %d, %d" % (len(train_xys), len(validation_xys), len(test_xys)))
+    words = mlbase.Labels(words.union(set([mlbase.BLANK])), unknown=nlp.UNKNOWN)
+    return words, NeuralNetwork(words, None, xy_sequence(train_xys), epochs, xy_sequence(validation_xys), xy_sequence(test_xys), colour_mapping, lambda item: -item[1])
+
+
+def parens_colour_mapping():
+    # Pallet from: http://colorbrewer2.org/#type=qualitative&scheme=Accent&n=4
+    #  0: 127,201,127
+    #  1: 190,174,212
+    #  2: 253,192,134
+    #  3: 255,255,153
+    #  4: 56,108,176
+    parens_open = (127, 201, 127)
+    parens_close = (190, 174, 212)
+    numeral = (253, 192, 134)
+    terminal = (255, 255, 153)
+    other = (56, 108, 176)
+    return {
+        "(": parens_open,
+        ")": parens_close,
+        "0": numeral,
+        "1": numeral,
+        "2": numeral,
+        "3": numeral,
+        "4": numeral,
+        ".": terminal,
+        mlbase.BLANK: other,
+        nlp.UNKNOWN: other,
+    }
 
 
 def xy_sequence(xys):
@@ -128,12 +250,15 @@ class NeuralNetwork:
         "outputs": "output",
     }
 
-    def __init__(self, words, train_xys, epoch_threshold, validation_xys, test_xys):
+    def __init__(self, words, outputs, train_xys, epoch_threshold, validation_xys, test_xys, colour_mapping, sort_key):
         self.words = check.check_instance(words, mlbase.Labels)
+        self.outputs = outputs
         self.train_xys = [mlbase.Xy(*pair) for pair in train_xys]
+        self.epoch_threshold = epoch_threshold
         self.validation_xys = [mlbase.Xy(*pair) for pair in validation_xys]
         self.test_xys = [mlbase.Xy(*pair) for pair in test_xys]
-        self.epoch_threshold = epoch_threshold
+        self.colour_mapping = colour_mapping
+        self.sort_key = sort_key
         self.setup_complete = False
         self.embedding_padding = tuple([0] * max(0, NeuralNetwork.HIDDEN_WIDTH - NeuralNetwork.EMBEDDING_WIDTH))
         self.hidden_padding = tuple([0] * max(0, NeuralNetwork.EMBEDDING_WIDTH - NeuralNetwork.HIDDEN_WIDTH))
@@ -143,11 +268,9 @@ class NeuralNetwork:
 
     def _setup(self):
         self._train_rnn()
-        self._setup_colour_embeddings()
-        self._generate_activation_data()
+        #self._generate_activation_data()
+        # Sets setup_complete
         self._train_predictor()
-        # Also set inside self._train_predictor().
-        self.setup_complete = True
         user_log.info("Setup NeuralNetwork")
 
     def is_setup(self):
@@ -155,7 +278,13 @@ class NeuralNetwork:
         #return not self._background_setup.is_alive()
 
     def _train_rnn(self):
-        self.lstm = rnn.Rnn(NeuralNetwork.LAYERS, NeuralNetwork.HIDDEN_WIDTH, NeuralNetwork.EMBEDDING_WIDTH, self.words)
+        if self.outputs is None:
+            # This is a language modelling lm task.
+            self.lstm = rnn.RnnLm(NeuralNetwork.LAYERS, NeuralNetwork.HIDDEN_WIDTH, NeuralNetwork.EMBEDDING_WIDTH, self.words)
+        else:
+            # This is a sentiment analysis sa task.
+            self.lstm = rnn.RnnSa(NeuralNetwork.LAYERS, NeuralNetwork.HIDDEN_WIDTH, NeuralNetwork.EMBEDDING_WIDTH, self.words, self.outputs)
+
         lstm_dir = os.path.join(RESUME_DIR, "lstm")
 
         if os.path.exists(lstm_dir):
@@ -163,62 +292,67 @@ class NeuralNetwork:
             self.lstm.load(lstm_dir)
         else:
             logging.debug("Training lstm parameters.")
-            perplexity_validation = None
-            best_perplexity = None
+            score = self.lstm.test(self.validation_xys)
+            logging.debug("Baseline score (random initialized weights): %s" % score)
+            score_validation = None
+            best_score = None
             best_loss = None
             batch = 32
             arc = -1
             version = -1
+            max_arc = 12
 
-            while arc < 12:
+            while arc < max_arc:
                 arc += 1
                 logging.debug("train lstm arc %d (batch %d)" % (arc, batch))
-                loss, perplexity = self.lstm_train_loop(batch, self.epoch_threshold, True)
-                logging.debug("train lstm arc %d (batch %d): (loss, perplexity) (%s, %s)" % (arc, batch, loss, perplexity))
+                loss, score = self.lstm_train_loop(batch, self.epoch_threshold, True)
+                logging.debug("train lstm arc %d (batch %d): (loss, score) (%s, %s)" % (arc, batch, loss, score))
 
-                if best_perplexity is None or perplexity < best_perplexity:
-                    best_perplexity = perplexity
+                if best_score is None or score > best_score:
+                    best_score = score
                     best_loss = loss
-                    perplexity_validation = perplexity
+                    score_validation = score
                     version += 1
                     self.lstm.save(lstm_dir, version, True)
+                elif arc == max_arc:
+                    self.lstm.load(lstm_dir)
                 else:
                     best_loss = None
                     self.lstm.load(lstm_dir, version)
-                    mini_epochs = min(5, self.epoch_threshold)
+                    mini_epochs = max(1, int(self.epoch_threshold * 0.2))
                     smaller_batch = max(8, int(batch * 0.8))
-                    smaller_loss, smaller_perplexity = self.lstm_train_loop(smaller_batch, mini_epochs, False)
-                    logging.debug("mini train lstm smaller (batch %d): (loss, perplexity) (%s, %s)" % (smaller_batch, smaller_loss, smaller_perplexity))
+                    smaller_loss, smaller_score = self.lstm_train_loop(smaller_batch, mini_epochs, False)
+                    logging.debug("mini train lstm smaller (batch %d): (loss, score) (%s, %s)" % (smaller_batch, smaller_loss, smaller_score))
                     self.lstm.save(lstm_dir, "smaller-%d" % version)
                     self.lstm.load(lstm_dir, version)
                     bigger_batch = int(batch * 1.2)
-                    bigger_loss, bigger_perplexity = self.lstm_train_loop(bigger_batch, mini_epochs, False)
-                    logging.debug("mini train lstm bigger (batch %d): (loss, perplexity) (%s, %s)" % (bigger_batch, bigger_loss, bigger_perplexity))
+                    bigger_loss, bigger_score = self.lstm_train_loop(bigger_batch, mini_epochs, False)
+                    logging.debug("mini train lstm bigger (batch %d): (loss, score) (%s, %s)" % (bigger_batch, bigger_loss, bigger_score))
                     self.lstm.save(lstm_dir, "bigger-%d" % version)
                     self.lstm.load(lstm_dir, version)
 
-                    if bigger_perplexity < perplexity_validation:
-                        # If the bigger batches are getting a better perplexity, choose it (maybe the smaller is as well, but bigger usually means more general learning).
+                    if bigger_score > score_validation:
+                        # If the bigger batches are getting a better score, choose it (maybe the smaller is as well, but bigger usually means more general learning).
                         batch = bigger_batch
                         self.lstm.mark_latest(lstm_dir, "bigger-%d" % version)
                         self.lstm.load(lstm_dir)
-                    elif smaller_perplexity < perplexity_validation:
+                    elif smaller_score > score_validation:
                         # Certainly choose it
                         batch = smaller_batch
                         self.lstm.mark_latest(lstm_dir, "smaller-%d" % version)
                         self.lstm.load(lstm_dir)
                     else:
                         # Neither are getting better results.  Which is best among the choices?
-                        if bigger_perplexity < smaller_perplexity:
+                        if bigger_score > smaller_score:
                             batch = bigger_batch
                         else:
                             batch = smaller_batch
 
-        logging.debug("Calculating final validation perplexity.")
-        perplexity_validation = self.lstm.test(self.validation_xys, False)
-        logging.debug("Calculating final test perplexity.")
-        perplexity_test = self.lstm.test(self.test_xys, True)
-        logging.debug("(v, t): (%s, %s)" % (perplexity_validation, perplexity_test))
+        logging.debug("Calculating final validation score.")
+        score_validation = self.lstm.test(self.validation_xys, False)
+        logging.debug("Calculating final test score.")
+        score_test = self.lstm.test(self.test_xys, True)
+        logging.debug("(v, t): (%s, %s)" % (score_validation, score_test))
 
     def lstm_train_loop(self, batch, epoch_threshold, debug):
         training_parameters = mlbase.TrainingParameters() \
@@ -227,8 +361,8 @@ class NeuralNetwork:
             .convergence(False) \
             .debug(debug)
         loss = self.lstm.train(self.train_xys, training_parameters)
-        perplexity = self.lstm.test(self.validation_xys)
-        return loss, perplexity
+        score = self.lstm.test(self.validation_xys)
+        return loss, score
 
     @functools.lru_cache()
     def stepwise(self, sequence):
@@ -249,7 +383,7 @@ class NeuralNetwork:
         layer_labels = mlbase.Labels(set(range(NeuralNetwork.LAYERS)))
         hidden_vector = mlbase.VectorField(max(NeuralNetwork.HIDDEN_WIDTH, NeuralNetwork.EMBEDDING_WIDTH))
         predictor_input = mlbase.ConcatField([part_labels, layer_labels, hidden_vector])
-        predictor_output = mlbase.Labels(set(self.words.labels()))
+        predictor_output = mlbase.Labels(set(self.words.labels()) if self.outputs is None else set(self.outputs.labels()))
         hyper_parameters = ffnn.HyperParameters() \
             .layers(2) \
             .width(int((len(predictor_input) + len(predictor_output)) / 2.0))
@@ -274,10 +408,17 @@ class NeuralNetwork:
             del predictor_xys
 
     def _get_predictor_data(self):
+        if self.outputs is None:
+            # This is a language modelling lm task.
+            prediction_fn = lambda y, i: y[i]
+        else:
+            # This is a sentiment analysis sa task.
+            prediction_fn = lambda y, i: y
+
         predictor_xys = []
         predictor_xys_file = os.path.join(RESUME_DIR, "predictor_xys.pickle")
 
-        if os.path.exists(predictor_xys_file):
+        if os.path.exists(predictor_xys_file + MARKER):
             logging.debug("Loading existing predictor data.")
             predictor_xys = [xy for xy in pickler.load(predictor_xys_file)]
         else:
@@ -294,7 +435,7 @@ class NeuralNetwork:
                     # Set the prediction to that which the lstm has been trained against, not the actual learned prediction (which will be fixed).
                     # For example, consider the two training examples: "the little prince" -> "was" and "the little prince" -> "is".
                     # We need predictor samples for both "was" and "is", but if we use the actual lstm prediction this will fixate on just one of these.
-                    prediction = xy.y[i]
+                    prediction = prediction_fn(xy.y, i)
                     result, instruments = stepwise_lstm.step(word, NeuralNetwork.INSTRUMENTS)
                     x = ("embedding", 0, tuple(instruments["embedding"]) + self.embedding_padding)
                     train_xy = mlbase.Xy(x, prediction)
@@ -309,13 +450,23 @@ class NeuralNetwork:
 
             pickler.dump(predictor_xys, predictor_xys_file)
 
+            with open(predictor_xys_file + MARKER, "w") as fh:
+                fh.write("noop")
+
         logging.debug("Predictor data: %d." % len(predictor_xys))
         return predictor_xys
 
     def _generate_activation_data(self):
+        if self.outputs is None:
+            # This is a language modelling lm task.
+            prediction_fn = lambda y, i: y[i]
+        else:
+            # This is a sentiment analysis sa task.
+            prediction_fn = lambda y, i: y
+
         activation_data_file = os.path.join(RESUME_DIR, "activation_data.pickle")
 
-        if os.path.exists(activation_data_file + "-marker"):
+        if os.path.exists(activation_data_file + MARKER):
             logging.debug("Activation data already generated.")
         else:
             logging.debug("Generating activation data.")
@@ -334,45 +485,20 @@ class NeuralNetwork:
                     part = "embedding"
                     layer = 0
                     point = tuple(instruments[part])
-                    activation_data += [ActivationPoint(sequence=sequence, expectation=xy.y[i], prediction=result.prediction, part=part, layer=layer, index=i, point=point)]
+                    activation_data += [ActivationPoint(sequence=sequence, expectation=prediction_fn(xy.y, i), prediction=result.prediction, part=part, layer=layer, index=i, point=point)]
 
                     for part in NeuralNetwork.LSTM_PARTS:
                         for layer in range(NeuralNetwork.LAYERS):
                             point = tuple(instruments[part][layer])
-                            activation_data += [ActivationPoint(sequence=sequence, expectation=xy.y[i], prediction=result.prediction, part=part, layer=layer, index=i, point=point)]
+                            activation_data += [ActivationPoint(sequence=sequence, expectation=prediction_fn(xy.y, i), prediction=result.prediction, part=part, layer=layer, index=i, point=point)]
 
             pickler.dump(activation_data, activation_data_file)
 
-            with open(activation_data_file + "-marker", "w") as fh:
+            with open(activation_data_file + MARKER, "w") as fh:
                 fh.write("noop")
 
             logging.debug("Generated activation data: %d." % len(activation_data))
             del activation_data
-
-    def _setup_colour_embeddings(self):
-        # Pallet from: http://colorbrewer2.org/#type=qualitative&scheme=Accent&n=4
-        #  0: 127,201,127
-        #  1: 190,174,212
-        #  2: 253,192,134
-        #  3: 255,255,153
-        #  4: 56,108,176
-        parens_open = (127, 201, 127)
-        parens_close = (190, 174, 212)
-        numeral = (253, 192, 134)
-        terminal = (255, 255, 153)
-        other = (56, 108, 176)
-        self.colour_embeddings = {
-            "(": parens_open,
-            ")": parens_close,
-            "0": numeral,
-            "1": numeral,
-            "2": numeral,
-            "3": numeral,
-            "4": numeral,
-            ".": terminal,
-            mlbase.BLANK: other,
-            nlp.UNKNOWN: other,
-        }
 
     def _dummy(self):
         weights = []
@@ -398,7 +524,7 @@ class NeuralNetwork:
               4: (56, 108, 176),
               5: (240, 2, 127),
         }
-        self.colour_embeddings = self.find_colour_embeddings(weights, order, pallet)
+        self.colour_mapping = self.find_colour_embeddings(weights, order, pallet)
 
     def find_colour_embeddings(self, weights, order, pallet):
         colour_embeddings = {}
@@ -429,10 +555,10 @@ class NeuralNetwork:
         if not self.is_setup():
             return None
 
-        embedding = self.colour_embeddings[word]
+        embedding = self.colour_mapping[word]
         return "rgb(%d, %d, %d)" % embedding
 
-    def compute_point_abstractions(self, distance, points):
+    def compute_point_abstractions(self, points):
         reductions = self.dimensionality_reduce(points, NeuralNetwork.HIDDEN_REDUCTION)
 
         if not self.is_setup():
@@ -440,7 +566,7 @@ class NeuralNetwork:
             predictions = {key: None for key, point in points.items()}
             return reductions, colours, predictions
 
-        predictions = self.predict_distributions(distance, points)
+        predictions = self.predict_distributions(points)
         colours = self.fit_colours(points, predictions)
         return reductions, colours, predictions
 
@@ -476,7 +602,7 @@ class NeuralNetwork:
 
         return mappings
 
-    def predict_distributions(self, distance, points):
+    def predict_distributions(self, points):
         xs = [self.decode_key(key) + (tuple(point) + (self.embedding_padding if self.decode_key(key)[0] == "embedding" else self.hidden_padding),) for key, point in points.items()]
         results = self.predictor.evaluate(xs)
         distribution_predictions = {}
@@ -484,7 +610,7 @@ class NeuralNetwork:
         for i, x in enumerate(xs):
             part, layer, _ = x
             ordered_predictions = [item[0] for item in sorted(results[i].distribution.items(), key=lambda item: item[1], reverse=True)]
-            distribution_predictions[self.encode_key(part, layer)] = {prediction: results[i].distribution[prediction] for prediction in ordered_predictions[:NeuralNetwork.TOP_PREDICTIONS]}
+            distribution_predictions[self.encode_key(part, layer)] = {prediction: results[i].distribution[prediction] for prediction in ordered_predictions[:self.TOP_PREDICTIONS]}
 
         return distribution_predictions
 
@@ -493,11 +619,11 @@ class NeuralNetwork:
 
         for key, point in points.items():
             #most_likely_prediction = sorted(predictions[key].items(), key=lambda item: item[1], reverse=True)[0][0]
-            #colours[key] = "rgb(%d, %d, %d)" % self.colour_embeddings[most_likely_prediction]
+            #colours[key] = "rgb(%d, %d, %d)" % self.colour_mapping[most_likely_prediction]
             interpolation_points = {}
 
             for word, probability in predictions[key].items():
-                colour = self.colour_embeddings[word]
+                colour = self.colour_mapping[word]
 
                 if colour not in interpolation_points:
                     interpolation_points[colour] = (word, probability)
@@ -520,12 +646,12 @@ class NeuralNetwork:
                 highest_probability = max([p for w, p in interpolation_points.values()])
                 maximum_domain = highest_probability + lowest_probability
                 prediction_distances = [(w, maximum_distance + (-p * maximum_distance / maximum_domain)) for w, p in interpolation_points.values()]
-                fit, _ = geometry.fit_point([self.colour_embeddings[item[0]] for item in prediction_distances], [item[1] for item in prediction_distances], epsilon=0.1, visualize=False)
+                fit, _ = geometry.fit_point([self.colour_mapping[item[0]] for item in prediction_distances], [item[1] for item in prediction_distances], epsilon=0.1, visualize=False)
                 colours[key] = "rgb(%d, %d, %d)" % tuple([round(i) for i in fit])
 
         return colours
 
-    def weights(self, sequence, distance):
+    def weights(self, sequence):
         last_word, result, instruments = self.query_lstm(sequence)
         embedding_key = self.encode_key("embedding")
         points = {
@@ -536,15 +662,15 @@ class NeuralNetwork:
             for layer in range(NeuralNetwork.LAYERS):
                 points[self.encode_key(part, layer)] = instruments[part][layer]
 
-        point_reductions, point_colours, point_predictions = self.compute_point_abstractions(distance, points)
+        point_reductions, point_colours, point_predictions = self.compute_point_abstractions(points)
         embedding_name = self.latex_name(len(sequence) - 1, "embedding")
         embedding = HiddenState(embedding_name, point_reductions[embedding_key], colour=point_colours[embedding_key], predictions=self.prediction_distribution(point_predictions[embedding_key]))
         units = self.make_lstm_units(len(sequence) - 1, point_reductions, point_colours, point_predictions)
         softmax_name = self.latex_name(len(sequence) - 1, "softmax")
-        softmax = LabelDistribution(softmax_name, result.distribution, NeuralNetwork.OUTPUT_WIDTH, lambda word: self.word_colour(word))
+        softmax = LabelDistribution(softmax_name, result.distribution, self.sort_key, NeuralNetwork.OUTPUT_WIDTH, lambda word: self.word_colour(word))
         return Timestep(embedding, units, softmax, len(sequence) - 1, last_word, result.prediction)
 
-    def weight_detail(self, sequence, distance, part, layer):
+    def weight_detail(self, sequence, part, layer):
         last_word, result, instruments = self.query_lstm(sequence)
         point = instruments[part]
 
@@ -559,7 +685,7 @@ class NeuralNetwork:
         # This is the regular process by which a hidden_state is served out with its various reductions/abstractions.
         key = self.encode_key(part, layer)
         keyed_point = {key: point}
-        reduction, colour, prediction = self.compute_point_abstractions(distance, keyed_point)
+        reduction, colour, prediction = self.compute_point_abstractions(keyed_point)
         name = self.latex_name(len(sequence) - 1, part, layer)
         hidden_state = HiddenState(name, reduction[key], min_max, colour[key], self.prediction_distribution(prediction[key]))
         # This is the full point.
@@ -588,7 +714,7 @@ class NeuralNetwork:
         if prediction is None:
             return None
 
-        return LabelDistribution(None, prediction, colour_fn=lambda word: self.word_colour(word))
+        return LabelDistribution(None, prediction, self.sort_key, colour_fn=lambda word: self.word_colour(word))
 
     def make_lstm_units(self, timestep, point_reductions, point_colours, point_predictions):
         units = {}
@@ -711,30 +837,33 @@ class NeuralNetwork:
 
     @latex.generate_png
     def latex_name(self, timestep, part, layer=None):
+        t = timestep + 1
+        u = None if layer is None else layer + 1
+
         if part == "embedding":
-            return "e_%d" % timestep
+            return "e_%d" % t
         elif part == "remember_gates":
-            return "i_%d^%d" % (timestep, layer)
+            return "i_%d^%d" % (t, u)
         elif part == "forget_gates":
-            return "f_%d^%d" % (timestep, layer)
+            return "f_%d^%d" % (t, u)
         elif part == "output_gates":
-            return "o_%d^%d" % (timestep, layer)
+            return "o_%d^%d" % (t, u)
         elif part == "input_hats":
-            return "tilde_c_%d^%d" % (timestep, layer)
+            return "tilde_c_%d^%d" % (t, u)
         elif part == "remembers":
-            return "s_%d^%d" % (timestep, layer)
+            return "s_%d^%d" % (t, u)
         elif part == "forgets":
-            return "l_%d^%d" % (timestep, layer)
+            return "l_%d^%d" % (t, u)
         elif part == "cells":
-            return "c_%d^%d" % (timestep, layer)
+            return "c_%d^%d" % (t, u)
         elif part == "cell_hats":
-            return "cellhat_%d^%d" % (timestep, layer)
+            return "cellhat_%d^%d" % (t, u)
         elif part == "cell_previouses":
-            return "c_%d^%d" % (timestep - 1, layer)
+            return "c_%d^%d" % (t - 1, u)
         elif part == "outputs":
-            return "h_%d^%d" % (timestep, layer)
+            return "h_%d^%d" % (t, u)
         elif part == "softmax":
-            return "y_%d" % timestep
+            return "y_%d" % t
 
 
 class QueryEngine:
@@ -750,7 +879,7 @@ class QueryEngine:
         activation_data_file = os.path.join(RESUME_DIR, "activation_data.pickle")
         logging.debug("Waiting on activation data.")
 
-        while not os.path.exists(activation_data_file + "-marker"):
+        while not os.path.exists(activation_data_file + MARKER):
             time.sleep(1)
 
         logging.debug("Processing activation data for query engine.")
