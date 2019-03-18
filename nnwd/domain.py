@@ -105,7 +105,7 @@ def sentiment_sort_key(sentiment):
     if sentiment == "very negative":
         return 4
     elif sentiment == "negative":
-        return 4
+        return 3
     elif sentiment == "neutral":
         return 2
     elif sentiment == "positive":
@@ -174,19 +174,19 @@ def parens_colour_mapping():
     #  2: 253,192,134
     #  3: 255,255,153
     #  4: 56,108,176
-    parens_open = (127, 201, 127)
-    parens_close = (190, 174, 212)
-    numeral = (253, 192, 134)
+    green = (126, 201, 126)
+    purple = (189, 174, 210)
+    orange = (234, 222, 123)
     terminal = (255, 255, 153)
     other = (56, 108, 176)
     return {
-        "(": parens_open,
-        ")": parens_close,
-        "0": numeral,
-        "1": numeral,
-        "2": numeral,
-        "3": numeral,
-        "4": numeral,
+        "(": green,
+        ")": purple,
+        "0": orange,
+        "1": orange,
+        "2": orange,
+        "3": orange,
+        "4": orange,
         ".": terminal,
         mlbase.BLANK: other,
         nlp.UNKNOWN: other,
@@ -204,7 +204,7 @@ class NeuralNetwork:
     OUTPUT_WIDTH = 5
     HIDDEN_REDUCTION = 10
     EMBEDDING_REDUCTION = 10
-    TOP_PREDICTIONS = 3
+    TOP_PREDICTIONS = 2
     INSTRUMENTS = [
         "embedding",
         "remember_gates",
@@ -364,7 +364,7 @@ class NeuralNetwork:
         score = self.lstm.test(self.validation_xys)
         return loss, score
 
-    @functools.lru_cache()
+    #@functools.lru_cache()
     def stepwise(self, sequence):
         if len(sequence) == 0:
             return rnn.Stepwise(self.lstm, "root", handle_unknown=True)
@@ -644,8 +644,10 @@ class NeuralNetwork:
 
                 lowest_probability = min([p for w, p in interpolation_points.values()])
                 highest_probability = max([p for w, p in interpolation_points.values()])
+                ceiling = highest_probability * 1.1
                 maximum_domain = highest_probability + lowest_probability
-                prediction_distances = [(w, maximum_distance + (-p * maximum_distance / maximum_domain)) for w, p in interpolation_points.values()]
+                pdist = mlbase.regmax({w: ceiling - p for w, p in interpolation_points.values()})
+                prediction_distances = [(w, maximum_distance + (p * maximum_distance / maximum_domain)) for w, p in pdist.items()]
                 fit, _ = geometry.fit_point([self.colour_mapping[item[0]] for item in prediction_distances], [item[1] for item in prediction_distances], epsilon=0.1, visualize=False)
                 colours[key] = "rgb(%d, %d, %d)" % tuple([round(i) for i in fit])
 

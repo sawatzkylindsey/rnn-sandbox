@@ -696,12 +696,12 @@ function drawStateWidget(timestep, geometry, name, min, max, vector, colour, pre
         return macro_x(Math.floor(position / chip_height));
     }
 
-    //var magnitude = d3.scaleLinear()
-    //    .domain([1, 1 + Math.max(Math.abs(min), Math.abs(max))])
-    var magnitude = d3.scaleLog()
-        // In d3 v3 we can't set 0 in the domain, so push everything up by 1.
-        // Make sure to do this when applying the scale as well!
+    var magnitude = d3.scaleLinear()
         .domain([1, 1 + Math.max(Math.abs(min), Math.abs(max))])
+    //var magnitude = d3.scaleLog()
+    //    // In d3 v3 we can't set 0 in the domain, so push everything up by 1.
+    //    // Make sure to do this when applying the scale as well!
+    //    .domain([1, 1 + Math.max(Math.abs(min), Math.abs(max))])
         .range([0, macro_x.bandwidth()]);
 
     var margin = (geometry.width / 6);
