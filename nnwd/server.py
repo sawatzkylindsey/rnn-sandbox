@@ -123,17 +123,17 @@ def main(argv):
     ap.add_argument("--epochs", default=2, type=int)
     ap.add_argument("task", help="Either 'sa' or 'lm'.")
     ap.add_argument("form", help="The appropriate selection of: ['stanford', 'raw', 'pos'].")
-    ap.add_argument("corpus_path")
+    ap.add_argument("corpus_paths", nargs="+")
     aargs = ap.parse_args(argv)
     setup_logging(".%s.log" % os.path.splitext(os.path.basename(__file__))[0], aargs.verbose, False, True, True)
     logging.debug(aargs)
 
     if aargs.task == "sa":
         assert aargs.form == "stanford"
-        words, neural_network = domain.create_sa((aargs.task, aargs.form), lambda: stream_input_stanford(aargs.corpus_path), aargs.epochs, aargs.verbose)
+        words, neural_network = domain.create_sa((aargs.task, aargs.form), lambda: stream_input_stanford(aargs.corpus_path[0]), aargs.epochs, aargs.verbose)
     elif aargs.task == "lm":
         assert aargs.form == "raw" or aargs.form == "pos"
-        words, neural_network = domain.create_lm((aargs.task, aargs.form), lambda: stream_input_text(aargs.corpus_path, aargs.form), aargs.epochs, aargs.verbose)
+        words, neural_network = domain.create_lm((aargs.task, aargs.form), lambda: stream_input_text(aargs.corpus_paths, aargs.form), aargs.epochs, aargs.verbose)
     else:
         raise ValueError("Unknown task: %s" % aargs.task)
 
@@ -189,34 +189,35 @@ POS_MAP = {
 BAD_TAGS = {}
 
 
-def stream_input_text(input_file, form):
-    with open(input_file, "r") as fh:
-        for line in fh.readlines():
-            if line.strip() != "":
+def stream_input_text(input_files, form):
+    for input_file in input_files:
+        with open(input_file, "r") as fh:
+            for line in fh.readlines():
+                if line.strip() != "":
 
-                if form == "raw":
-                    for sentence in nlp.split_sentences(line):
-                        #      (word, pos)
-                        yield [(word, None) for word in sentence]
-                else:
-                    sentence = []
+                    if form == "raw":
+                        for sentence in nlp.split_sentences(line):
+                            #      (word, pos)
+                            yield [(word, None) for word in sentence]
+                    else:
+                        sentence = []
 
-                    for item in re.split("[()]", line):
-                        pair = item.strip().split(" ")
+                        for item in re.split("[()]", line):
+                            pair = item.strip().split(" ")
 
-                        if len(pair) == 2:
-                            tag = pair[0]
+                            if len(pair) == 2:
+                                tag = pair[0]
 
-                            if tag in POS_MAP:
-                                pos = POS_MAP[tag]
-                                word = pair[1].lower()
-                                #            (word, pos)
-                                sentence += [(word, pos)]
-                            elif tag not in BAD_TAGS:
-                                BAD_TAGS[tag] = None
-                                print(tag)
+                                if tag in POS_MAP:
+                                    pos = POS_MAP[tag]
+                                    word = pair[1].lower()
+                                    #            (word, pos)
+                                    sentence += [(word, pos)]
+                                elif tag not in BAD_TAGS:
+                                    BAD_TAGS[tag] = None
+                                    print(tag)
 
-                    yield sentence
+                        yield sentence
 
 
 def stream_input_stanford(stanford_folder):
