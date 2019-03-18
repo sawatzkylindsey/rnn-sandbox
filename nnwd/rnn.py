@@ -383,9 +383,9 @@ class RnnLm(Rnn):
 
     def get_training_parameters(self, batch):
         data_x, data_y = mlbase.as_time_major(batch, True)
-        input_labels = [[self.word_labels.encode(word if word is not None else mlbase.BLANK) for word in timespot] for timespot in data_x]
+        input_labels = [[self.word_labels.encode(word_pos[0] if word_pos is not None else mlbase.BLANK) for word_pos in timespot] for timespot in data_x]
         input_lengths = [len(sequence.x) for sequence in batch]
-        output_labels = [[self.word_labels.encode(word if word is not None else mlbase.BLANK) for word in timespot] for timespot in data_y]
+        output_labels = [[self.word_labels.encode(word_pos[0] if word_pos is not None else mlbase.BLANK) for word_pos in timespot] for timespot in data_y]
         return {
             self.unrolled_inputs_p: np.array(input_labels),
             self.input_lengths_p: np.array(input_lengths),
@@ -395,7 +395,7 @@ class RnnLm(Rnn):
 
     def get_testing_parameters(self, batch):
         data_x, data_y = mlbase.as_time_major(batch, True)
-        input_labels = [[self.word_labels.encode(word if word is not None else mlbase.BLANK, True) for word in timespot] for timespot in data_x]
+        input_labels = [[self.word_labels.encode(word_pos[0] if word_pos is not None else mlbase.BLANK, True) for word_pos in timespot] for timespot in data_x]
         input_lengths = [len(sequence.x) for sequence in batch]
         return {
             self.unrolled_inputs_p: np.array(input_labels),
@@ -414,7 +414,7 @@ class RnnLm(Rnn):
             for case, distribution in enumerate(distributions):
                 if timestep < input_lengths[case]:
                     predictions[case] += [self.output_labels.vector_decode(distribution)]
-                    probability = self.output_labels.vector_decode_probability(distribution, batch[case].y[timestep])
+                    probability = self.output_labels.vector_decode_probability(distribution, batch[case].y[timestep][0], True)
                     log_probabilities[case] += math.log2(probability)
 
         for case, log_probability in enumerate(log_probabilities):
@@ -423,7 +423,7 @@ class RnnLm(Rnn):
 
             if debug:
                 logging.debug("%s perplexity %.4f.\n   Sequence: %s\n   Predicted: %s" % \
-                    (case_template.format(case), perplexity, " ".join(batch[case].x), " ".join(predictions[case])))
+                    (case_template.format(case), perplexity, " ".join([word_pos[0] for word_pos in batch[case].x]), " ".join(predictions[case])))
 
         # Since 'score' means that the higher is better, but with perplexity the lower is better, invert it.
         return -total_perplexity
@@ -442,7 +442,7 @@ class RnnSa(Rnn):
 
     def get_training_parameters(self, batch):
         data_x, data_y = mlbase.as_time_major(batch, False)
-        input_labels = [[self.word_labels.encode(word if word is not None else mlbase.BLANK) for word in timespot] for timespot in data_x]
+        input_labels = [[self.word_labels.encode(word_pos[0] if word_pos is not None else mlbase.BLANK) for word_pos in timespot] for timespot in data_x]
         # Gathers are indexes, not lengths.
         #                                 vvv
         input_gathers = [[len(sequence.x) - 1, i] for i, sequence in enumerate(batch)]
@@ -456,7 +456,7 @@ class RnnSa(Rnn):
 
     def get_testing_parameters(self, batch):
         data_x, data_y = mlbase.as_time_major(batch, False)
-        input_labels = [[self.word_labels.encode(word if word is not None else mlbase.BLANK, True) for word in timespot] for timespot in data_x]
+        input_labels = [[self.word_labels.encode(word_pos[0] if word_pos is not None else mlbase.BLANK, True) for word_pos in timespot] for timespot in data_x]
         # Gathers are indexes, not lengths.
         #                                 vvv
         input_gathers = [[len(sequence.x) - 1, i] for i, sequence in enumerate(batch)]
@@ -482,10 +482,10 @@ class RnnSa(Rnn):
 
                         if debug:
                             logging.debug("%s passed!\n   Sequence: %s\n   Expected: %s" % \
-                                (case_template.format(case), " ".join(batch[case].x), batch[case].y))
+                                (case_template.format(case), " ".join([word_pos[0] for word_pos in batch[case].x]), batch[case].y))
                     elif debug:
                         logging.debug("%s failed!\n   Sequence: %s\n   Expected: %s\n  Predicted: %s" % \
-                            (case_template.format(case), " ".join(batch[case].x), batch[case].y, prediction))
+                            (case_template.format(case), " ".join([word_pos[0] for word_pos in batch[case].x]), batch[case].y, prediction))
 
         return total_correct
 

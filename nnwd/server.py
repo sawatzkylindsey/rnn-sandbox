@@ -9,6 +9,7 @@ import mimetypes
 import os
 import pdb
 import random
+import re
 from socketserver import ThreadingMixIn
 import sys
 # Not used by this module, but loading this up-front seems to be avoiding some very odd threading dealock between the server process and the background setup processes.
@@ -17,6 +18,7 @@ import time
 from threading import Thread
 import urllib
 
+from ml import nlp
 from nnwd import domain
 from nnwd import errorhandler
 from nnwd import errors
@@ -120,15 +122,18 @@ def main(argv):
     ap.add_argument("-p", "--port", default=8888, type=int)
     ap.add_argument("--epochs", default=2, type=int)
     ap.add_argument("task", help="Either 'sa' or 'lm'.")
+    ap.add_argument("form", help="The appropriate selection of: ['stanford', 'raw', 'pos'].")
     ap.add_argument("corpus_path")
     aargs = ap.parse_args(argv)
     setup_logging(".%s.log" % os.path.splitext(os.path.basename(__file__))[0], aargs.verbose, False, True, True)
     logging.debug(aargs)
 
     if aargs.task == "sa":
-        words, neural_network = domain.create_sa(lambda: stream_input_stanford(aargs.corpus_path), aargs.epochs, aargs.verbose, domain.sa_colour_mapping())
+        assert aargs.form == "stanford"
+        words, neural_network = domain.create_sa((aargs.task, aargs.form), lambda: stream_input_stanford(aargs.corpus_path), aargs.epochs, aargs.verbose)
     elif aargs.task == "lm":
-        words, neural_network = domain.create_lm(lambda: stream_input_text(aargs.corpus_path), aargs.epochs, aargs.verbose, domain.parens_colour_mapping())
+        assert aargs.form == "raw" or aargs.form == "pos"
+        words, neural_network = domain.create_lm((aargs.task, aargs.form), lambda: stream_input_text(aargs.corpus_path, aargs.form), aargs.epochs, aargs.verbose)
     else:
         raise ValueError("Unknown task: %s" % aargs.task)
 
@@ -139,11 +144,79 @@ def main(argv):
     run(aargs.port, words, neural_network, query_engine)
 
 
-def stream_input_text(input_file):
+POS_MAP = {
+    "CC": "CC",
+    "CD": "CD",
+    "DT": "DT",
+    "EX": "EX",
+    "FW": "FW",
+    "IN": "IN",
+    "JJ": "JJ",
+    "JJR": "JJR",
+    "JJS": "JJS",
+    "LS": "LS",
+    "MD": "MD",
+    "NN": "NN",
+    "NNS": "NNS",
+    "NNP": "NNP",
+    "NNPS": "NNPS",
+    "PDT": "PDT",
+    "POS": "POS",
+    "PRP": "PRP",
+    "PRP$": "PRP$",
+    "RB": "RB",
+    "RBR": "RBR",
+    "RBS": "RBS",
+    "RP": "RP",
+    "SYM": "SYM",
+    "TO": "TO",
+    "UH": "UH",
+    "VB": "VB",
+    "VBD": "VBD",
+    "VBG": "VBG",
+    "VBN": "VBN",
+    "VBP": "VBP",
+    "VBZ": "VBZ",
+    "WDT": "WDT",
+    "WP": "WP",
+    "WP$": "WP$",
+    "WRB": "WRB",
+    ".": "PUNCT",
+    ",": "PUNCT",
+    "``": "PUNCT",
+    "''": "PUNCT",
+}
+BAD_TAGS = {}
+
+
+def stream_input_text(input_file, form):
     with open(input_file, "r") as fh:
         for line in fh.readlines():
             if line.strip() != "":
-                yield line
+
+                if form == "raw":
+                    for sentence in nlp.split_sentences(line):
+                        #      (word, pos)
+                        yield [(word, None) for word in sentence]
+                else:
+                    sentence = []
+
+                    for item in re.split("[()]", line):
+                        pair = item.strip().split(" ")
+
+                        if len(pair) == 2:
+                            tag = pair[0]
+
+                            if tag in POS_MAP:
+                                pos = POS_MAP[tag]
+                                word = pair[1].lower()
+                                #            (word, pos)
+                                sentence += [(word, pos)]
+                            elif tag not in BAD_TAGS:
+                                BAD_TAGS[tag] = None
+                                print(tag)
+
+                    yield sentence
 
 
 def stream_input_stanford(stanford_folder):
@@ -200,18 +273,18 @@ def stream_input_stanford(stanford_folder):
 
                 yield (dataset_splits[sentence_id], sentence.split(" "), dictionary[sentence])
 
-    data_tenth = max(1, int(len(dictionary) / 10.0))
+    #data_tenth = max(1, int(len(dictionary) / 10.0))
 
-    for i, phrase_sentiment in enumerate(dictionary.items()):
-        if i % data_tenth == 0 or i + 1 == len(dictionary):
-            print("%d%% through" % int((i + 1) * 100 / len(dictionary)))
+    #for i, phrase_sentiment in enumerate(dictionary.items()):
+    #    if i % data_tenth == 0 or i + 1 == len(dictionary):
+    #        print("%d%% through" % int((i + 1) * 100 / len(dictionary)))
 
-        # Sample at 30% rate.
-        if random.randint(0, 9) < 3:
-            phrase, sentiment = phrase_sentiment
+    #    # Sample at 30% rate.
+    #    if random.randint(0, 9) < 3:
+    #        phrase, sentiment = phrase_sentiment
 
-            if any([phrase in sentence for sentence in train_sentences]):
-                yield ("train", phrase.split(" "), sentiment)
+    #        if any([phrase in sentence for sentence in train_sentences]):
+    #            yield ("train", phrase.split(" "), sentiment)
 
 
 def patch_Thread_for_profiling():

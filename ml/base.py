@@ -333,10 +333,10 @@ class Labels(Field):
         check.check_pdist(array)
         return {self.decode(i): probability for i, probability in enumerate(array)}
 
-    def vector_decode_probability(self, array, value):
+    def vector_decode_probability(self, array, value, handle_unknown=False):
         assert len(array) == len(self), "%d != %d" % (len(array), len(self))
         check.check_pdist(array)
-        return array[self.encode(value)]
+        return array[self.encode(value, handle_unknown)]
 
 
 class VectorField(Field):

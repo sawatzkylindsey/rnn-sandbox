@@ -33,7 +33,7 @@ ActivationPoint = collections.namedtuple("ActivationPoint", ["sequence", "expect
 MatchPoint = collections.namedtuple("MatchPoint", ["distance", "word", "index", "prediction", "expectation"])
 
 
-def create_sa(corpus_stream_fn, epochs, verbose, colour_mapping):
+def create_sa(task_form, corpus_stream_fn, epochs, verbose):
     train_xys_file = os.path.join(RESUME_DIR, "xys.train.pickle")
     validation_xys_file = os.path.join(RESUME_DIR, "xys.validation.pickle")
     test_xys_file = os.path.join(RESUME_DIR, "xys.test.pickle")
@@ -56,7 +56,7 @@ def create_sa(corpus_stream_fn, epochs, verbose, colour_mapping):
         for triple in corpus_stream_fn():
             sentiment = get_sentiment(triple[2])
             sentiments.add(sentiment)
-            xy = (triple[1], sentiment)
+            xy = ([(word, None) for word in triple[1]], sentiment)
 
             if triple[0] == "train":
                 for word in triple[1]:
@@ -77,13 +77,15 @@ def create_sa(corpus_stream_fn, epochs, verbose, colour_mapping):
         with open(words_file + MARKER, "w") as fh:
             fh.write("noop")
 
-    #print("\n".join([" ".join(i) for i in train_xys]))
-    #print("\n".join([" ".join(i) for i in validation_xys]))
-    #print("\n".join([" ".join(i) for i in test_xys]))
+    #printer = lambda sequences: "\n".join([" ".join([str(word_pos) for word_pos in i]) for i in sequences])
+    #print(printer(train_xys))
+    #print(printer(validation_xys))
+    #print(printer(test_xys))
     logging.debug("data sets (train, validation, test): %d, %d, %d" % (len(train_xys), len(validation_xys), len(test_xys)))
     words = mlbase.Labels(words.union(set([mlbase.BLANK])), unknown=nlp.UNKNOWN)
+    #print(words)
     sentiments = mlbase.Labels(sentiments)
-    return words, NeuralNetwork(words, sentiments, train_xys, epochs, validation_xys, test_xys, colour_mapping, lambda item: sentiment_sort_key(item[0]))
+    return words, NeuralNetwork(task_form, words, sentiments, None, None, train_xys, epochs, validation_xys, test_xys, lambda item: sentiment_sort_key(item[0]))
 
 
 def get_sentiment(value):
@@ -130,19 +132,23 @@ def sa_colour_mapping():
     }
 
 
-def create_lm(corpus_stream_fn, epochs, verbose, colour_mapping):
+def create_lm(task_form, corpus_stream_fn, epochs, verbose):
     train_xys_file = os.path.join(RESUME_DIR, "xys.train.pickle")
     validation_xys_file = os.path.join(RESUME_DIR, "xys.validation.pickle")
     test_xys_file = os.path.join(RESUME_DIR, "xys.test.pickle")
+    pos_tags_file = os.path.join(RESUME_DIR, "pos_tags.pickle")
+    pos_mapping_file = os.path.join(RESUME_DIR, "pos_mapping.pickle")
     words_file = os.path.join(RESUME_DIR, "words.pickle")
 
     if os.path.exists(words_file + MARKER):
         train_xys = [xy for xy in pickler.load(train_xys_file)]
         validation_xys = [xy for xy in pickler.load(validation_xys_file)]
         test_xys = [xy for xy in pickler.load(test_xys_file)]
+        pos_tags = set([word for word in pickler.load(pos_tags_file)])
+        pos_mapping = {item[0]: item[1] for item in pickler.load(pos_mapping_file)}
         words = set([word for word in pickler.load(words_file)])
     else:
-        words, xys = nlp.corpus_sequences(corpus_stream_fn())
+        xys = [sentence for sentence in corpus_stream_fn()]
         random.shuffle(xys)
         split_1 = int(len(xys) * 0.8)
         split_2 = split_1 + int(len(xys) * 0.1)
@@ -150,21 +156,44 @@ def create_lm(corpus_stream_fn, epochs, verbose, colour_mapping):
         validation_xys = xys[split_1:split_2]
         test_xys = xys[split_2:]
         # Words are actually only the subset from the training data.
-        words = set(adjutant.flat_map([sentence for sentence in train_xys]))
+        words = set(adjutant.flat_map([[word_pos[0] for word_pos in sentence] for sentence in train_xys]))
+        pos_tags = set(adjutant.flat_map([[word_pos[1] for word_pos in sentence] for sentence in train_xys]))
         pickler.dump(train_xys, train_xys_file)
         pickler.dump(validation_xys, validation_xys_file)
         pickler.dump(test_xys, test_xys_file)
+        pickler.dump([pos for pos in pos_tags], pos_tags_file)
         pickler.dump([word for word in words], words_file)
+        pos_counts = {}
+
+        for sentence in train_xys:
+            for word_pos in sentence:
+                if word_pos[0] not in pos_counts:
+                    pos_counts[word_pos[0]] = {}
+
+                if word_pos[1] not in pos_counts[word_pos[0]]:
+                    pos_counts[word_pos[0]][word_pos[1]] = 0
+
+                pos_counts[word_pos[0]][word_pos[1]] += 1
+
+        pos_mapping = {}
+
+        for word, counts in pos_counts.items():
+            pos_count = sorted(counts.items(), key=lambda item: item[1], reverse=True)[0]
+            pos_mapping[word] = pos_count[0]
+
+        pickler.dump([item for item in pos_mapping.items()], pos_mapping_file)
 
         with open(words_file + MARKER, "w") as fh:
             fh.write("noop")
 
-    #print("\n".join([" ".join(i) for i in train_xys]))
-    #print("\n".join([" ".join(i) for i in validation_xys]))
-    #print("\n".join([" ".join(i) for i in test_xys]))
+    #printer = lambda sequences: "\n".join([" ".join([str(word_pos) for word_pos in i]) for i in sequences])
+    #print(printer(train_xys))
+    #print(printer(validation_xys))
+    #print(printer(test_xys))
     logging.debug("data sets (train, validation, test): %d, %d, %d" % (len(train_xys), len(validation_xys), len(test_xys)))
     words = mlbase.Labels(words.union(set([mlbase.BLANK])), unknown=nlp.UNKNOWN)
-    return words, NeuralNetwork(words, None, xy_sequence(train_xys), epochs, xy_sequence(validation_xys), xy_sequence(test_xys), colour_mapping, lambda item: -item[1])
+    #print(words)
+    return words, NeuralNetwork(task_form, words, None, pos_tags, pos_mapping, xy_sequence(train_xys), epochs, xy_sequence(validation_xys), xy_sequence(test_xys), lambda item: -item[1])
 
 
 def parens_colour_mapping():
@@ -192,6 +221,58 @@ def parens_colour_mapping():
         nlp.UNKNOWN: other,
     }
 
+def pos_colour_mapping():
+    blue = (51, 102, 204)
+    red = (220, 57, 18)
+    orange = (255, 153, 0)
+    green = (16, 150, 24)
+    purple = (153, 0, 153)
+    light_blue = (0, 153, 198)
+    pink = (221, 68, 119)
+    light_green = (102, 170, 0)
+    dark_red = (184, 46, 46)
+    dark_blue = (49, 99, 149)
+    yellow = (170, 170, 17)
+    return {
+        "CC": purple,
+        "CD": yellow,
+        "DT": blue,
+        "EX": dark_blue,
+        "FW": yellow,
+        "IN": purple,
+        "JJ": light_blue,
+        "JJR": light_blue,
+        "JJS": light_blue,
+        "LS": pink,
+        "MD": red,
+        "NN": red,
+        "NNS": red,
+        "NNP": red,
+        "NNPS": red,
+        "PDT": dark_blue,
+        "POS": dark_blue,
+        "PRP": orange,
+        "PRP$": orange,
+        "RB": light_green,
+        "RBR": light_green,
+        "RBS": light_green,
+        "RP": dark_red,
+        "SYM": pink,
+        "TO": dark_blue,
+        "UH": dark_blue,
+        "VB": green,
+        "VBD": green,
+        "VBG": green,
+        "VBN": green,
+        "VBP": green,
+        "VBZ": green,
+        "WDT": blue,
+        "WP": orange,
+        "WP$": orange,
+        "WRB": light_green,
+        "PUNCT": pink,
+    }
+
 
 def xy_sequence(xys):
     return [(sequence[:-1], sequence[1:]) for sequence in xys if len(sequence) > 1]
@@ -204,7 +285,7 @@ class NeuralNetwork:
     OUTPUT_WIDTH = 5
     HIDDEN_REDUCTION = 10
     EMBEDDING_REDUCTION = 10
-    TOP_PREDICTIONS = 2
+    TOP_PREDICTIONS = 3
     INSTRUMENTS = [
         "embedding",
         "remember_gates",
@@ -250,14 +331,25 @@ class NeuralNetwork:
         "outputs": "output",
     }
 
-    def __init__(self, words, outputs, train_xys, epoch_threshold, validation_xys, test_xys, colour_mapping, sort_key):
+    def __init__(self, task_form, words, outputs, pos_tags, pos_mapping, train_xys, epoch_threshold, validation_xys, test_xys, sort_key):
+        self.task_form = task_form
         self.words = check.check_instance(words, mlbase.Labels)
         self.outputs = outputs
+        self.pos_tags = pos_tags
+        self.pos_mapping = pos_mapping
         self.train_xys = [mlbase.Xy(*pair) for pair in train_xys]
         self.epoch_threshold = epoch_threshold
         self.validation_xys = [mlbase.Xy(*pair) for pair in validation_xys]
         self.test_xys = [mlbase.Xy(*pair) for pair in test_xys]
-        self.colour_mapping = colour_mapping
+
+        if self.is_lm():
+            if self.has_pos():
+                self.colour_mapping = pos_colour_mapping()
+            else:
+                self.colour_mapping = parens_colour_mapping()
+        else:
+            self.colour_mapping = sa_colour_mapping()
+
         self.sort_key = sort_key
         self.setup_complete = False
         self.embedding_padding = tuple([0] * max(0, NeuralNetwork.HIDDEN_WIDTH - NeuralNetwork.EMBEDDING_WIDTH))
@@ -265,6 +357,12 @@ class NeuralNetwork:
         self._background_setup = threading.Thread(target=self._setup)
         self._background_setup.daemon = True
         self._background_setup.start()
+
+    def is_lm(self):
+        return self.task_form[0] == "lm"
+
+    def has_pos(self):
+        return self.task_form[0] == "lm" and self.task_form[1] == "pos"
 
     def _setup(self):
         self._train_rnn()
@@ -278,8 +376,7 @@ class NeuralNetwork:
         #return not self._background_setup.is_alive()
 
     def _train_rnn(self):
-        if self.outputs is None:
-            # This is a language modelling lm task.
+        if self.is_lm():
             self.lstm = rnn.RnnLm(NeuralNetwork.LAYERS, NeuralNetwork.HIDDEN_WIDTH, NeuralNetwork.EMBEDDING_WIDTH, self.words)
         else:
             # This is a sentiment analysis sa task.
@@ -300,7 +397,7 @@ class NeuralNetwork:
             batch = 32
             arc = -1
             version = -1
-            max_arc = 12
+            max_arc = 4
 
             while arc < max_arc:
                 arc += 1
@@ -383,7 +480,15 @@ class NeuralNetwork:
         layer_labels = mlbase.Labels(set(range(NeuralNetwork.LAYERS)))
         hidden_vector = mlbase.VectorField(max(NeuralNetwork.HIDDEN_WIDTH, NeuralNetwork.EMBEDDING_WIDTH))
         predictor_input = mlbase.ConcatField([part_labels, layer_labels, hidden_vector])
-        predictor_output = mlbase.Labels(set(self.words.labels()) if self.outputs is None else set(self.outputs.labels()))
+
+        if self.is_lm():
+            if self.has_pos():
+                predictor_output = mlbase.Labels(self.pos_tags)
+            else:
+                predictor_output = mlbase.Labels(set(self.words.labels()))
+        else:
+            predictor_output = mlbase.Labels(set(self.outputs.labels()))
+
         hyper_parameters = ffnn.HyperParameters() \
             .layers(2) \
             .width(int((len(predictor_input) + len(predictor_output)) / 2.0))
@@ -408,9 +513,11 @@ class NeuralNetwork:
             del predictor_xys
 
     def _get_predictor_data(self):
-        if self.outputs is None:
-            # This is a language modelling lm task.
-            prediction_fn = lambda y, i: y[i]
+        if self.is_lm():
+            if self.has_pos():
+                prediction_fn = lambda y, i: y[i][1]
+            else:
+                prediction_fn = lambda y, i: y[i][0]
         else:
             # This is a sentiment analysis sa task.
             prediction_fn = lambda y, i: y
@@ -431,12 +538,12 @@ class NeuralNetwork:
 
                 stepwise_lstm = self.lstm.stepwise(False)
 
-                for i, word in enumerate(xy.x):
+                for i, word_pos in enumerate(xy.x):
                     # Set the prediction to that which the lstm has been trained against, not the actual learned prediction (which will be fixed).
                     # For example, consider the two training examples: "the little prince" -> "was" and "the little prince" -> "is".
                     # We need predictor samples for both "was" and "is", but if we use the actual lstm prediction this will fixate on just one of these.
                     prediction = prediction_fn(xy.y, i)
-                    result, instruments = stepwise_lstm.step(word, NeuralNetwork.INSTRUMENTS)
+                    result, instruments = stepwise_lstm.step(word_pos[0], NeuralNetwork.INSTRUMENTS)
                     x = ("embedding", 0, tuple(instruments["embedding"]) + self.embedding_padding)
                     train_xy = mlbase.Xy(x, prediction)
                     predictor_xys += [train_xy]
@@ -457,9 +564,9 @@ class NeuralNetwork:
         return predictor_xys
 
     def _generate_activation_data(self):
-        if self.outputs is None:
+        if self.is_lm():
             # This is a language modelling lm task.
-            prediction_fn = lambda y, i: y[i]
+            prediction_fn = lambda y, i: y[i][0]
         else:
             # This is a sentiment analysis sa task.
             prediction_fn = lambda y, i: y
@@ -480,8 +587,8 @@ class NeuralNetwork:
                 stepwise_lstm = self.lstm.stepwise(False)
                 sequence = tuple(xy.x)
 
-                for i, word in enumerate(xy.x):
-                    result, instruments = stepwise_lstm.step(word, NeuralNetwork.INSTRUMENTS)
+                for i, word_pos in enumerate(xy.x):
+                    result, instruments = stepwise_lstm.step(word_pos[0], NeuralNetwork.INSTRUMENTS)
                     part = "embedding"
                     layer = 0
                     point = tuple(instruments[part])
@@ -551,12 +658,12 @@ class NeuralNetwork:
         return colour_embeddings[50]
 
 
-    def word_colour(self, word):
+    def output_colour(self, output):
         if not self.is_setup():
             return None
 
-        embedding = self.colour_mapping[word]
-        return "rgb(%d, %d, %d)" % embedding
+        colour = self.colour_mapping[output]
+        return "rgb(%d, %d, %d)" % colour
 
     def compute_point_abstractions(self, points):
         reductions = self.dimensionality_reduce(points, NeuralNetwork.HIDDEN_REDUCTION)
@@ -669,7 +776,8 @@ class NeuralNetwork:
         embedding = HiddenState(embedding_name, point_reductions[embedding_key], colour=point_colours[embedding_key], predictions=self.prediction_distribution(point_predictions[embedding_key]))
         units = self.make_lstm_units(len(sequence) - 1, point_reductions, point_colours, point_predictions)
         softmax_name = self.latex_name(len(sequence) - 1, "softmax")
-        softmax = LabelDistribution(softmax_name, result.distribution, self.sort_key, NeuralNetwork.OUTPUT_WIDTH, lambda word: self.word_colour(word))
+        colour_fn = lambda output: self.output_colour(output if not self.has_pos() else (self.pos_mapping[output] if output in self.pos_mapping else "NN"))
+        softmax = LabelDistribution(softmax_name, result.distribution, self.sort_key, NeuralNetwork.OUTPUT_WIDTH, colour_fn)
         return Timestep(embedding, units, softmax, len(sequence) - 1, last_word, result.prediction)
 
     def weight_detail(self, sequence, part, layer):
@@ -716,7 +824,7 @@ class NeuralNetwork:
         if prediction is None:
             return None
 
-        return LabelDistribution(None, prediction, self.sort_key, colour_fn=lambda word: self.word_colour(word))
+        return LabelDistribution(None, prediction, self.sort_key, colour_fn=lambda output: self.output_colour(output))
 
     def make_lstm_units(self, timestep, point_reductions, point_colours, point_predictions):
         units = {}
