@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 from argparse import ArgumentParser
+import bz2
 from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
 import logging
@@ -191,10 +192,14 @@ BAD_TAGS = {}
 
 def stream_input_text(input_files, form):
     for input_file in input_files:
-        with open(input_file, "r") as fh:
-            for line in fh.readlines():
-                if line.strip() != "":
+        opener = lambda: open(input_file, "r") if not input_file.endswith("bz2") else bz2.BZ2File(input_file)
 
+        with opener() as fh:
+            for line in fh.readlines():
+                if isinstance(line, bytes):
+                    line = line.decode("utf-8")
+
+                if line.strip() != "":
                     if form == "raw":
                         for sentence in nlp.split_sentences(line):
                             #      (word, pos)
