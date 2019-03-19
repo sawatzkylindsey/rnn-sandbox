@@ -981,9 +981,9 @@ class QueryEngine:
 
     def __init__(self):
         self.thresholds = {}
-        self._background_setup = threading.Thread(target=self._setup)
-        self._background_setup.daemon = True
-        self._background_setup.start()
+        #self._background_setup = threading.Thread(target=self._setup)
+        #self._background_setup.daemon = True
+        #self._background_setup.start()
 
     def _setup(self):
         activation_data_file = os.path.join(RESUME_DIR, "activation_data.pickle")
