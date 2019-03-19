@@ -512,6 +512,32 @@ class NeuralNetwork:
             self.predictor.save(predictor_dir)
             del predictor_xys
 
+        self._test_predictor()
+
+    def _test_predictor(self):
+        distributions = []
+
+        for j, xy in enumerate(self.test_xys):
+            stepwise_lstm = self.lstm.stepwise(False)
+
+            for i, word_pos in enumerate(xy.x):
+                xs = []
+                result, instruments = stepwise_lstm.step(word_pos[0], NeuralNetwork.INSTRUMENTS)
+                x = ("embedding", 0, tuple(instruments["embedding"]) + self.embedding_padding)
+                xs += [x]
+
+                for part in NeuralNetwork.LSTM_PARTS:
+                    for layer in range(NeuralNetwork.LAYERS):
+                        point = tuple(instruments[part][layer]) + self.hidden_padding
+                        x = (part, layer, point)
+                        xs += [x]
+
+                for result in self.predictor.evaluate(xs):
+                    distributions += [result.distribution]
+
+        logging.debug("Predictor test distributions: %d." % len(distributions))
+        pickler.dump(distributions, os.path.join(RESUME_DIR, "sem-distributions.pickle"))
+
     def _get_predictor_data(self):
         if self.is_lm():
             if self.has_pos():
