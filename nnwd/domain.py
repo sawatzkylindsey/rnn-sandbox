@@ -305,7 +305,8 @@ class NeuralNetwork:
     EMBEDDING_REDUCTION = 10
     TOP_PREDICTIONS = 3
     PREDICTOR_EPOCHS = 100
-    EM_SAMPLES = 2000
+    PREDICTOR_SAMPLE_RATE = 0.5
+    GAUSSIAN_SAMPLE_RATE = 0.5
     INSTRUMENTS = [
         "embedding",
         "remember_gates",
@@ -579,9 +580,9 @@ class NeuralNetwork:
             fixed_buckets[key] = []
             fixed_size = math.ceil(float(width) / reduction)
 
-            # These are already randomly ordered, so no need to worry about that here.
-            #            vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
-            X = np.array(points[:NeuralNetwork.EM_SAMPLES]).transpose()
+            # These are already drawn from shuffled data.
+            #            vvvvvv
+            X = np.array(points[:int(len(points) * NeuralNetwork.GAUSSIAN_SAMPLE_RATE)]).transpose()
             logging.debug(X.shape)
             dimension_grouping = gm.fit_predict(X)
             fixed_group = []
@@ -685,11 +686,14 @@ class NeuralNetwork:
             predictor_xys = [xy for xy in pickler.load(predictor_xys_file)]
         else:
             logging.debug("Producing predictor data.")
-            data_quarter = max(1, int(len(self.train_xys) / 4.0))
+            # These are already shuffled.
+            #      vvvvvvvvvvvvvv
+            data = self.train_xys[:int(len(self.train_xys) * NeuralNetwork.PREDICTOR_SAMPLE_RATE)]
+            data_quarter = max(1, int(len(data) / 4.0))
 
-            for j, xy in enumerate(self.train_xys):
-                if j % data_quarter == 0 or j + 1 == len(self.train_xys):
-                    logging.debug("%d%% through.." % int((j + 1) * 100 / len(self.train_xys)))
+            for j, xy in enumerate(data):
+                if j % data_quarter == 0 or j + 1 == len(data):
+                    logging.debug("%d%% through.." % int((j + 1) * 100 / len(data)))
 
                 stepwise_lstm = self.lstm.stepwise(False)
 
