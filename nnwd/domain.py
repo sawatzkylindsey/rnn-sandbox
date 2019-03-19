@@ -1,5 +1,6 @@
 
 import collections
+from csv import writer as csv_writer
 import functools
 import itertools
 import json
@@ -10,6 +11,7 @@ import numpy as np
 import os
 import pdb
 import random
+from sklearn.mixture import GaussianMixture
 from sklearn.manifold import TSNE
 import string
 import threading
@@ -38,6 +40,7 @@ def create_sa(task_form, corpus_stream_fn, epochs, verbose):
     validation_xys_file = os.path.join(RESUME_DIR, "xys.validation.pickle")
     test_xys_file = os.path.join(RESUME_DIR, "xys.test.pickle")
     sentiments_file = os.path.join(RESUME_DIR, "sentiments.pickle")
+    output_distribution_file = os.path.join(RESUME_DIR, "output-distribution.pickle")
     words_file = os.path.join(RESUME_DIR, "words.pickle")
 
     if os.path.exists(words_file + MARKER):
@@ -51,6 +54,8 @@ def create_sa(task_form, corpus_stream_fn, epochs, verbose):
         validation_xys = []
         test_xys = []
         sentiments = set()
+        total = 0.0
+        output_distribution = {}
         words = set()
 
         for triple in corpus_stream_fn():
@@ -63,6 +68,12 @@ def create_sa(task_form, corpus_stream_fn, epochs, verbose):
                     words.add(word)
 
                 train_xys += [xy]
+
+                if sentiment not in output_distribution:
+                    output_distribution[sentiment] = 0
+
+                output_distribution[sentiment] += 1
+                total += 1
             elif triple[0] == "dev":
                 validation_xys += [xy]
             else:
@@ -72,6 +83,7 @@ def create_sa(task_form, corpus_stream_fn, epochs, verbose):
         pickler.dump(validation_xys, validation_xys_file)
         pickler.dump(test_xys, test_xys_file)
         pickler.dump(sorted(sentiments, key=sentiment_sort_key), sentiments_file)
+        pickler.dump([output_distribution], output_distribution_file)
         pickler.dump([word for word in words], words_file)
 
         with open(words_file + MARKER, "w") as fh:
@@ -84,8 +96,8 @@ def create_sa(task_form, corpus_stream_fn, epochs, verbose):
     logging.debug("data sets (train, validation, test): %d, %d, %d" % (len(train_xys), len(validation_xys), len(test_xys)))
     words = mlbase.Labels(words.union(set([mlbase.BLANK])), unknown=nlp.UNKNOWN)
     #print(words)
-    sentiments = mlbase.Labels(sentiments)
-    return words, NeuralNetwork(task_form, words, sentiments, None, None, train_xys, epochs, validation_xys, test_xys, lambda item: sentiment_sort_key(item[0]))
+    output_labels = mlbase.Labels(sentiments)
+    return words, NeuralNetwork(task_form, words, output_labels, None, None, train_xys, epochs, validation_xys, test_xys, lambda item: sentiment_sort_key(item[0]))
 
 
 def get_sentiment(value):
@@ -136,8 +148,9 @@ def create_lm(task_form, corpus_stream_fn, epochs, verbose):
     train_xys_file = os.path.join(RESUME_DIR, "xys.train.pickle")
     validation_xys_file = os.path.join(RESUME_DIR, "xys.validation.pickle")
     test_xys_file = os.path.join(RESUME_DIR, "xys.test.pickle")
-    pos_tags_file = os.path.join(RESUME_DIR, "pos_tags.pickle")
-    pos_mapping_file = os.path.join(RESUME_DIR, "pos_mapping.pickle")
+    pos_tags_file = os.path.join(RESUME_DIR, "pos-tags.pickle")
+    output_distribution_file = os.path.join(RESUME_DIR, "output-distribution.pickle")
+    pos_mapping_file = os.path.join(RESUME_DIR, "pos-mapping.pickle")
     words_file = os.path.join(RESUME_DIR, "words.pickle")
 
     if os.path.exists(words_file + MARKER):
@@ -163,24 +176,29 @@ def create_lm(task_form, corpus_stream_fn, epochs, verbose):
         pickler.dump(test_xys, test_xys_file)
         pickler.dump([pos for pos in pos_tags], pos_tags_file)
         pickler.dump([word for word in words], words_file)
-        pos_counts = {}
+        total = 0.0
+        word_pos_counts = {}
 
         for sentence in train_xys:
             for word_pos in sentence:
-                if word_pos[0] not in pos_counts:
-                    pos_counts[word_pos[0]] = {}
+                if word_pos[0] not in word_pos_counts:
+                    word_pos_counts[word_pos[0]] = {}
 
-                if word_pos[1] not in pos_counts[word_pos[0]]:
-                    pos_counts[word_pos[0]][word_pos[1]] = 0
+                if word_pos[1] not in word_pos_counts[word_pos[0]]:
+                    word_pos_counts[word_pos[0]][word_pos[1]] = 0
 
-                pos_counts[word_pos[0]][word_pos[1]] += 1
+                word_pos_counts[word_pos[0]][word_pos[1]] += 1
+                total += 1
 
+        output_distribution = {}
         pos_mapping = {}
 
-        for word, counts in pos_counts.items():
+        for word, counts in word_pos_counts.items():
+            output_distribution[word] = sum(counts.values()) / total
             pos_count = sorted(counts.items(), key=lambda item: item[1], reverse=True)[0]
             pos_mapping[word] = pos_count[0]
 
+        pickler.dump([output_distribution], output_distribution_file)
         pickler.dump([item for item in pos_mapping.items()], pos_mapping_file)
 
         with open(words_file + MARKER, "w") as fh:
@@ -191,9 +209,9 @@ def create_lm(task_form, corpus_stream_fn, epochs, verbose):
     #print(printer(validation_xys))
     #print(printer(test_xys))
     logging.debug("data sets (train, validation, test): %d, %d, %d" % (len(train_xys), len(validation_xys), len(test_xys)))
-    words = mlbase.Labels(words.union(set([mlbase.BLANK])), unknown=nlp.UNKNOWN)
     #print(words)
-    return words, NeuralNetwork(task_form, words, None, pos_tags, pos_mapping, xy_sequence(train_xys), epochs, xy_sequence(validation_xys), xy_sequence(test_xys), lambda item: -item[1])
+    word_labels = mlbase.Labels(words.union(set([mlbase.BLANK])), unknown=nlp.UNKNOWN)
+    return word_labels, NeuralNetwork(task_form, word_labels, None, pos_tags, pos_mapping, xy_sequence(train_xys), epochs, xy_sequence(validation_xys), xy_sequence(test_xys), lambda item: -item[1])
 
 
 def parens_colour_mapping():
@@ -286,6 +304,8 @@ class NeuralNetwork:
     HIDDEN_REDUCTION = 10
     EMBEDDING_REDUCTION = 10
     TOP_PREDICTIONS = 3
+    PREDICTOR_EPOCHS = 100
+    EM_SAMPLES = 2000
     INSTRUMENTS = [
         "embedding",
         "remember_gates",
@@ -368,7 +388,8 @@ class NeuralNetwork:
         self._train_rnn()
         #self._generate_activation_data()
         # Sets setup_complete
-        self._train_predictor()
+        self._train_features()
+        self._test_features()
         user_log.info("Setup NeuralNetwork")
 
     def is_setup(self):
@@ -475,7 +496,7 @@ class NeuralNetwork:
         result, instruments = stepwise_lstm.query(word, NeuralNetwork.INSTRUMENTS)
         return resolved_word, result, instruments
 
-    def _train_predictor(self):
+    def _train_features(self):
         part_labels = mlbase.Labels(set(NeuralNetwork.INSTRUMENTS))
         layer_labels = mlbase.Labels(set(range(NeuralNetwork.LAYERS)))
         hidden_vector = mlbase.VectorField(max(NeuralNetwork.HIDDEN_WIDTH, NeuralNetwork.EMBEDDING_WIDTH))
@@ -494,46 +515,154 @@ class NeuralNetwork:
             .width(int((len(predictor_input) + len(predictor_output)) / 2.0))
         self.predictor = ffnn.Model("predictor", hyper_parameters, predictor_input, predictor_output)
         predictor_dir = os.path.join(RESUME_DIR, "predictor")
+        guassian_buckets_file = os.path.join(RESUME_DIR, "gaussian-buckets.pickle")
+        fixed_buckets_file = os.path.join(RESUME_DIR, "fixed-buckets.pickle")
+        predictor_xys = self._get_predictor_data()
+
+        if os.path.exists(guassian_buckets_file + ".0"):
+            logging.debug("Loading existing reduction buckets.")
+            self.guassian_buckets = {item[0]: item[1] for item in pickler.load(guassian_buckets_file)}
+            self.fixed_buckets = {item[0]: item[1] for item in pickler.load(fixed_buckets_file)}
+        else:
+            self.guassian_buckets, self.fixed_buckets = self._train_guassian_buckets(predictor_xys)
+            pickler.dump([item for item in self.guassian_buckets.items()], guassian_buckets_file)
+            pickler.dump([item for item in self.fixed_buckets.items()], fixed_buckets_file)
+
+        # Technically not complete yet, but with the buckets setup an the predictor instantiated we can start answering queries.
+        self.setup_complete = True
 
         if os.path.exists(predictor_dir):
             logging.debug("Loading existing predictor parameters.")
             self.predictor.load(predictor_dir)
-            self.setup_complete = True
         else:
-            predictor_xys = self._get_predictor_data()
-            logging.debug("Training predictor parameters.")
-            training_parameters = mlbase.TrainingParameters() \
-                .epochs(100) \
-                .batch(32)
-            # Technically not complete yet, but with the predictor setup it can start answering queries.
-            self.setup_complete = True
-            loss = self.predictor.train(predictor_xys, training_parameters)
-            logging.debug("train predictor %s" % loss)
+            self._train_predictor(predictor_xys)
             self.predictor.save(predictor_dir)
-            del predictor_xys
 
-        self._test_predictor()
+        del predictor_xys
 
-    def _test_predictor(self):
+    def _train_predictor(self, predictor_xys):
+        logging.debug("Training predictor parameters.")
+        training_parameters = mlbase.TrainingParameters() \
+            .epochs(NeuralNetwork.PREDICTOR_EPOCHS) \
+            .batch(32)
+        loss = self.predictor.train(predictor_xys, training_parameters)
+        logging.debug("train predictor %s" % loss)
+
+    def _train_guassian_buckets(self, predictor_xys):
+        logging.debug("Training reduction buckets.")
+        data = {}
+
+        for xy in predictor_xys:
+            part, layer, point = xy.x
+            key = self.encode_key(part, layer)
+
+            if key not in data:
+                data[key] = []
+
+            data[key] += [point]
+
+        guassian_buckets = {}
+        fixed_buckets = {}
+
+        for key, points in data.items():
+            logging.debug("dr calc for %s with %d data points" % (key, len(points)))
+
+            if self.decode_key(key)[0] == "embedding":
+                width = NeuralNetwork.EMBEDDING_WIDTH
+                reduction = NeuralNetwork.EMBEDDING_REDUCTION
+            else:
+                width = NeuralNetwork.HIDDEN_WIDTH
+                reduction = NeuralNetwork.HIDDEN_REDUCTION
+
+            gm = GaussianMixture(reduction)
+            guassian_buckets[key] = [[] for i in range(reduction)]
+            fixed_buckets[key] = []
+            fixed_size = math.ceil(float(width) / reduction)
+
+            # These are already randomly ordered, so no need to worry about that here.
+            #            vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
+            X = np.array(points[:NeuralNetwork.EM_SAMPLES]).transpose()
+            logging.debug(X.shape)
+            dimension_grouping = gm.fit_predict(X)
+            fixed_group = []
+            incrementing_group = -1
+
+            for dimension, group in enumerate(dimension_grouping):
+                # If its the start of the transition to building out a new grouping of dimensions, and
+                # if its the case that the remaining dimensions can be reduced evenly into a bucket of size less than 1, then do so.
+                if len(fixed_group) == 0 and len(fixed_buckets[key]) + ((width - dimension) / (fixed_size - 1)) == reduction:
+                    fixed_size -= 1
+
+                guassian_buckets[key][group] += [dimension]
+                fixed_group += [dimension]
+
+                if len(fixed_group) == fixed_size:
+                    fixed_buckets[key] += [fixed_group]
+                    fixed_group = []
+
+        return guassian_buckets, fixed_buckets
+
+    def _test_features(self):
+        logging.debug("Testing features.")
         distributions = []
+        data_quarter = max(1, int(len(self.test_xys) / 4.0))
+        dr_errors = {}
+        fixed_errors = {}
+        count = 0
 
         for j, xy in enumerate(self.test_xys):
+            if j % data_quarter == 0 or j + 1 == len(self.test_xys):
+                logging.debug("%d%% through.." % int((j + 1) * 100 / len(self.test_xys)))
+
             stepwise_lstm = self.lstm.stepwise(False)
 
             for i, word_pos in enumerate(xy.x):
+                count += 1
                 xs = []
                 result, instruments = stepwise_lstm.step(word_pos[0], NeuralNetwork.INSTRUMENTS)
                 x = ("embedding", 0, tuple(instruments["embedding"]) + self.embedding_padding)
                 xs += [x]
+                points = {self.encode_key("embedding", 0): tuple(instruments["embedding"])}
 
                 for part in NeuralNetwork.LSTM_PARTS:
                     for layer in range(NeuralNetwork.LAYERS):
                         point = tuple(instruments[part][layer]) + self.hidden_padding
                         x = (part, layer, point)
                         xs += [x]
+                        points[self.encode_key(part, layer)] = point
 
                 for result in self.predictor.evaluate(xs):
                     distributions += [result.distribution]
+
+                # Learned buckets
+                dr_reductions, errors = self.gaussian_dimensionality_reduce(points, True)
+
+                for key, error in errors.items():
+                    if key not in dr_errors:
+                        dr_errors[key] = 0.0
+
+                    dr_errors[key] += error
+
+                # Fixed buckets
+                fixed_reductions, errors = self.fixed_dimensionality_reduce(points, True)
+
+                for key, error in errors.items():
+                    if key not in fixed_errors:
+                        fixed_errors[key] = 0.0
+
+                    fixed_errors[key] += error
+
+        with open(os.path.join(RESUME_DIR, "dr-analysis.csv"), "w") as fh:
+            writer = csv_writer(fh)
+            writer.writerow(["technique", "key", "sum of squared error", "mean squared error", "mse normalized"])
+
+            for key, error in dr_errors.items():
+                dimensions = NeuralNetwork.EMBEDDING_WIDTH if self.decode_key(key)[0] == "embedding" else NeuralNetwork.HIDDEN_WIDTH
+                writer.writerow(["dr", key, "%f" % error, "%f" % (error / count), "%f" % (error / (count * dimensions))])
+
+            for key, error in fixed_errors.items():
+                dimensions = NeuralNetwork.EMBEDDING_WIDTH if self.decode_key(key)[0] == "embedding" else NeuralNetwork.HIDDEN_WIDTH
+                writer.writerow(["fixed", key, "%f" % error, "%f" % (error / count), "%f" % (error / (count * dimensions))])
 
         logging.debug("Predictor test distributions: %d." % len(distributions))
         pickler.dump(distributions, os.path.join(RESUME_DIR, "sem-distributions.pickle"))
@@ -549,7 +678,7 @@ class NeuralNetwork:
             prediction_fn = lambda y, i: y
 
         predictor_xys = []
-        predictor_xys_file = os.path.join(RESUME_DIR, "predictor_xys.pickle")
+        predictor_xys_file = os.path.join(RESUME_DIR, "predictor-xys.pickle")
 
         if os.path.exists(predictor_xys_file + MARKER):
             logging.debug("Loading existing predictor data.")
@@ -597,7 +726,7 @@ class NeuralNetwork:
             # This is a sentiment analysis sa task.
             prediction_fn = lambda y, i: y
 
-        activation_data_file = os.path.join(RESUME_DIR, "activation_data.pickle")
+        activation_data_file = os.path.join(RESUME_DIR, "activation-data.pickle")
 
         if os.path.exists(activation_data_file + MARKER):
             logging.debug("Activation data already generated.")
@@ -692,7 +821,7 @@ class NeuralNetwork:
         return "rgb(%d, %d, %d)" % colour
 
     def compute_point_abstractions(self, points):
-        reductions = self.dimensionality_reduce(points, NeuralNetwork.HIDDEN_REDUCTION)
+        reductions, errors = self.gaussian_dimensionality_reduce(points)
 
         if not self.is_setup():
             colours = {key: None for key, point in points.items()}
@@ -703,37 +832,32 @@ class NeuralNetwork:
         colours = self.fit_colours(points, predictions)
         return reductions, colours, predictions
 
-    def dimensionality_reduce(self, points, reduction_size):
+    def _dimensionality_reduce(self, points, bucket_mapping, calculate_error=False):
         reductions = {}
+        errors = {}
 
-        for key, endpoints in self.dimensionality_reduce_mapping(points, reduction_size).items():
+        for key, point in points.items():
             reduction = []
+            errors[key] = 0.0
 
-            for i, endpoint in sorted(endpoints.items()):
-                bucket = points[key][endpoint[0]:endpoint[1]]
-                reduction += [sum(bucket) / float(len(bucket))]
+            for bucket, dimensions in enumerate(bucket_mapping[key]):
+                value = sum([point[dimension] for dimension in dimensions]) / len(dimensions)
+                reduction += [value]
+
+                if calculate_error:
+                    # Actual hidden state value compared to the reduced value.
+                    #                    v                  v
+                    errors[key] += sum([(point[dimension] - value)**2 for dimension in dimensions])
 
             reductions[key] = reduction
 
-        return reductions
+        return reductions, errors
 
-    def dimensionality_reduce_mapping(self, points, reduction_size):
-        mappings = {}
+    def fixed_dimensionality_reduce(self, points, calculate_error=False):
+        return self._dimensionality_reduce(points, self.fixed_buckets, calculate_error)
 
-        for key, point in points.items():
-            bucket_size = math.ceil(len(point) / reduction_size)
-            endpoints = {}
-            offset = 0
-            i = 0
-
-            while offset < len(point):
-                endpoints[i] = (offset, min(offset + bucket_size, len(point)))
-                offset += bucket_size
-                i += 1
-
-            mappings[key] = endpoints
-
-        return mappings
+    def gaussian_dimensionality_reduce(self, points, calculate_error=False):
+        return self._dimensionality_reduce(points, self.guassian_buckets, calculate_error)
 
     def predict_distributions(self, points):
         xs = [self.decode_key(key) + (tuple(point) + (self.embedding_padding if self.decode_key(key)[0] == "embedding" else self.hidden_padding),) for key, point in points.items()]
@@ -824,14 +948,19 @@ class NeuralNetwork:
         reduction, colour, prediction = self.compute_point_abstractions(keyed_point)
         name = self.latex_name(len(sequence) - 1, part, layer)
         hidden_state = HiddenState(name, reduction[key], min_max, colour[key], self.prediction_distribution(prediction[key]))
-        # This is the full point.
-        full_hidden_state = HiddenState(name, point, min_max, None, None)
         back_links = {}
+        reorganized_point = [[] for i in range(len(point))]
+        i = 0
 
-        for i, endpoint in self.dimensionality_reduce_mapping(keyed_point, NeuralNetwork.HIDDEN_REDUCTION)[key].items():
-            for j in range(endpoint[0], endpoint[1]):
-                assert j not in back_links, "%d already in %s" % (j, back_links)
-                back_links[j] = i
+        for bucket, dimensions in enumerate(self.guassian_buckets[key]):
+            for dimension in dimensions:
+                assert i not in back_links, "%d already in %s" % (i, back_links)
+                back_links[i] = bucket
+                reorganized_point[i] = point[dimension]
+                i += 1
+
+        # This is the full point.
+        full_hidden_state = HiddenState(name, reorganized_point, min_max, None, None)
 
         return WeightDetail(hidden_state, full_hidden_state, back_links)
 
@@ -1012,7 +1141,7 @@ class QueryEngine:
         #self._background_setup.start()
 
     def _setup(self):
-        activation_data_file = os.path.join(RESUME_DIR, "activation_data.pickle")
+        activation_data_file = os.path.join(RESUME_DIR, "activation-data.pickle")
         logging.debug("Waiting on activation data.")
 
         while not os.path.exists(activation_data_file + MARKER):
