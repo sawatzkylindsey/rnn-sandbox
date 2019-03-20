@@ -297,6 +297,7 @@ class Rnn:
 
     def mark_latest(self, model_dir, version):
         checkpoints = Checkpoints.load(model_dir)
+        logging.debug("Marking %s as latest=True." % (checkpoints.version_key(version)))
         checkpoints.update_latest(version) \
             .save()
 

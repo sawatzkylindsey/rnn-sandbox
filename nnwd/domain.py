@@ -416,10 +416,10 @@ class NeuralNetwork:
             score_validation = None
             best_score = None
             best_loss = None
-            batch = 32
+            batch = 64
             arc = -1
             version = -1
-            max_arc = 4
+            max_arc = 20
 
             while arc < max_arc:
                 arc += 1
@@ -566,8 +566,6 @@ class NeuralNetwork:
         fixed_buckets = {}
 
         for key, points in data.items():
-            logging.debug("dr calc for %s with %d data points" % (key, len(points)))
-
             if self.decode_key(key)[0] == "embedding":
                 width = NeuralNetwork.EMBEDDING_WIDTH
                 reduction = NeuralNetwork.EMBEDDING_REDUCTION
@@ -575,6 +573,7 @@ class NeuralNetwork:
                 width = NeuralNetwork.HIDDEN_WIDTH
                 reduction = NeuralNetwork.HIDDEN_REDUCTION
 
+            logging.debug("dr calc for %s with %d data points sampled to %d (%d dimensions)" % (key, len(points), int(len(points) * NeuralNetwork.GAUSSIAN_SAMPLE_RATE), width))
             gm = GaussianMixture(reduction)
             guassian_buckets[key] = [[] for i in range(reduction)]
             fixed_buckets[key] = []
@@ -582,8 +581,10 @@ class NeuralNetwork:
 
             # These are already drawn from shuffled data.
             #            vvvvvv
-            X = np.array(points[:int(len(points) * NeuralNetwork.GAUSSIAN_SAMPLE_RATE)]).transpose()
-            logging.debug(X.shape)
+            # Since the data points come from the predictor dataset, they may be padded.
+            # Truncate accordingly                                                          vvvvvv
+            X = np.array(points[:int(len(points) * NeuralNetwork.GAUSSIAN_SAMPLE_RATE)])[:, :width] \
+                .transpose()
             dimension_grouping = gm.fit_predict(X)
             fixed_group = []
             incrementing_group = -1
@@ -591,7 +592,7 @@ class NeuralNetwork:
             for dimension, group in enumerate(dimension_grouping):
                 # If its the start of the transition to building out a new grouping of dimensions, and
                 # if its the case that the remaining dimensions can be reduced evenly into a bucket of size less than 1, then do so.
-                if len(fixed_group) == 0 and len(fixed_buckets[key]) + ((width - dimension) / (fixed_size - 1)) == reduction:
+                if len(fixed_group) == 0 and fixed_size > 1 and len(fixed_buckets[key]) + ((width - dimension) / (fixed_size - 1)) == reduction:
                     fixed_size -= 1
 
                 guassian_buckets[key][group] += [dimension]
@@ -615,7 +616,7 @@ class NeuralNetwork:
             if j % data_quarter == 0 or j + 1 == len(self.test_xys):
                 logging.debug("%d%% through.." % int((j + 1) * 100 / len(self.test_xys)))
 
-            stepwise_lstm = self.lstm.stepwise(False)
+            stepwise_lstm = self.lstm.stepwise(handle_unknown=True)
 
             for i, word_pos in enumerate(xy.x):
                 count += 1
