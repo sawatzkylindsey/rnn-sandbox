@@ -7,6 +7,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
 import logging
 import mimetypes
+import nltk
 import os
 import pdb
 import random
@@ -122,6 +123,8 @@ def main(argv):
                     help="Turn on verbose logging.")
     ap.add_argument("-p", "--port", default=8888, type=int)
     ap.add_argument("--epochs", default=2, type=int)
+    ap.add_argument("-s", "--save-dir", default=".resume")
+    ap.add_argument("--tag", default=False, action="store_true")
     ap.add_argument("task", help="Either 'sa' or 'lm'.")
     ap.add_argument("form", help="The appropriate selection of: ['stanford', 'raw', 'pos'].")
     ap.add_argument("corpus_paths", nargs="+")
@@ -131,10 +134,11 @@ def main(argv):
 
     if aargs.task == "sa":
         assert aargs.form == "stanford"
-        words, neural_network = domain.create_sa((aargs.task, aargs.form), lambda: stream_input_stanford(aargs.corpus_path[0]), aargs.epochs, aargs.verbose)
+        words, neural_network = domain.create_sa((aargs.task, aargs.form), lambda: stream_input_stanford(aargs.corpus_paths[0]), aargs.epochs, aargs.verbose, aargs.save_dir)
     elif aargs.task == "lm":
         assert aargs.form == "raw" or aargs.form == "pos"
-        words, neural_network = domain.create_lm((aargs.task, aargs.form), lambda: stream_input_text(aargs.corpus_paths, aargs.form), aargs.epochs, aargs.verbose)
+        result_form = aargs.form if not aargs.tag else "pos"
+        words, neural_network = domain.create_lm((aargs.task, result_form), lambda: stream_input_text(aargs.corpus_paths, aargs.form), aargs.epochs, aargs.verbose, aargs.save_dir)
     else:
         raise ValueError("Unknown task: %s" % aargs.task)
 
@@ -202,10 +206,22 @@ def stream_input_text(input_files, form):
                 if line.strip() != "":
                     if form == "raw":
                         for sentence in nlp.split_sentences(line):
-                            #      (word, pos)
-                            yield [(word, None) for word in sentence]
+                            tagged = nltk.pos_tag(sentence)
+                            sequence = []
+
+                            for item in tagged:
+                                word, tag = item
+
+                                if tag in POS_MAP:
+                                    pos = POS_MAP[tag]
+                                    sequence += [(word, pos)]
+                                elif tag not in BAD_TAGS:
+                                    BAD_TAGS[tag] = None
+                                    print(tag)
+
+                            yield sequence
                     else:
-                        sentence = []
+                        sequence = []
 
                         for item in re.split("[()]", line):
                             pair = item.strip().split(" ")
@@ -217,12 +233,12 @@ def stream_input_text(input_files, form):
                                     pos = POS_MAP[tag]
                                     word = pair[1].lower()
                                     #            (word, pos)
-                                    sentence += [(word, pos)]
+                                    sequence += [(word, pos)]
                                 elif tag not in BAD_TAGS:
                                     BAD_TAGS[tag] = None
                                     print(tag)
 
-                        yield sentence
+                        yield sequence
 
 
 def stream_input_stanford(stanford_folder):

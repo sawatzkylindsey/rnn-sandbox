@@ -29,19 +29,18 @@ from pytils.log import setup_logging, user_log
 from pytils import adjutant, check
 
 
-RESUME_DIR = ".resume"
 MARKER = "-marker"
 ActivationPoint = collections.namedtuple("ActivationPoint", ["sequence", "expectation", "prediction", "part", "layer", "index", "point"])
 MatchPoint = collections.namedtuple("MatchPoint", ["distance", "word", "index", "prediction", "expectation"])
 
 
-def create_sa(task_form, corpus_stream_fn, epochs, verbose):
-    train_xys_file = os.path.join(RESUME_DIR, "xys.train.pickle")
-    validation_xys_file = os.path.join(RESUME_DIR, "xys.validation.pickle")
-    test_xys_file = os.path.join(RESUME_DIR, "xys.test.pickle")
-    sentiments_file = os.path.join(RESUME_DIR, "sentiments.pickle")
-    output_distribution_file = os.path.join(RESUME_DIR, "output-distribution.pickle")
-    words_file = os.path.join(RESUME_DIR, "words.pickle")
+def create_sa(task_form, corpus_stream_fn, epochs, verbose, save_dir):
+    train_xys_file = os.path.join(save_dir, "xys.train.pickle")
+    validation_xys_file = os.path.join(save_dir, "xys.validation.pickle")
+    test_xys_file = os.path.join(save_dir, "xys.test.pickle")
+    sentiments_file = os.path.join(save_dir, "sentiments.pickle")
+    output_distribution_file = os.path.join(save_dir, "output-distribution.pickle")
+    words_file = os.path.join(save_dir, "words.pickle")
 
     if os.path.exists(words_file + MARKER):
         train_xys = [xy for xy in pickler.load(train_xys_file)]
@@ -97,7 +96,7 @@ def create_sa(task_form, corpus_stream_fn, epochs, verbose):
     words = mlbase.Labels(words.union(set([mlbase.BLANK])), unknown=nlp.UNKNOWN)
     #print(words)
     output_labels = mlbase.Labels(sentiments)
-    return words, NeuralNetwork(task_form, words, output_labels, None, None, train_xys, epochs, validation_xys, test_xys, lambda item: sentiment_sort_key(item[0]))
+    return words, NeuralNetwork(task_form, words, output_labels, None, None, train_xys, epochs, validation_xys, test_xys, lambda item: sentiment_sort_key(item[0]), save_dir)
 
 
 def get_sentiment(value):
@@ -144,14 +143,14 @@ def sa_colour_mapping():
     }
 
 
-def create_lm(task_form, corpus_stream_fn, epochs, verbose):
-    train_xys_file = os.path.join(RESUME_DIR, "xys.train.pickle")
-    validation_xys_file = os.path.join(RESUME_DIR, "xys.validation.pickle")
-    test_xys_file = os.path.join(RESUME_DIR, "xys.test.pickle")
-    pos_tags_file = os.path.join(RESUME_DIR, "pos-tags.pickle")
-    output_distribution_file = os.path.join(RESUME_DIR, "output-distribution.pickle")
-    pos_mapping_file = os.path.join(RESUME_DIR, "pos-mapping.pickle")
-    words_file = os.path.join(RESUME_DIR, "words.pickle")
+def create_lm(task_form, corpus_stream_fn, epochs, verbose, save_dir):
+    train_xys_file = os.path.join(save_dir, "xys.train.pickle")
+    validation_xys_file = os.path.join(save_dir, "xys.validation.pickle")
+    test_xys_file = os.path.join(save_dir, "xys.test.pickle")
+    pos_tags_file = os.path.join(save_dir, "pos-tags.pickle")
+    output_distribution_file = os.path.join(save_dir, "output-distribution.pickle")
+    pos_mapping_file = os.path.join(save_dir, "pos-mapping.pickle")
+    words_file = os.path.join(save_dir, "words.pickle")
 
     if os.path.exists(words_file + MARKER):
         train_xys = [xy for xy in pickler.load(train_xys_file)]
@@ -211,7 +210,7 @@ def create_lm(task_form, corpus_stream_fn, epochs, verbose):
     logging.debug("data sets (train, validation, test): %d, %d, %d" % (len(train_xys), len(validation_xys), len(test_xys)))
     #print(words)
     word_labels = mlbase.Labels(words.union(set([mlbase.BLANK])), unknown=nlp.UNKNOWN)
-    return word_labels, NeuralNetwork(task_form, word_labels, None, pos_tags, pos_mapping, xy_sequence(train_xys), epochs, xy_sequence(validation_xys), xy_sequence(test_xys), lambda item: -item[1])
+    return word_labels, NeuralNetwork(task_form, word_labels, None, pos_tags, pos_mapping, xy_sequence(train_xys), epochs, xy_sequence(validation_xys), xy_sequence(test_xys), lambda item: -item[1], save_dir)
 
 
 def parens_colour_mapping():
@@ -298,7 +297,7 @@ def xy_sequence(xys):
 
 class NeuralNetwork:
     LAYERS = 2
-    HIDDEN_WIDTH = 50
+    HIDDEN_WIDTH = 100
     EMBEDDING_WIDTH = 50
     OUTPUT_WIDTH = 5
     HIDDEN_REDUCTION = 10
@@ -352,7 +351,7 @@ class NeuralNetwork:
         "outputs": "output",
     }
 
-    def __init__(self, task_form, words, outputs, pos_tags, pos_mapping, train_xys, epoch_threshold, validation_xys, test_xys, sort_key):
+    def __init__(self, task_form, words, outputs, pos_tags, pos_mapping, train_xys, epoch_threshold, validation_xys, test_xys, sort_key, save_dir):
         self.task_form = task_form
         self.words = check.check_instance(words, mlbase.Labels)
         self.outputs = outputs
@@ -372,6 +371,7 @@ class NeuralNetwork:
             self.colour_mapping = sa_colour_mapping()
 
         self.sort_key = sort_key
+        self.save_dir = save_dir
         self.setup_complete = False
         self.embedding_padding = tuple([0] * max(0, NeuralNetwork.HIDDEN_WIDTH - NeuralNetwork.EMBEDDING_WIDTH))
         self.hidden_padding = tuple([0] * max(0, NeuralNetwork.EMBEDDING_WIDTH - NeuralNetwork.HIDDEN_WIDTH))
@@ -404,7 +404,7 @@ class NeuralNetwork:
             # This is a sentiment analysis sa task.
             self.lstm = rnn.RnnSa(NeuralNetwork.LAYERS, NeuralNetwork.HIDDEN_WIDTH, NeuralNetwork.EMBEDDING_WIDTH, self.words, self.outputs)
 
-        lstm_dir = os.path.join(RESUME_DIR, "lstm")
+        lstm_dir = os.path.join(self.save_dir, "lstm")
 
         if os.path.exists(lstm_dir):
             logging.debug("Loading existing lstm parameters.")
@@ -504,10 +504,10 @@ class NeuralNetwork:
         predictor_input = mlbase.ConcatField([part_labels, layer_labels, hidden_vector])
 
         if self.is_lm():
-            if self.has_pos():
-                predictor_output = mlbase.Labels(self.pos_tags)
-            else:
-                predictor_output = mlbase.Labels(set(self.words.labels()))
+            #if self.has_pos():
+            #    predictor_output = mlbase.Labels(self.pos_tags)
+            #else:
+            predictor_output = mlbase.Labels(set(self.words.labels()))
         else:
             predictor_output = mlbase.Labels(set(self.outputs.labels()))
 
@@ -515,9 +515,9 @@ class NeuralNetwork:
             .layers(2) \
             .width(int((len(predictor_input) + len(predictor_output)) / 2.0))
         self.predictor = ffnn.Model("predictor", hyper_parameters, predictor_input, predictor_output)
-        predictor_dir = os.path.join(RESUME_DIR, "predictor")
-        guassian_buckets_file = os.path.join(RESUME_DIR, "gaussian-buckets.pickle")
-        fixed_buckets_file = os.path.join(RESUME_DIR, "fixed-buckets.pickle")
+        predictor_dir = os.path.join(self.save_dir, "predictor")
+        guassian_buckets_file = os.path.join(self.save_dir, "gaussian-buckets.pickle")
+        fixed_buckets_file = os.path.join(self.save_dir, "fixed-buckets.pickle")
         predictor_xys = self._get_predictor_data()
 
         if os.path.exists(guassian_buckets_file + ".0"):
@@ -654,7 +654,7 @@ class NeuralNetwork:
 
                     fixed_errors[key] += error
 
-        with open(os.path.join(RESUME_DIR, "dr-analysis.csv"), "w") as fh:
+        with open(os.path.join(self.save_dir, "dr-analysis.csv"), "w") as fh:
             writer = csv_writer(fh)
             writer.writerow(["technique", "key", "sum of squared error", "mean squared error", "mse normalized"])
 
@@ -667,20 +667,20 @@ class NeuralNetwork:
                 writer.writerow(["fixed", key, "%f" % error, "%f" % (error / count), "%f" % (error / (count * dimensions))])
 
         logging.debug("Predictor test distributions: %d." % len(distributions))
-        pickler.dump(distributions, os.path.join(RESUME_DIR, "sem-distributions.pickle"))
+        pickler.dump(distributions, os.path.join(self.save_dir, "sem-distributions.pickle"))
 
     def _get_predictor_data(self):
         if self.is_lm():
-            if self.has_pos():
-                prediction_fn = lambda y, i: y[i][1]
-            else:
-                prediction_fn = lambda y, i: y[i][0]
+            #if self.has_pos():
+            #    prediction_fn = lambda y, i: y[i][1]
+            #else:
+            prediction_fn = lambda y, i: y[i][0]
         else:
             # This is a sentiment analysis sa task.
             prediction_fn = lambda y, i: y
 
         predictor_xys = []
-        predictor_xys_file = os.path.join(RESUME_DIR, "predictor-xys.pickle")
+        predictor_xys_file = os.path.join(self.save_dir, "predictor-xys.pickle")
 
         if os.path.exists(predictor_xys_file + MARKER):
             logging.debug("Loading existing predictor data.")
@@ -731,7 +731,7 @@ class NeuralNetwork:
             # This is a sentiment analysis sa task.
             prediction_fn = lambda y, i: y
 
-        activation_data_file = os.path.join(RESUME_DIR, "activation-data.pickle")
+        activation_data_file = os.path.join(self.save_dir, "activation-data.pickle")
 
         if os.path.exists(activation_data_file + MARKER):
             logging.debug("Activation data already generated.")
@@ -817,12 +817,16 @@ class NeuralNetwork:
         #choice = input("choice (05, 10, 20, 30, 50): ")
         return colour_embeddings[50]
 
+    def mapped_output(self, output):
+        return output if not self.has_pos() else (self.pos_mapping[output] if output in self.pos_mapping else "NN")
 
     def output_colour(self, output):
         if not self.is_setup():
             return None
 
-        colour = self.colour_mapping[output]
+        return self.colour_mapping[self.mapped_output(output)]
+
+    def rgb(self, colour):
         return "rgb(%d, %d, %d)" % colour
 
     def compute_point_abstractions(self, points):
@@ -880,18 +884,17 @@ class NeuralNetwork:
         colours = {}
 
         for key, point in points.items():
-            #most_likely_prediction = sorted(predictions[key].items(), key=lambda item: item[1], reverse=True)[0][0]
-            #colours[key] = "rgb(%d, %d, %d)" % self.colour_mapping[most_likely_prediction]
             interpolation_points = {}
 
             for word, probability in predictions[key].items():
-                colour = self.colour_mapping[word]
+                output = self.mapped_output(word)
+                colour = self.output_colour(word)
 
                 if colour not in interpolation_points:
-                    interpolation_points[colour] = (word, probability)
+                    interpolation_points[colour] = (output, probability)
                 else:
                     if interpolation_points[colour][1] < probability:
-                        interpolation_points[colour] = (word, probability)
+                        interpolation_points[colour] = (output, probability)
 
             if len(interpolation_points) == 1:
                 colours[key] = "rgb(%d, %d, %d)" % next(iter(interpolation_points.keys()))
@@ -906,7 +909,7 @@ class NeuralNetwork:
 
                 lowest_probability = min([p for w, p in interpolation_points.values()])
                 highest_probability = max([p for w, p in interpolation_points.values()])
-                ceiling = highest_probability * 1.1
+                ceiling = highest_probability * 1.25
                 maximum_domain = highest_probability + lowest_probability
                 pdist = mlbase.regmax({w: ceiling - p for w, p in interpolation_points.values()})
                 prediction_distances = [(w, maximum_distance + (p * maximum_distance / maximum_domain)) for w, p in pdist.items()]
@@ -931,8 +934,7 @@ class NeuralNetwork:
         embedding = HiddenState(embedding_name, point_reductions[embedding_key], colour=point_colours[embedding_key], predictions=self.prediction_distribution(point_predictions[embedding_key]))
         units = self.make_lstm_units(len(sequence) - 1, point_reductions, point_colours, point_predictions)
         softmax_name = self.latex_name(len(sequence) - 1, "softmax")
-        colour_fn = lambda output: self.output_colour(output if not self.has_pos() else (self.pos_mapping[output] if output in self.pos_mapping else "NN"))
-        softmax = LabelDistribution(softmax_name, result.distribution, self.sort_key, NeuralNetwork.OUTPUT_WIDTH, colour_fn)
+        softmax = LabelDistribution(softmax_name, result.distribution, self.sort_key, NeuralNetwork.OUTPUT_WIDTH, lambda output: self.rgb(self.output_colour(output)))
         return Timestep(embedding, units, softmax, len(sequence) - 1, last_word, result.prediction)
 
     def weight_detail(self, sequence, part, layer):
@@ -984,7 +986,7 @@ class NeuralNetwork:
         if prediction is None:
             return None
 
-        return LabelDistribution(None, prediction, self.sort_key, colour_fn=lambda output: self.output_colour(output))
+        return LabelDistribution(None, prediction, self.sort_key, colour_fn=lambda output: self.rgb(self.output_colour(output)))
 
     def make_lstm_units(self, timestep, point_reductions, point_colours, point_predictions):
         units = {}
@@ -1141,12 +1143,13 @@ class QueryEngine:
 
     def __init__(self):
         self.thresholds = {}
+        self.save_dir = "moot"
         #self._background_setup = threading.Thread(target=self._setup)
         #self._background_setup.daemon = True
         #self._background_setup.start()
 
     def _setup(self):
-        activation_data_file = os.path.join(RESUME_DIR, "activation-data.pickle")
+        activation_data_file = os.path.join(self.save_dir, "activation-data.pickle")
         logging.debug("Waiting on activation data.")
 
         while not os.path.exists(activation_data_file + MARKER):
