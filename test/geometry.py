@@ -4,7 +4,7 @@ import math
 import os
 from unittest import TestCase
 
-from nnwd.geometry import distance, fit_point
+from nnwd.geometry import distance, fit_point, fit_proportion
 from pytils.invigilator import create_suite
 
 
@@ -20,6 +20,22 @@ class Tests(TestCase):
     def test_distance(self):
         self.assertEqual(distance([0, 1, 2], [0, 1, 2]), 0.0)
         self.assertEqual(distance([0, 1, 2], [-1, 1, 4]), math.sqrt(1**2 + 2**2))
+
+    def test_fit_proportion(self):
+        point_a = [0, 0]
+        point_b = [1, 1]
+        self.assertEqual(fit_proportion([point_a, point_b], [.5, .5]), [.5, .5])
+        point = fit_proportion([point_a, point_b], [.2, .8])
+        self.assertTrue(math.isclose(distance(point, [.2, .2]), 0, abs_tol=.0001), point)
+        point = fit_proportion([point_a, point_b], [.9, .1])
+        self.assertTrue(math.isclose(distance(point, [.9, .9]), 0, abs_tol=.0001), point)
+
+        # Test 3d as well
+        point = fit_proportion([(0, 0, 0), (1, -1, 2)], [.9, .1])
+        self.assertTrue(math.isclose(distance(point, [.9, -.9, 1.8]), 0, abs_tol=.0001), point)
+
+        point = fit_proportion([(1, 2, 3), (3, 0, -3)], [.5, .5])
+        self.assertTrue(math.isclose(distance(point, [2, 1, 0]), 0, abs_tol=.0001), point)
 
     def test_fit_point1_d0(self):
         reference_point = [5, 3]

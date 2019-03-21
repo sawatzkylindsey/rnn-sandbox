@@ -884,36 +884,28 @@ class NeuralNetwork:
         colours = {}
 
         for key, point in points.items():
-            interpolation_points = {}
+            output_colourings = {}
 
             for word, probability in predictions[key].items():
                 output = self.mapped_output(word)
                 colour = self.output_colour(word)
+                output_colourings[word] = (colour, probability)
 
-                if colour not in interpolation_points:
-                    interpolation_points[colour] = (output, probability)
-                else:
-                    if interpolation_points[colour][1] < probability:
-                        interpolation_points[colour] = (output, probability)
+            interpolation_points = {}
+
+            for output, colour_probability in sorted(output_colourings.items(), key=lambda item: item[1][1], reverse=True)[:2]:
+                colour, probability = colour_probability
+                interpolation_points[colour] = (output, probability)
 
             if len(interpolation_points) == 1:
                 colours[key] = "rgb(%d, %d, %d)" % next(iter(interpolation_points.keys()))
             else:
-                maximum_distance = None
-
-                for pair in itertools.combinations([colour for colour in interpolation_points.keys()], 2):
-                    distance = geometry.distance(pair[0], pair[1])
-
-                    if maximum_distance is None or distance > maximum_distance:
-                        maximum_distance = distance
-
-                lowest_probability = min([p for w, p in interpolation_points.values()])
-                highest_probability = max([p for w, p in interpolation_points.values()])
-                ceiling = highest_probability * 1.25
-                maximum_domain = highest_probability + lowest_probability
-                pdist = mlbase.regmax({w: ceiling - p for w, p in interpolation_points.values()})
-                prediction_distances = [(w, maximum_distance + (p * maximum_distance / maximum_domain)) for w, p in pdist.items()]
-                fit, _ = geometry.fit_point([self.colour_mapping[item[0]] for item in prediction_distances], [item[1] for item in prediction_distances], epsilon=0.1, visualize=False)
+                point_a, point_b = [item for item in interpolation_points.items()]
+                distance = geometry.distance(point_a[0], point_b[0])
+                # Not a typo: we want to invert their probabilities so that the most likely prediction gets the smallest distance, and visa versa.
+                #                            v              v              v              v
+                pdist = mlbase.regmax({point_a[1][0]: point_b[1][1], point_b[1][0]: point_a[1][1]})
+                fit = geometry.fit_proportion((point_a[0], point_b[0]), (pdist[point_a[1][0]], pdist[point_b[1][0]]))
                 colours[key] = "rgb(%d, %d, %d)" % tuple([round(i) for i in fit])
 
         return colours

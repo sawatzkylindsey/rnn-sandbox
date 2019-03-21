@@ -21,6 +21,17 @@ def hypotenuse(vector):
     return math.sqrt(sum([part**2 for part in vector]))
 
 
+def fit_proportion(reference_points, target_proportions):
+    assert len(reference_points) == 2
+    assert len(target_proportions) == 2
+    dimensions = len(reference_points[0])
+    total_distance = distance(*reference_points)
+    distance_a = total_distance * target_proportions[0]
+    distance_b = total_distance * target_proportions[1]
+    correction = _correction(reference_points, [distance_a, distance_b], reference_points[0], lambda x, r: 1, None)
+    return [reference_points[0][i] + correction[i] for i in range(0, dimensions)]
+
+
 def fit_point(reference_points, target_distances, epsilon=0.00001, visualize=False):
     assert len(reference_points) > 0
     assert len(reference_points) == len(target_distances), "%d != %d" % (len(reference_points), len(target_distances))
