@@ -190,6 +190,10 @@ POS_MAP = {
     ",": "PUNCT",
     "``": "PUNCT",
     "''": "PUNCT",
+    ":": "PUNCT",
+    "(": "PUNCT",
+    ")": "PUNCT",
+    "$": "PUNCT",
 }
 BAD_TAGS = {}
 
