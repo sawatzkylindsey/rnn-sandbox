@@ -53,8 +53,9 @@ class Unit:
 
 
 class HiddenState:
-    def __init__(self, name, vector, min_max=(None, None), colour=None, predictions=None):
+    def __init__(self, name, name_no_t, vector, min_max=(None, None), colour=None, predictions=None):
         self.name = name
+        self.name_no_t = name_no_t
         self.vector = [float(value) for value in vector]
         self.minimum, self.maximum = canonicalize_bounds(min_max, self.vector)
         self.colour = colour
@@ -63,6 +64,7 @@ class HiddenState:
     def as_json(self):
         return {
             "name": self.name,
+            "name_no_t": self.name_no_t,
             "vector": [{"value": value, "position": i} for i, value in enumerate(self.vector)],
             "minimum": self.minimum,
             "maximum": self.maximum,

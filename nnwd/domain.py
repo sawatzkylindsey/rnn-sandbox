@@ -925,7 +925,8 @@ class NeuralNetwork:
 
         point_reductions, point_colours, point_predictions = self.compute_point_abstractions(points)
         embedding_name = self.latex_name(len(sequence) - 1, "embedding")
-        embedding = HiddenState(embedding_name, point_reductions[embedding_key], colour=point_colours[embedding_key], predictions=self.prediction_distribution(point_predictions[embedding_key]))
+        embedding_name_no_t = self.latex_name_no_t("embedding")
+        embedding = HiddenState(embedding_name, embedding_name_no_t, point_reductions[embedding_key], colour=point_colours[embedding_key], predictions=self.prediction_distribution(point_predictions[embedding_key]))
         units = self.make_lstm_units(len(sequence) - 1, point_reductions, point_colours, point_predictions)
         softmax_name = self.latex_name(len(sequence) - 1, "softmax")
         softmax = LabelDistribution(softmax_name, result.distribution, self.sort_key, NeuralNetwork.OUTPUT_WIDTH, lambda output: self.rgb(self.output_colour(output)))
@@ -948,7 +949,8 @@ class NeuralNetwork:
         keyed_point = {key: point}
         reduction, colour, prediction = self.compute_point_abstractions(keyed_point)
         name = self.latex_name(len(sequence) - 1, part, layer)
-        hidden_state = HiddenState(name, reduction[key], min_max, colour[key], self.prediction_distribution(prediction[key]))
+        name_no_t = self.latex_name_no_t(part, layer)
+        hidden_state = HiddenState(name, name_no_t, reduction[key], min_max, colour[key], self.prediction_distribution(prediction[key]))
         back_links = {}
         reorganized_point = [[] for i in range(len(point))]
         i = 0
@@ -961,7 +963,7 @@ class NeuralNetwork:
                 i += 1
 
         # This is the full point.
-        full_hidden_state = HiddenState(name, reorganized_point, min_max, None, None)
+        full_hidden_state = HiddenState(name, name_no_t, reorganized_point, min_max, None, None)
 
         return WeightDetail(hidden_state, full_hidden_state, back_links)
 
@@ -996,7 +998,8 @@ class NeuralNetwork:
 
                 key = self.encode_key(part, layer)
                 name = self.latex_name(timestep, part, layer)
-                hidden_state = HiddenState(name, point_reductions[key], min_max, point_colours[key], self.prediction_distribution(point_predictions[key]))
+                name_no_t = self.latex_name_no_t(part, layer)
+                hidden_state = HiddenState(name, name_no_t, point_reductions[key], min_max, point_colours[key], self.prediction_distribution(point_predictions[key]))
                 units[part][layer] = hidden_state
 
         return units
@@ -1130,6 +1133,35 @@ class NeuralNetwork:
             return "h_%d^%d" % (t, u)
         elif part == "softmax":
             return "y_%d" % t
+
+    @latex.generate_png
+    def latex_name_no_t(self, part, layer=None):
+        u = None if layer is None else layer + 1
+
+        if part == "embedding":
+            return "e"
+        elif part == "remember_gates":
+            return "i^%d" % u
+        elif part == "forget_gates":
+            return "f^%d" % u
+        elif part == "output_gates":
+            return "o^%d" % u
+        elif part == "input_hats":
+            return "tilde_c^%d" % u
+        elif part == "remembers":
+            return "s^%d" % u
+        elif part == "forgets":
+            return "l^%d" % u
+        elif part == "cells":
+            return "c^%d" % u
+        elif part == "cell_hats":
+            return "cellhat^%d" % u
+        elif part == "cell_previouses":
+            return "c^%d" % u
+        elif part == "outputs":
+            return "h^%d" % u
+        elif part == "softmax":
+            return "y"
 
 
 class QueryEngine:

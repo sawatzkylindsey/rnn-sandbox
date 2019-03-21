@@ -1593,9 +1593,9 @@ function drawInset(data, placement) {
     // Shouldn't be necessary, but probably rounding errors making this look more correct.
     //                                                                               vvvvv
     var inset_height = (total_height / 2) - (state_height * 2) - (detail_margin * 4) - 0.5;
-    var inset_unit_width = 15;
-    var inset_unit_height = inset_height / 3;
-    var inset_separator = inset_unit_width * 2.5;
+    var inset_unit_width = 17;
+    var inset_unit_height = (inset_height / 3) - 6;
+    var inset_separator = inset_unit_width * 2;
     var inset_width = (inset_unit_width * 11) + (inset_separator * 8);
     var inset_x_offset = (((total_width / 2) - detail_margin) / 2) - (inset_width / 2) - 25;
     var inset_y_offset = (total_height / 2) + (state_height * 2) + (detail_margin * 2);
@@ -1608,7 +1608,7 @@ function drawInset(data, placement) {
     if (label != null) {
         svg.append("rect")
             .attr("class", classes)
-            .attr("x", inset_x_offset - (inset_unit_width * 2))
+            .attr("x", inset_x_offset - (inset_unit_width * 2) + 2)
             .attr("y", inset_y_offset + (inset_height / 2) - (inset_unit_height / 2) + (placement == "bottom" ? (inset_unit_height / 2) : 0))
             .attr("width", inset_unit_width)
             .attr("height", (inset_unit_height / 2) - 1)
@@ -1617,7 +1617,7 @@ function drawInset(data, placement) {
             .attr("fill", light_grey);
         svg.append("text")
             .attr("class", classes)
-            .attr("x", inset_x_offset - (inset_unit_width * 2) + 2 - (placement == "top" ? 0.5 : 0))
+            .attr("x", inset_x_offset - (inset_unit_width * 2) + 5 - (placement == "top" ? 0.5 : 0))
             .attr("y", inset_y_offset + (inset_height / 2) - (inset_unit_height / 2) + HEIGHT - 2 + (placement == "bottom" ? (inset_unit_height / 2) : 0) + 3)
             .style("font-size", "16px")
             .style("fill", black)
@@ -1636,32 +1636,32 @@ function drawInset(data, placement) {
     // Embedding
     var x = inset_x_offset + inset_unit_width;
     var y_middle = inset_y_offset + (inset_height / 2) - (inset_unit_height / 2);
-    var y_top = inset_y_offset + 10;
-    var y_bottom = inset_y_offset + inset_height - 10 - inset_unit_height;
-    drawInsetPart(x, y_middle, inset_unit_width, inset_unit_height, "embedding", null, data.embedding.colour, placement, classes, "embedding_hidden");
+    var y_top = inset_y_offset + 18;
+    var y_bottom = inset_y_offset + inset_height - 18 - inset_unit_height;
+    drawInsetPart(x, y_middle, inset_unit_width, inset_unit_height, "embedding", null, data.embedding, placement, classes, "embedding_hidden");
     x += inset_separator + inset_unit_width;
-    drawInsetPart(x, y_top, inset_unit_width, inset_unit_height, "cell_previouses", 0, data.units["cell_previouses"][0].colour, placement, classes, "cell");
-    drawInsetPart(x, y_bottom, inset_unit_width, inset_unit_height, "input_hats", 0, data.units["input_hats"][0].colour, placement, classes, "input_hat");
+    drawInsetPart(x, y_top, inset_unit_width, inset_unit_height, "cell_previouses", 0, data.units["cell_previouses"][0], placement, classes, "cell");
+    drawInsetPart(x, y_bottom, inset_unit_width, inset_unit_height, "input_hats", 0, data.units["input_hats"][0], placement, classes, "input_hat");
     x += inset_separator + inset_unit_width;
-    drawInsetPart(x, y_top, inset_unit_width, inset_unit_height, "forgets", 0, data.units["forgets"][0].colour, placement, classes, "forget");
-    drawInsetPart(x, y_bottom, inset_unit_width, inset_unit_height, "remembers", 0, data.units["remembers"][0].colour, placement, classes, "remember");
+    drawInsetPart(x, y_top, inset_unit_width, inset_unit_height, "forgets", 0, data.units["forgets"][0], placement, classes, "forget");
+    drawInsetPart(x, y_bottom, inset_unit_width, inset_unit_height, "remembers", 0, data.units["remembers"][0], placement, classes, "remember");
     x += inset_separator + inset_unit_width;
-    drawInsetPart(x, y_middle, inset_unit_width, inset_unit_height, "cells", 0, data.units["cells"][0].colour, placement, classes, "cell");
+    drawInsetPart(x, y_middle, inset_unit_width, inset_unit_height, "cells", 0, data.units["cells"][0], placement, classes, "cell");
     x += inset_separator + inset_unit_width;
-    drawInsetPart(x, y_middle, inset_unit_width, inset_unit_height, "outputs", 0, data.units["outputs"][0].colour, placement, classes, "output");
+    drawInsetPart(x, y_middle, inset_unit_width, inset_unit_height, "outputs", 0, data.units["outputs"][0], placement, classes, "output");
     x += inset_separator + inset_unit_width;
-    drawInsetPart(x, y_top, inset_unit_width, inset_unit_height, "cell_previouses", 1, data.units["cell_previouses"][1].colour, placement, classes, "cell");
-    drawInsetPart(x, y_bottom, inset_unit_width, inset_unit_height, "input_hats", 1, data.units["input_hats"][1].colour, placement, classes, "input_hat");
+    drawInsetPart(x, y_top, inset_unit_width, inset_unit_height, "cell_previouses", 1, data.units["cell_previouses"][1], placement, classes, "cell");
+    drawInsetPart(x, y_bottom, inset_unit_width, inset_unit_height, "input_hats", 1, data.units["input_hats"][1], placement, classes, "input_hat");
     x += inset_separator + inset_unit_width;
-    drawInsetPart(x, y_top, inset_unit_width, inset_unit_height, "forgets", 1, data.units["forgets"][1].colour, placement, classes, "forget");
-    drawInsetPart(x, y_bottom, inset_unit_width, inset_unit_height, "remembers", 1, data.units["remembers"][1].colour, placement, classes, "remember");
+    drawInsetPart(x, y_top, inset_unit_width, inset_unit_height, "forgets", 1, data.units["forgets"][1], placement, classes, "forget");
+    drawInsetPart(x, y_bottom, inset_unit_width, inset_unit_height, "remembers", 1, data.units["remembers"][1], placement, classes, "remember");
     x += inset_separator + inset_unit_width;
-    drawInsetPart(x, y_middle, inset_unit_width, inset_unit_height, "cells", 1, data.units["cells"][1].colour, placement, classes, "cell");
+    drawInsetPart(x, y_middle, inset_unit_width, inset_unit_height, "cells", 1, data.units["cells"][1], placement, classes, "cell");
     x += inset_separator + inset_unit_width;
-    drawInsetPart(x, y_middle, inset_unit_width, inset_unit_height, "outputs", 1, data.units["outputs"][1].colour, placement, classes, "output");
+    drawInsetPart(x, y_middle, inset_unit_width, inset_unit_height, "outputs", 1, data.units["outputs"][1], placement, classes, "output");
 }
 
-function drawInsetPart(x_offset, y_offset, width, height, part, layer, colour, placement, classes, componentName) {
+function drawInsetPart(x_offset, y_offset, width, height, part, layer, data, placement, classes, componentName) {
     svg.append("rect")
         .attr("class", classes + " " + componentName)
         .attr("x", x_offset)
@@ -1670,7 +1670,43 @@ function drawInsetPart(x_offset, y_offset, width, height, part, layer, colour, p
         .attr("height", placement == null ? height : (height / 2) - 1)
         .attr("stroke", "none")
         .attr("stroke-width", 1)
-        .attr("fill", colour);
+        .attr("fill", data.colour);
+    var id_class = "image-" + Math.random().toString(36).substring(5);
+    svg.append("image")
+        .attr("class", classes + " " + componentName + " " + id_class)
+        .attr("xlink:href", "latex/" + data.name_no_t + ".png")
+        .attr("x", x_offset + (width / 2) - 6 + (data.name_no_t.startsWith("e") ? + 2 : 0))
+        .attr("y", y_offset + height + 3 + (data.name_no_t.startsWith("e") ? 4 : 0))
+        .style("opacity", notationOff)
+        //.style("opacity", input_part == part && input_layer == layer ? 1 : notationOff)
+        .on("mouseover", function(d) {
+            if (active_components[nameOf(data.name_no_t)]) {
+                d3.select(this)
+                    .style("opacity", 1.0);
+                var componentNameX = nameOf(data.name_no_t);
+
+                //if (data.name_no_t.startsWith("c")) {
+                //    componentName = "cell_hidden";
+                //}
+
+                $(".notation-" + componentNameX).parent()
+                    .css("border-color", "black");
+            }
+        })
+        .on("mouseout", function(d) {
+            if (active_components[nameOf(data.name_no_t)]) {
+                d3.select(this)
+                    .style("opacity", notationOff);
+                var componentNameX = nameOf(data.name_no_t);
+
+                //if (data.name_no_t.startsWith("c")) {
+                //    componentName = "cell_hidden";
+                //}
+
+                $(".notation-" + componentNameX).parent()
+                    .css("border-color", "transparent");
+            }
+        });
 
     var part_class = "part-" + part + (layer == null ? "" : "-" + layer);
     $("." + part_class).remove();
@@ -1681,7 +1717,7 @@ function drawInsetPart(x_offset, y_offset, width, height, part, layer, colour, p
         .attr("width", width)
         .attr("height", height)
         .attr("stroke", input_part == part && input_layer == layer ? black : dark_grey)
-        .attr("stroke-width", input_part == part && input_layer == layer ? 2 : 1)
+        .attr("stroke-width", input_part == part && input_layer == layer ? 3 : 1)
         .attr("fill", "transparent")
         .style("pointer-events", "bounding-box")
         .on("mouseover", function(d) {
@@ -1691,7 +1727,11 @@ function drawInsetPart(x_offset, y_offset, width, height, part, layer, colour, p
                 d3.select(this)
                     .transition()
                     .duration(100)
-                    .attr("stroke-width", 2);
+                    .attr("stroke-width", 3);
+                d3.select("image." + id_class)
+                    .transition()
+                    .duration(100)
+                    .style("opacity", 1);
             }
 
             if (active_components[componentName]) {
@@ -1707,6 +1747,10 @@ function drawInsetPart(x_offset, y_offset, width, height, part, layer, colour, p
                     .transition()
                     .duration(50)
                     .attr("stroke-width", 1);
+                d3.select("image." + id_class)
+                    .transition()
+                    .duration(50)
+                    .style("opacity", notationOff);
             }
 
             if (active_components[componentName]) {
@@ -2172,9 +2216,9 @@ function drawSequenceWheel(main, sequence, timestep) {
         .attr("width", center_item_width + 5)
         .attr("height", height)
         .attr("stroke", "black")
-        .attr("stroke-width", 2)
+        .attr("stroke-width", 3)
         .style("fill", "none");
-    var space_width = textWidth("&nbsp;", 14) + 2;
+    var space_width = textWidth("&nbsp;&nbsp;", 14) + 2;
     for (var i = 1; i <= timestep; i++) {
         var opacity = 1.0 - (Math.max(i - 3, 0) * .2);
 
@@ -2670,19 +2714,19 @@ function drawSequence(sequence_match, x_offset, y_offset, width, height) {
 }
 
 function nameOf(name) {
-    if (name.startsWith("e_")) {
+    if (name.startsWith("e")) {
         return "embedding_hidden";
-    } else if (name.startsWith("tilde_c_")) {
+    } else if (name.startsWith("tilde_c")) {
         return "input_hat";
-    } else if (name.startsWith("s_")) {
+    } else if (name.startsWith("s")) {
         return "remember";
-    } else if (name.startsWith("l_")) {
+    } else if (name.startsWith("l")) {
         return "forget";
-    } else if (name.startsWith("c_")) {
+    } else if (name.startsWith("c")) {
         return "cell";
-    } else if (name.startsWith("h_")) {
+    } else if (name.startsWith("h")) {
         return "output";
-    } else if (name.startsWith("y_")) {
+    } else if (name.startsWith("y")) {
         return "softmax";
     } else {
         return null;
