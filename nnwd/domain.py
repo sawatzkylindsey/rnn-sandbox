@@ -420,11 +420,12 @@ class NeuralNetwork:
             arc = -1
             version = -1
             max_arc = 20
+            epochs = self.epoch_threshold
 
             while arc < max_arc:
                 arc += 1
                 logging.debug("train lstm arc %d (batch %d)" % (arc, batch))
-                loss, score = self.lstm_train_loop(batch, self.epoch_threshold, True)
+                loss, score = self.lstm_train_loop(batch, epochs, True)
                 logging.debug("train lstm arc %d (batch %d): (loss, score) (%s, %s)" % (arc, batch, loss, score))
 
                 if best_score is None or score > best_score:
@@ -436,9 +437,10 @@ class NeuralNetwork:
                 elif arc == max_arc:
                     self.lstm.load(lstm_dir)
                 else:
+                    epochs = int(math.ceil(epochs * 1.5))
                     best_loss = None
                     self.lstm.load(lstm_dir, version)
-                    mini_epochs = max(1, int(self.epoch_threshold * 0.2))
+                    mini_epochs = max(1, int(epochs * 0.2))
                     smaller_batch = max(8, int(batch * 0.8))
                     smaller_loss, smaller_score = self.lstm_train_loop(smaller_batch, mini_epochs, False)
                     logging.debug("mini train lstm smaller (batch %d): (loss, score) (%s, %s)" % (smaller_batch, smaller_loss, smaller_score))
