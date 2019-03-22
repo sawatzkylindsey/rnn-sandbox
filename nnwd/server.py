@@ -235,9 +235,11 @@ def stream_input_text(input_files, form):
 
                                 if tag in POS_MAP:
                                     pos = POS_MAP[tag]
-                                    word = pair[1].lower()
-                                    #            (word, pos)
-                                    sequence += [(word, pos)]
+
+                                    if pos != "SYM" and pos != "PUNCT":
+                                        word = pair[1].lower()
+                                        #            (word, pos)
+                                        sequence += [(word, pos)]
                                 elif tag not in BAD_TAGS:
                                     BAD_TAGS[tag] = None
                                     print(tag)

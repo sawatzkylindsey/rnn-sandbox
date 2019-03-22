@@ -455,12 +455,12 @@ class NeuralNetwork:
                     if bigger_score > score_validation:
                         # If the bigger batches are getting a better score, choose it (maybe the smaller is as well, but bigger usually means more general learning).
                         batch = bigger_batch
-                        self.lstm.mark_latest(lstm_dir, "bigger-%d" % version)
+                        self.lstm.copy(lstm_dir, "bigger-%d" % version, True)
                         self.lstm.load(lstm_dir)
                     elif smaller_score > score_validation:
                         # Certainly choose it
                         batch = smaller_batch
-                        self.lstm.mark_latest(lstm_dir, "smaller-%d" % version)
+                        self.lstm.copy(lstm_dir, "smaller-%d" % version, True)
                         self.lstm.load(lstm_dir)
                     else:
                         # Neither are getting better results.  Which is best among the choices?

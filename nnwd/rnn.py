@@ -295,10 +295,12 @@ class Rnn:
         checkpoints.update_next(version, set_latest) \
             .save()
 
-    def mark_latest(self, model_dir, version):
+    def copy(self, model_dir, version, set_latest=False):
         checkpoints = Checkpoints.load(model_dir)
-        logging.debug("Marking %s as latest=True." % (checkpoints.version_key(version)))
-        checkpoints.update_latest(version) \
+        checkpoints.version_key(version)
+        copy_version = "%s-%s" % (version, "".join([random.choice(string.ascii_lowercase) for i in range(6)]))
+        logging.debug("Copying model %s as %s (latest=%s)." % (checkpoints.version_key(version), checkpoints.version_key(copy_version), set_latest))
+        checkpoints.copy(version, copy_version, set_latest) \
             .save()
 
 
@@ -337,8 +339,14 @@ class Checkpoints:
 
         return self
 
-    def update_latest(self, version):
-        self.latest = self.version_key(version)
+    def copy(self, source, target, set_latest=False):
+        source_key = self.version_key(source)
+        target_key = self.version_key(target)
+        self.versions[target_key] = self.versions[source_key]
+
+        if self.latest is None or set_latest:
+            self.latest = target_key
+
         return self
 
     def as_json(self):
