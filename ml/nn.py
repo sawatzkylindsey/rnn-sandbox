@@ -103,7 +103,7 @@ class Model:
             while offset < len(shuffled_xys):
                 batch = shuffled_xys[offset:offset + training_parameters.batch()]
                 xs = [self.input_labels.vector_encode(xy.x) for xy in batch]
-                ys = [self.output_labels.encode(xy.y) for xy in batch]
+                ys = [self.output_labels.encode(xy.y, True) for xy in batch]
                 feed = {
                     self.input_p: np.array(xs),
                     self.output_p: np.array(ys),

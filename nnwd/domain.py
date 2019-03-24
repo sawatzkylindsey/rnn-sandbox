@@ -55,7 +55,7 @@ def create_sa(task_form, corpus_stream_fn, epochs, verbose, save_dir):
         sentiments = set()
         total = 0.0
         output_distribution = {}
-        words = set()
+        words = {}
 
         for triple in corpus_stream_fn():
             sentiment = get_sentiment(triple[2])
@@ -64,7 +64,10 @@ def create_sa(task_form, corpus_stream_fn, epochs, verbose, save_dir):
 
             if triple[0] == "train":
                 for word in triple[1]:
-                    words.add(word)
+                    if word not in words:
+                        words[word] = 0
+
+                    words[word] += 1
 
                 train_xys += [xy]
 
@@ -83,6 +86,7 @@ def create_sa(task_form, corpus_stream_fn, epochs, verbose, save_dir):
         pickler.dump(test_xys, test_xys_file)
         pickler.dump(sorted(sentiments, key=sentiment_sort_key), sentiments_file)
         pickler.dump([output_distribution], output_distribution_file)
+        words = set([item[0] for item in words.items() if item[1] > 1])
         pickler.dump([word for word in words], words_file)
 
         with open(words_file + MARKER, "w") as fh:
@@ -167,15 +171,13 @@ def create_lm(task_form, corpus_stream_fn, epochs, verbose, save_dir):
         train_xys = xys[:split_1]
         validation_xys = xys[split_1:split_2]
         test_xys = xys[split_2:]
-        # Words are actually only the subset from the training data.
-        words = set(adjutant.flat_map([[word_pos[0] for word_pos in sentence] for sentence in train_xys]))
+        ## Words are actually only the subset from the training data.
+        #words = set(adjutant.flat_map([[word_pos[0] for word_pos in sentence] for sentence in train_xys]))
         pos_tags = set(adjutant.flat_map([[word_pos[1] for word_pos in sentence] for sentence in train_xys]))
         pickler.dump(train_xys, train_xys_file)
         pickler.dump(validation_xys, validation_xys_file)
         pickler.dump(test_xys, test_xys_file)
         pickler.dump([pos for pos in pos_tags], pos_tags_file)
-        pickler.dump([word for word in words], words_file)
-        total = 0.0
         word_pos_counts = {}
 
         for sentence in train_xys:
@@ -187,18 +189,29 @@ def create_lm(task_form, corpus_stream_fn, epochs, verbose, save_dir):
                     word_pos_counts[word_pos[0]][word_pos[1]] = 0
 
                 word_pos_counts[word_pos[0]][word_pos[1]] += 1
-                total += 1
+
+        total = 0.0
+        word_pos_counts2 = {}
+
+        for word, counts in word_pos_counts.items():
+            summed = sum(counts.values())
+
+            if summed > 1:
+                word_pos_counts2[word] = counts
+                total += summed
 
         output_distribution = {}
         pos_mapping = {}
 
-        for word, counts in word_pos_counts.items():
+        for word, counts in word_pos_counts2.items():
             output_distribution[word] = sum(counts.values()) / total
             pos_count = sorted(counts.items(), key=lambda item: item[1], reverse=True)[0]
             pos_mapping[word] = pos_count[0]
 
         pickler.dump([output_distribution], output_distribution_file)
         pickler.dump([item for item in pos_mapping.items()], pos_mapping_file)
+        words = set([word for word in word_pos_counts2.keys()])
+        pickler.dump([word for word in words], words_file)
 
         with open(words_file + MARKER, "w") as fh:
             fh.write("noop")
@@ -419,7 +432,7 @@ class NeuralNetwork:
             batch = 64
             arc = -1
             version = -1
-            max_arc = 20
+            max_arc = 10
             epochs = self.epoch_threshold
 
             while arc < max_arc:
@@ -509,13 +522,13 @@ class NeuralNetwork:
             #if self.has_pos():
             #    predictor_output = mlbase.Labels(self.pos_tags)
             #else:
-            predictor_output = mlbase.Labels(set(self.words.labels()))
+            predictor_output = mlbase.Labels(set(self.words.labels()), unknown=nlp.UNKNOWN)
         else:
             predictor_output = mlbase.Labels(set(self.outputs.labels()))
 
         hyper_parameters = ffnn.HyperParameters() \
             .layers(2) \
-            .width(int((len(predictor_input) + len(predictor_output)) / 2.0))
+            .width(len(predictor_input))
         self.predictor = ffnn.Model("predictor", hyper_parameters, predictor_input, predictor_output)
         predictor_dir = os.path.join(self.save_dir, "predictor")
         guassian_buckets_file = os.path.join(self.save_dir, "gaussian-buckets.pickle")
@@ -698,7 +711,7 @@ class NeuralNetwork:
                 if j % data_quarter == 0 or j + 1 == len(data):
                     logging.debug("%d%% through.." % int((j + 1) * 100 / len(data)))
 
-                stepwise_lstm = self.lstm.stepwise(False)
+                stepwise_lstm = self.lstm.stepwise(handle_unknown=True)
 
                 for i, word_pos in enumerate(xy.x):
                     # Set the prediction to that which the lstm has been trained against, not the actual learned prediction (which will be fixed).
@@ -746,7 +759,7 @@ class NeuralNetwork:
                 if j % data_quarter == 0 or j + 1 == len(self.train_xys):
                     logging.debug("%d%% through.." % int((j + 1) * 100 / len(self.train_xys)))
 
-                stepwise_lstm = self.lstm.stepwise(False)
+                stepwise_lstm = self.lstm.stepwise(handle_unknown=True)
                 sequence = tuple(xy.x)
 
                 for i, word_pos in enumerate(xy.x):
@@ -820,7 +833,12 @@ class NeuralNetwork:
         return colour_embeddings[50]
 
     def mapped_output(self, output):
-        return output if not self.has_pos() else (self.pos_mapping[output] if output in self.pos_mapping else "NN")
+        if self.is_lm():
+            resolved = self.words.decode(self.words.encode(output, True))
+        else:
+            resolved = self.outputs.decode(self.outputs.encode(output, True))
+
+        return resolved if not self.has_pos() else (self.pos_mapping[resolved] if resolved in self.pos_mapping else "NN")
 
     def output_colour(self, output):
         if not self.is_setup():

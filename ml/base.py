@@ -259,10 +259,12 @@ class Labels(Field):
         labels = sorted([label for label in values])
 
         for value in labels:
-            self._encoding[check.check_not_none(value)] = i
-            self._decoding[i] = value
-            i += 1
+            if unknown is None or value != unknown:
+                self._encoding[check.check_not_none(value)] = i
+                self._decoding[i] = value
+                i += 1
 
+        assert len(self._encoding) == len(self._decoding), "%d != %d" % (len(self._encoding), len(self._decoding))
         # Include unknown in the correct position if it's being represented in the labels.
         self._labels = labels_prefix + labels
 

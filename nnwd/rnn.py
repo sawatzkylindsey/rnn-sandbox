@@ -392,9 +392,9 @@ class RnnLm(Rnn):
 
     def get_training_parameters(self, batch):
         data_x, data_y = mlbase.as_time_major(batch, True)
-        input_labels = [[self.word_labels.encode(word_pos[0] if word_pos is not None else mlbase.BLANK) for word_pos in timespot] for timespot in data_x]
+        input_labels = [[self.word_labels.encode(word_pos[0] if word_pos is not None else mlbase.BLANK, True) for word_pos in timespot] for timespot in data_x]
         input_lengths = [len(sequence.x) for sequence in batch]
-        output_labels = [[self.word_labels.encode(word_pos[0] if word_pos is not None else mlbase.BLANK) for word_pos in timespot] for timespot in data_y]
+        output_labels = [[self.word_labels.encode(word_pos[0] if word_pos is not None else mlbase.BLANK, True) for word_pos in timespot] for timespot in data_y]
         return {
             self.unrolled_inputs_p: np.array(input_labels),
             self.input_lengths_p: np.array(input_lengths),
@@ -451,11 +451,11 @@ class RnnSa(Rnn):
 
     def get_training_parameters(self, batch):
         data_x, data_y = mlbase.as_time_major(batch, False)
-        input_labels = [[self.word_labels.encode(word_pos[0] if word_pos is not None else mlbase.BLANK) for word_pos in timespot] for timespot in data_x]
+        input_labels = [[self.word_labels.encode(word_pos[0] if word_pos is not None else mlbase.BLANK, True) for word_pos in timespot] for timespot in data_x]
         # Gathers are indexes, not lengths.
         #                                 vvv
         input_gathers = [[len(sequence.x) - 1, i] for i, sequence in enumerate(batch)]
-        output_labels = [self.output_labels.encode(word if word is not None else mlbase.BLANK) for word in data_y]
+        output_labels = [self.output_labels.encode(word if word is not None else mlbase.BLANK, True) for word in data_y]
         return {
             self.unrolled_inputs_p: np.array(input_labels),
             self.input_gathers_p: np.array(input_gathers),

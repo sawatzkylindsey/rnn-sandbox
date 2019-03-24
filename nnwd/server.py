@@ -191,9 +191,12 @@ POS_MAP = {
     "``": "PUNCT",
     "''": "PUNCT",
     ":": "PUNCT",
+    ";": "PUNCT",
     "(": "PUNCT",
     ")": "PUNCT",
     "$": "PUNCT",
+    "!": "PUNCT",
+    "?": "PUNCT",
 }
 BAD_TAGS = {}
 
@@ -218,12 +221,19 @@ def stream_input_text(input_files, form):
 
                                 if tag in POS_MAP:
                                     pos = POS_MAP[tag]
-                                    sequence += [(word, pos)]
+
+                                    if pos == "SYM" or pos == "PUNCT":
+                                        if word == "(" or word == ")":
+                                            sequence += [(word, pos)]
+                                        else:
+                                            pass
+                                    else:
+                                        sequence += [(word, pos)]
                                 elif tag not in BAD_TAGS:
                                     BAD_TAGS[tag] = None
                                     print(tag)
 
-                            yield sequence
+                            yield sequence + [(".", "PUNCT")]
                     else:
                         sequence = []
 
@@ -234,17 +244,21 @@ def stream_input_text(input_files, form):
                                 tag = pair[0]
 
                                 if tag in POS_MAP:
+                                    word = pair[1].lower()
                                     pos = POS_MAP[tag]
 
-                                    if pos != "SYM" and pos != "PUNCT":
-                                        word = pair[1].lower()
-                                        #            (word, pos)
+                                    if pos == "SYM" or pos == "PUNCT":
+                                        if word == "(" or word == ")":
+                                            sequence += [(word, pos)]
+                                        else:
+                                            pass
+                                    else:
                                         sequence += [(word, pos)]
                                 elif tag not in BAD_TAGS:
                                     BAD_TAGS[tag] = None
                                     print(tag)
 
-                        yield sequence
+                        yield sequence + [(".", "PUNCT")]
 
 
 def stream_input_stanford(stanford_folder):
@@ -284,7 +298,7 @@ def stream_input_stanford(stanford_folder):
                 label = label.strip()
                 dataset_splits[sentence_id] = "train" if label == "1" else ("test" if label == "2" else "dev")
 
-    train_sentences = []
+    #train_sentences = []
 
     with open(os.path.join(stanford_folder, "datasetSentences.txt"), "r") as fh:
         first = True
@@ -295,11 +309,24 @@ def stream_input_stanford(stanford_folder):
             else:
                 sentence_id, sentence = line.split("\t")
                 sentence = sentence.strip().lower()
+                sequence = []
 
-                if dataset_splits[sentence_id] == "train":
-                    train_sentences += [sentence]
+                for word in sentence.split(" "):
+                    if word != "." \
+                        and word != "," \
+                        and word != "``" \
+                        and word != "''" \
+                        and word != ":" \
+                        and word != ";" \
+                        and word != "$" \
+                        and word != "!" \
+                        and word != "?":
+                        sequence += [word]
 
-                yield (dataset_splits[sentence_id], sentence.split(" "), dictionary[sentence])
+                #if dataset_splits[sentence_id] == "train":
+                #    train_sentences += [sequence]
+
+                yield (dataset_splits[sentence_id], sequence + ["."], dictionary[sentence])
 
     #data_tenth = max(1, int(len(dictionary) / 10.0))
 
