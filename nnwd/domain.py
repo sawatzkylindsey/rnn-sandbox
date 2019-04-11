@@ -10,6 +10,7 @@ from nltk.tokenize import word_tokenize
 import numpy as np
 import os
 import pdb
+import queue
 import random
 from sklearn.mixture import GaussianMixture
 from sklearn.manifold import TSNE
@@ -588,7 +589,7 @@ class NeuralNetwork:
                 width = NeuralNetwork.HIDDEN_WIDTH
                 reduction = NeuralNetwork.HIDDEN_REDUCTION
 
-            logging.debug("dr calc for %s with %d data points sampled to %d (%d dimensions)" % (key, len(points), int(len(points) * NeuralNetwork.GAUSSIAN_SAMPLE_RATE), width))
+            logging.debug("dr calc for %s (%d -> %d) with %d data points sampled to %d" % (key, width, reduction, len(points), int(len(points) * NeuralNetwork.GAUSSIAN_SAMPLE_RATE)))
             gm = GaussianMixture(reduction)
             guassian_buckets[key] = [[] for i in range(reduction)]
             fixed_buckets[key] = []
@@ -621,7 +622,9 @@ class NeuralNetwork:
 
     def _test_features(self):
         logging.debug("Testing features.")
-        distributions = []
+        distributions_count = 0
+        distributions = queue.Queue()
+        pickler.dump(distributions, os.path.join(self.save_dir, "sem-distributions.pickle"))
         data_quarter = max(1, int(len(self.test_xys) / 4.0))
         dr_errors = {}
         fixed_errors = {}
@@ -649,7 +652,8 @@ class NeuralNetwork:
                         points[self.encode_key(part, layer)] = point
 
                 for result in self.predictor.evaluate(xs):
-                    distributions += [result.distribution]
+                    distributions_count += 1
+                    distributions.put(result.distribution)
 
                 # Learned buckets
                 dr_reductions, errors = self.gaussian_dimensionality_reduce(points, True)
@@ -681,8 +685,9 @@ class NeuralNetwork:
                 dimensions = NeuralNetwork.EMBEDDING_WIDTH if self.decode_key(key)[0] == "embedding" else NeuralNetwork.HIDDEN_WIDTH
                 writer.writerow(["fixed", key, "%f" % error, "%f" % (error / count), "%f" % (error / (count * dimensions))])
 
-        logging.debug("Predictor test distributions: %d." % len(distributions))
-        pickler.dump(distributions, os.path.join(self.save_dir, "sem-distributions.pickle"))
+        # Signal that the queue is complete.
+        distributions.put(None)
+        logging.debug("Predictor test distributions: %d." % distributions_count)
 
     def _get_predictor_data(self):
         if self.is_lm():
