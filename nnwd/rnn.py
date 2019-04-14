@@ -32,15 +32,16 @@ class Rnn:
         self.word_labels = word_labels
         self.output_labels = output_labels
         self.scope = scope
+        self._initials = {}
+        self._instruments = {}
 
         self.time_dimension = None
         self.batch_dimension = None
+
         # Notation:
         #   _p      placeholder
         #   _c      constant
-
         self.unrolled_inputs_p = self.placeholder("unrolled_inputs_p", [self.time_dimension, self.batch_dimension], tf.int32)
-
         self.initial_state_p = self.placeholder("initial_state_p", [Rnn.SCAN_STATES, self.layers, self.batch_dimension, self.width])
 
         self.E = self.variable("E", [len(self.word_labels), self.embedding_width])
@@ -180,7 +181,10 @@ class Rnn:
                 initializer=tf.contrib.layers.xavier_initializer() if initial is None else tf.constant_initializer(initial))
 
     def initial_state(self, batch_length):
-        return np.zeros([Rnn.SCAN_STATES, self.layers, batch_length, self.width], dtype="float32")
+        if batch_length not in self._initials:
+            self._initials[batch_length] = np.zeros([Rnn.SCAN_STATES, self.layers, batch_length, self.width], dtype="float32")
+
+        return self._initials[batch_length]
 
     def combine_dimensions(self):
         if self.time_dimension is None or self.batch_dimension is None:
@@ -208,18 +212,18 @@ class Rnn:
             while offset < len(shuffled_xys):
                 batch = shuffled_xys[offset:offset + training_parameters.batch()]
                 offset += training_parameters.batch()
-                parameters = self.get_training_parameters(batch)
-                _, total_cost = self.session.run([self.updates, self.cost], feed_dict=parameters)
+                feed = self.get_training_feed(batch, training_parameters)
+                _, total_cost = self.session.run([self.updates, self.cost], feed_dict=feed)
                 epoch_loss += total_cost
-
-            if epoch % epochs_tenth == 0 and training_parameters.debug():
-                logging.debug(epoch_template.format(epoch, epoch_loss))
 
             losses.append(epoch_loss)
             finished, reason = training_parameters.finished(epoch + 1, losses)
 
-        logging.debug("Training finished due to %s (%s)." % (reason, losses))
+            if not finished and epoch % epochs_tenth == 0 and training_parameters.debug():
+                logging.debug(epoch_template.format(epoch, epoch_loss))
+
         logging.debug(epoch_template.format(epoch, epoch_loss))
+        logging.debug("Training finished due to %s (%s)." % (reason, losses))
         return epoch_loss
 
     def test(self, xy_sequences, debug=False):
@@ -231,24 +235,32 @@ class Rnn:
         while offset < len(xy_sequences):
             batch = xy_sequences[offset:offset + 32]
             offset += 32
-            parameters = self.get_testing_parameters(batch)
-            time_distributions = self.session.run(self.output_distributions, feed_dict=parameters)
-            total += self.score(batch, parameters, time_distributions, debug, case_slot_length)
+            feed = self.get_testing_feed(batch)
+            time_distributions = self.session.run(self.output_distributions, feed_dict=feed)
+            total += self.score(batch, feed, time_distributions, debug, case_slot_length)
 
         return total / len(xy_sequences)
 
     def evaluate(self, x, handle_unknown=False, state=None, instrument_names=[]):
-        parameters = {
+        feed = {
             self.unrolled_inputs_p: np.array([np.array([self.word_labels.encode(x, handle_unknown)])]),
-            self.initial_state_p: state if state is not None else self.initial_state(1)
+            self.initial_state_p: state if state is not None else self.initial_state(1),
         }
-        instruments = [self.session.graph.get_tensor_by_name("%s:0" % name) for name in instrument_names]
-        distributions, next_state, *instrument_values = self.session.run([self.output_distributions, self.state] + instruments, feed_dict=parameters)
+        instruments = self.get_instruments(instrument_names)
+        distributions, next_state, *instrument_values = self.session.run([self.output_distributions, self.state] + instruments, feed_dict=feed)
         assert len(distributions) == 1
         assert len(distributions[0]) == 1
         distribution = distributions[0][0]
         result = Result(self.output_labels.vector_decode(distribution), self.output_labels.vector_decode_distribution(distribution), self.output_labels.encoding())
         return result, next_state, {name: instrument_values[i] for i, name in enumerate(instrument_names)}
+
+    def get_instruments(self, instrument_names):
+        key = hash(tuple(instrument_names))
+
+        if key not in self._instruments:
+            self._instruments[key] = [self.session.graph.get_tensor_by_name("%s:0" % name) for name in instrument_names]
+
+        return self._instruments[key]
 
     def probe(self, name, layer):
         try:
@@ -265,11 +277,11 @@ class Rnn:
         return Stepwise(self, name, handle_unknown)
 
     def embed(self, x):
-        parameters = {
+        feed = {
             self.unrolled_inputs_p: np.array([np.array([self.word_labels.encode(x, True)])]),
-            self.initial_state_p: self.initial_state(1)
+            self.initial_state_p: self.initial_state(1),
         }
-        return self.session.run([self.session.graph.get_tensor_by_name("embedding:0")], feed_dict=parameters)[0].tolist()
+        return self.session.run([self.session.graph.get_tensor_by_name("embedding:0")], feed_dict=feed)[0].tolist()
 
     def load(self, model_dir, version=None):
         checkpoints = Checkpoints.load(model_dir)
@@ -390,7 +402,7 @@ class RnnLm(Rnn):
         self.mask = tf.sequence_mask(self.input_lengths_p, dtype=tf.float32)
         return tf.contrib.seq2seq.sequence_loss(logits=expected_outputs, targets=self.unrolled_outputs_p, weights=self.mask)
 
-    def get_training_parameters(self, batch):
+    def get_training_feed(self, batch, training_parameters):
         data_x, data_y = mlbase.as_time_major(batch, True)
         input_labels = [[self.word_labels.encode(word_pos[0] if word_pos is not None else mlbase.BLANK, True) for word_pos in timespot] for timespot in data_x]
         input_lengths = [len(sequence.x) for sequence in batch]
@@ -402,7 +414,7 @@ class RnnLm(Rnn):
             self.unrolled_outputs_p: np.array(output_labels),
         }
 
-    def get_testing_parameters(self, batch):
+    def get_testing_feed(self, batch):
         data_x, data_y = mlbase.as_time_major(batch, True)
         input_labels = [[self.word_labels.encode(word_pos[0] if word_pos is not None else mlbase.BLANK, True) for word_pos in timespot] for timespot in data_x]
         input_lengths = [len(sequence.x) for sequence in batch]
@@ -412,9 +424,9 @@ class RnnLm(Rnn):
             self.initial_state_p: self.initial_state(len(batch)),
         }
 
-    def score(self, batch, parameters, time_distributions, debug, case_slot_length):
+    def score(self, batch, feed, time_distributions, debug, case_slot_length):
         case_template = "{{Case {:%dd}}}" % case_slot_length
-        input_lengths = parameters[self.input_lengths_p]
+        input_lengths = feed[self.input_lengths_p]
         total_perplexity = 0.0
         predictions = [[] for case in range(len(batch))]
         log_probabilities = [0.0 for case in range(len(batch))]
@@ -449,7 +461,7 @@ class RnnSa(Rnn):
         expected_outputs = tf.gather_nd(self.unrolled_outputs, self.input_gathers_p)
         return tf.reduce_sum(tf.nn.softmax_cross_entropy_with_logits_v2(logits=expected_outputs, labels=tf.one_hot(self.output_p, len(self.output_labels))))
 
-    def get_training_parameters(self, batch):
+    def get_training_feed(self, batch, training_parameters):
         data_x, data_y = mlbase.as_time_major(batch, False)
         input_labels = [[self.word_labels.encode(word_pos[0] if word_pos is not None else mlbase.BLANK, True) for word_pos in timespot] for timespot in data_x]
         # Gathers are indexes, not lengths.
@@ -463,7 +475,7 @@ class RnnSa(Rnn):
             self.output_p: np.array(output_labels),
         }
 
-    def get_testing_parameters(self, batch):
+    def get_testing_feed(self, batch):
         data_x, data_y = mlbase.as_time_major(batch, False)
         input_labels = [[self.word_labels.encode(word_pos[0] if word_pos is not None else mlbase.BLANK, True) for word_pos in timespot] for timespot in data_x]
         # Gathers are indexes, not lengths.
@@ -475,9 +487,9 @@ class RnnSa(Rnn):
             self.initial_state_p: self.initial_state(len(batch)),
         }
 
-    def score(self, batch, parameters, time_distributions, debug, case_slot_length):
+    def score(self, batch, feed, time_distributions, debug, case_slot_length):
         case_template = "{{Case {:%dd}}}" % case_slot_length
-        input_gathers = parameters[self.input_gathers_p]
+        input_gathers = feed[self.input_gathers_p]
         total_correct = 0
         predictions = [[] for case in range(len(batch))]
 

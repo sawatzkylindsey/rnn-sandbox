@@ -43,11 +43,13 @@ def _dump_stream(data, file_path):
 
             # If we're still building out the sample.
             if batch_size is None:
-                sample_size = len(pickle.dumps(batch))
+                # Only try to discover the batch_size every so often.
+                if len(batch) % 50 == 0:
+                    sample_size = len(pickle.dumps(batch))
 
-                if sample_size > TARGET_FILE_SIZE:
-                    average = sample_size / float(len(batch))
-                    batch_size = max(1, int(TARGET_FILE_SIZE / average))
+                    if sample_size > TARGET_FILE_SIZE:
+                        average = sample_size / float(len(batch))
+                        batch_size = max(1, int(TARGET_FILE_SIZE / average))
             else:
                 # The batch_size has been determined.
                 while len(batch) > batch_size:

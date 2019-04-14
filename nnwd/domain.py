@@ -12,9 +12,11 @@ import os
 import pdb
 import queue
 import random
+import resource
 from sklearn.mixture import GaussianMixture
 from sklearn.manifold import TSNE
 import string
+import sys
 import threading
 import time
 
@@ -35,7 +37,7 @@ ActivationPoint = collections.namedtuple("ActivationPoint", ["sequence", "expect
 MatchPoint = collections.namedtuple("MatchPoint", ["distance", "word", "index", "prediction", "expectation"])
 
 
-def create_sa(task_form, corpus_stream_fn, epochs, verbose, save_dir):
+def create_sa(task_form, corpus_stream_fn, aargs):
     train_xys_file = os.path.join(save_dir, "xys.train.pickle")
     validation_xys_file = os.path.join(save_dir, "xys.validation.pickle")
     test_xys_file = os.path.join(save_dir, "xys.test.pickle")
@@ -101,7 +103,7 @@ def create_sa(task_form, corpus_stream_fn, epochs, verbose, save_dir):
     words = mlbase.Labels(words.union(set([mlbase.BLANK])), unknown=nlp.UNKNOWN)
     #print(words)
     output_labels = mlbase.Labels(sentiments)
-    return words, NeuralNetwork(task_form, words, output_labels, None, None, train_xys, epochs, validation_xys, test_xys, lambda item: sentiment_sort_key(item[0]), save_dir)
+    return words, NeuralNetwork(task_form, words, output_labels, None, None, train_xys, validation_xys, test_xys, lambda item: sentiment_sort_key(item[0]), aargs)
 
 
 def get_sentiment(value):
@@ -148,14 +150,14 @@ def sa_colour_mapping():
     }
 
 
-def create_lm(task_form, corpus_stream_fn, epochs, verbose, save_dir):
-    train_xys_file = os.path.join(save_dir, "xys.train.pickle")
-    validation_xys_file = os.path.join(save_dir, "xys.validation.pickle")
-    test_xys_file = os.path.join(save_dir, "xys.test.pickle")
-    pos_tags_file = os.path.join(save_dir, "pos-tags.pickle")
-    output_distribution_file = os.path.join(save_dir, "output-distribution.pickle")
-    pos_mapping_file = os.path.join(save_dir, "pos-mapping.pickle")
-    words_file = os.path.join(save_dir, "words.pickle")
+def create_lm(task_form, corpus_stream_fn, aargs):
+    train_xys_file = os.path.join(aargs.save_dir, "xys.train.pickle")
+    validation_xys_file = os.path.join(aargs.save_dir, "xys.validation.pickle")
+    test_xys_file = os.path.join(aargs.save_dir, "xys.test.pickle")
+    pos_tags_file = os.path.join(aargs.save_dir, "pos-tags.pickle")
+    output_distribution_file = os.path.join(aargs.save_dir, "output-distribution.pickle")
+    pos_mapping_file = os.path.join(aargs.save_dir, "pos-mapping.pickle")
+    words_file = os.path.join(aargs.save_dir, "words.pickle")
 
     if os.path.exists(words_file + MARKER):
         train_xys = [xy for xy in pickler.load(train_xys_file)]
@@ -224,7 +226,7 @@ def create_lm(task_form, corpus_stream_fn, epochs, verbose, save_dir):
     logging.debug("data sets (train, validation, test): %d, %d, %d" % (len(train_xys), len(validation_xys), len(test_xys)))
     #print(words)
     word_labels = mlbase.Labels(words.union(set([mlbase.BLANK])), unknown=nlp.UNKNOWN)
-    return word_labels, NeuralNetwork(task_form, word_labels, None, pos_tags, pos_mapping, xy_sequence(train_xys), epochs, xy_sequence(validation_xys), xy_sequence(test_xys), lambda item: -item[1], save_dir)
+    return word_labels, NeuralNetwork(task_form, word_labels, None, pos_tags, pos_mapping, xy_sequence(train_xys), xy_sequence(validation_xys), xy_sequence(test_xys), lambda item: -item[1], aargs)
 
 
 def parens_colour_mapping():
@@ -365,14 +367,13 @@ class NeuralNetwork:
         "outputs": "output",
     }
 
-    def __init__(self, task_form, words, outputs, pos_tags, pos_mapping, train_xys, epoch_threshold, validation_xys, test_xys, sort_key, save_dir):
+    def __init__(self, task_form, words, outputs, pos_tags, pos_mapping, train_xys, validation_xys, test_xys, sort_key, aargs):
         self.task_form = task_form
         self.words = check.check_instance(words, mlbase.Labels)
         self.outputs = outputs
         self.pos_tags = pos_tags
         self.pos_mapping = pos_mapping
         self.train_xys = [mlbase.Xy(*pair) for pair in train_xys]
-        self.epoch_threshold = epoch_threshold
         self.validation_xys = [mlbase.Xy(*pair) for pair in validation_xys]
         self.test_xys = [mlbase.Xy(*pair) for pair in test_xys]
 
@@ -385,7 +386,11 @@ class NeuralNetwork:
             self.colour_mapping = sa_colour_mapping()
 
         self.sort_key = sort_key
-        self.save_dir = save_dir
+        self.batch = aargs.batch
+        self.arc_epochs = aargs.arc_epochs
+        self.save_dir = aargs.save_dir
+        self.skip_dr_test = aargs.skip_dr_test
+        self.skip_sem_test = aargs.skip_sem_test
         self.setup_complete = False
         self.embedding_padding = tuple([0] * max(0, NeuralNetwork.HIDDEN_WIDTH - NeuralNetwork.EMBEDDING_WIDTH))
         self.hidden_padding = tuple([0] * max(0, NeuralNetwork.EMBEDDING_WIDTH - NeuralNetwork.HIDDEN_WIDTH))
@@ -404,7 +409,10 @@ class NeuralNetwork:
         #self._generate_activation_data()
         # Sets setup_complete
         self._train_features()
-        self._test_features()
+
+        if not self.skip_dr_test or not self.skip_sem_test:
+            self._test_features()
+
         user_log.info("Setup NeuralNetwork")
 
     def is_setup(self):
@@ -434,7 +442,7 @@ class NeuralNetwork:
             arc = -1
             version = -1
             max_arc = 10
-            epochs = self.epoch_threshold
+            epochs = self.arc_epochs
 
             while arc < max_arc:
                 arc += 1
@@ -448,41 +456,12 @@ class NeuralNetwork:
                     score_validation = score
                     version += 1
                     self.lstm.save(lstm_dir, version, True)
-                elif arc == max_arc:
-                    self.lstm.load(lstm_dir)
                 else:
-                    epochs = int(math.ceil(epochs * 1.5))
-                    best_loss = None
-                    self.lstm.load(lstm_dir, version)
-                    mini_epochs = max(1, int(epochs * 0.2))
-                    smaller_batch = max(8, int(batch * 0.8))
-                    smaller_loss, smaller_score = self.lstm_train_loop(smaller_batch, mini_epochs, False)
-                    logging.debug("mini train lstm smaller (batch %d): (loss, score) (%s, %s)" % (smaller_batch, smaller_loss, smaller_score))
-                    self.lstm.save(lstm_dir, "smaller-%d" % version)
-                    self.lstm.load(lstm_dir, version)
-                    bigger_batch = int(batch * 1.2)
-                    bigger_loss, bigger_score = self.lstm_train_loop(bigger_batch, mini_epochs, False)
-                    logging.debug("mini train lstm bigger (batch %d): (loss, score) (%s, %s)" % (bigger_batch, bigger_loss, bigger_score))
-                    self.lstm.save(lstm_dir, "bigger-%d" % version)
-                    self.lstm.load(lstm_dir, version)
+                    # TODO
+                    pass
 
-                    if bigger_score > score_validation:
-                        # If the bigger batches are getting a better score, choose it (maybe the smaller is as well, but bigger usually means more general learning).
-                        batch = bigger_batch
-                        self.lstm.copy(lstm_dir, "bigger-%d" % version, True)
-                        self.lstm.load(lstm_dir)
-                    elif smaller_score > score_validation:
-                        # Certainly choose it
-                        batch = smaller_batch
-                        self.lstm.copy(lstm_dir, "smaller-%d" % version, True)
-                        self.lstm.load(lstm_dir)
-                    else:
-                        # Neither are getting better results.  Which is best among the choices?
-                        if bigger_score > smaller_score:
-                            batch = bigger_batch
-                        else:
-                            batch = smaller_batch
-
+        # Load which ever version was marked as the latest
+        self.lstm.load(lstm_dir)
         logging.debug("Calculating final validation score.")
         score_validation = self.lstm.test(self.validation_xys, False)
         logging.debug("Calculating final test score.")
@@ -534,13 +513,14 @@ class NeuralNetwork:
         predictor_dir = os.path.join(self.save_dir, "predictor")
         guassian_buckets_file = os.path.join(self.save_dir, "gaussian-buckets.pickle")
         fixed_buckets_file = os.path.join(self.save_dir, "fixed-buckets.pickle")
-        predictor_xys = self._get_predictor_data()
+        predictor_xys = None
 
         if os.path.exists(guassian_buckets_file + ".0"):
             logging.debug("Loading existing reduction buckets.")
             self.guassian_buckets = {item[0]: item[1] for item in pickler.load(guassian_buckets_file)}
             self.fixed_buckets = {item[0]: item[1] for item in pickler.load(fixed_buckets_file)}
         else:
+            predictor_xys = self._get_predictor_data()
             self.guassian_buckets, self.fixed_buckets = self._train_guassian_buckets(predictor_xys)
             pickler.dump([item for item in self.guassian_buckets.items()], guassian_buckets_file)
             pickler.dump([item for item in self.fixed_buckets.items()], fixed_buckets_file)
@@ -552,6 +532,9 @@ class NeuralNetwork:
             logging.debug("Loading existing predictor parameters.")
             self.predictor.load(predictor_dir)
         else:
+            if predictor_xys is not None:
+                predictor_xys = self._get_predictor_data()
+
             self._train_predictor(predictor_xys)
             self.predictor.save(predictor_dir)
 
@@ -622,72 +605,92 @@ class NeuralNetwork:
 
     def _test_features(self):
         logging.debug("Testing features.")
-        distributions_count = 0
-        distributions = queue.Queue()
-        pickler.dump(distributions, os.path.join(self.save_dir, "sem-distributions.pickle"))
-        data_quarter = max(1, int(len(self.test_xys) / 4.0))
-        dr_errors = {}
-        fixed_errors = {}
+        data_tenth = max(1, int(len(self.test_xys) / 10.0))
+        data_hundredth = max(1, int(len(self.test_xys) / 100.0))
+
+        if not self.skip_dr_test:
+            dr_errors = {}
+            fixed_errors = {}
+
+        if not self.skip_sem_test:
+            distributions_count = 0
+            distributions = queue.Queue()
+            pickler.dump(distributions, os.path.join(self.save_dir, "sem-distributions.pickle"))
+
         count = 0
 
         for j, xy in enumerate(self.test_xys):
-            if j % data_quarter == 0 or j + 1 == len(self.test_xys):
+            if j % data_hundredth == 0 or j +1 == len(self.test_xys):
+                logging.debug("resource usage: %d" % resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
+
+            if j % data_tenth == 0 or j + 1 == len(self.test_xys):
                 logging.debug("%d%% through.." % int((j + 1) * 100 / len(self.test_xys)))
 
             stepwise_lstm = self.lstm.stepwise(handle_unknown=True)
 
             for i, word_pos in enumerate(xy.x):
                 count += 1
-                xs = []
                 result, instruments = stepwise_lstm.step(word_pos[0], NeuralNetwork.INSTRUMENTS)
-                x = ("embedding", 0, tuple(instruments["embedding"]) + self.embedding_padding)
-                xs += [x]
-                points = {self.encode_key("embedding", 0): tuple(instruments["embedding"])}
+
+                if not self.skip_sem_test:
+                    x = ("embedding", 0, tuple(instruments["embedding"]) + self.embedding_padding)
+                    xs = [x]
+
+                if not self.skip_dr_test:
+                    points = {self.encode_key("embedding", 0): tuple(instruments["embedding"])}
 
                 for part in NeuralNetwork.LSTM_PARTS:
                     for layer in range(NeuralNetwork.LAYERS):
-                        point = tuple(instruments[part][layer]) + self.hidden_padding
-                        x = (part, layer, point)
-                        xs += [x]
-                        points[self.encode_key(part, layer)] = point
+                        if not self.skip_sem_test:
+                            x = (part, layer, tuple(instruments[part][layer]) + self.hidden_padding)
+                            xs += [x]
 
-                for result in self.predictor.evaluate(xs):
-                    distributions_count += 1
-                    distributions.put(result.distribution)
+                        if not self.skip_dr_test:
+                            points[self.encode_key(part, layer)] = tuple(instruments[part][layer])
 
-                # Learned buckets
-                dr_reductions, errors = self.gaussian_dimensionality_reduce(points, True)
+                if not self.skip_sem_test:
+                    for result in self.predictor.evaluate(xs):
+                        distributions_count += 1
+                        distributions.put(result.distribution)
 
-                for key, error in errors.items():
-                    if key not in dr_errors:
-                        dr_errors[key] = 0.0
+                if not self.skip_dr_test:
+                    # Learned buckets
+                    dr_reductions, errors = self.gaussian_dimensionality_reduce(points, True)
 
-                    dr_errors[key] += error
+                    for key, error in errors.items():
+                        if key not in dr_errors:
+                            dr_errors[key] = 0.0
 
-                # Fixed buckets
-                fixed_reductions, errors = self.fixed_dimensionality_reduce(points, True)
+                        dr_errors[key] += error
 
-                for key, error in errors.items():
-                    if key not in fixed_errors:
-                        fixed_errors[key] = 0.0
+                    # Fixed buckets
+                    fixed_reductions, errors = self.fixed_dimensionality_reduce(points, True)
 
-                    fixed_errors[key] += error
+                    for key, error in errors.items():
+                        if key not in fixed_errors:
+                            fixed_errors[key] = 0.0
 
-        with open(os.path.join(self.save_dir, "dr-analysis.csv"), "w") as fh:
-            writer = csv_writer(fh)
-            writer.writerow(["technique", "key", "sum of squared error", "mean squared error", "mse normalized"])
+                        fixed_errors[key] += error
 
-            for key, error in dr_errors.items():
-                dimensions = NeuralNetwork.EMBEDDING_WIDTH if self.decode_key(key)[0] == "embedding" else NeuralNetwork.HIDDEN_WIDTH
-                writer.writerow(["dr", key, "%f" % error, "%f" % (error / count), "%f" % (error / (count * dimensions))])
+        if not self.skip_dr_test:
+            logging.debug("Dimensionality reduction test counts: %d." % count)
 
-            for key, error in fixed_errors.items():
-                dimensions = NeuralNetwork.EMBEDDING_WIDTH if self.decode_key(key)[0] == "embedding" else NeuralNetwork.HIDDEN_WIDTH
-                writer.writerow(["fixed", key, "%f" % error, "%f" % (error / count), "%f" % (error / (count * dimensions))])
+            with open(os.path.join(self.save_dir, "dr-analysis.csv"), "w") as fh:
+                writer = csv_writer(fh)
+                writer.writerow(["technique", "key", "sum of squared error", "mean squared error", "mse normalized"])
 
-        # Signal that the queue is complete.
-        distributions.put(None)
-        logging.debug("Predictor test distributions: %d." % distributions_count)
+                for key, error in dr_errors.items():
+                    dimensions = NeuralNetwork.EMBEDDING_WIDTH if self.decode_key(key)[0] == "embedding" else NeuralNetwork.HIDDEN_WIDTH
+                    writer.writerow(["dr", key, "%f" % error, "%f" % (error / count), "%f" % (error / (count * dimensions))])
+
+                for key, error in fixed_errors.items():
+                    dimensions = NeuralNetwork.EMBEDDING_WIDTH if self.decode_key(key)[0] == "embedding" else NeuralNetwork.HIDDEN_WIDTH
+                    writer.writerow(["fixed", key, "%f" % error, "%f" % (error / count), "%f" % (error / (count * dimensions))])
+
+        if not self.skip_sem_test:
+            # Signal that the queue is complete.
+            distributions.put(None)
+            logging.debug("Predictor test distributions: %d." % distributions_count)
 
     def _get_predictor_data(self):
         if self.is_lm():

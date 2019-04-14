@@ -94,11 +94,10 @@ class ServerHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
 
-def run(port, words, neural_network, query_engine):
+def run_server(port, words, neural_network, query_engine):
     class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
         pass
 
-    #patch_Thread_for_profiling()
     server_address = ('', port)
     httpd = ThreadingHTTPServer(server_address, ServerHandler)
     httpd.daemon_threads = True
@@ -122,23 +121,28 @@ def main(argv):
                     action="store_true",
                     help="Turn on verbose logging.")
     ap.add_argument("-p", "--port", default=8888, type=int)
-    ap.add_argument("--epochs", default=2, type=int)
+    ap.add_argument("--batch", default=32, type=int)
+    ap.add_argument("--arc-epochs", default=2, type=int)
     ap.add_argument("-s", "--save-dir", default=".resume")
     ap.add_argument("--tag", default=False, action="store_true")
+    ap.add_argument("--headless", default=False, action="store_true")
+    ap.add_argument("--skip-dr-test", default=False, action="store_true")
+    ap.add_argument("--skip-sem-test", default=False, action="store_true")
     ap.add_argument("task", help="Either 'sa' or 'lm'.")
     ap.add_argument("form", help="The appropriate selection of: ['stanford', 'raw', 'pos'].")
     ap.add_argument("corpus_paths", nargs="+")
     aargs = ap.parse_args(argv)
+    #patch_thread_for_profiling()
     setup_logging(".%s.log" % os.path.splitext(os.path.basename(__file__))[0], aargs.verbose, False, True, True)
     logging.debug(aargs)
 
     if aargs.task == "sa":
         assert aargs.form == "stanford"
-        words, neural_network = domain.create_sa((aargs.task, aargs.form), lambda: stream_input_stanford(aargs.corpus_paths[0]), aargs.epochs, aargs.verbose, aargs.save_dir)
+        words, neural_network = domain.create_sa((aargs.task, aargs.form), lambda: stream_input_stanford(aargs.corpus_paths[0]), aargs)
     elif aargs.task == "lm":
         assert aargs.form == "raw" or aargs.form == "pos"
         result_form = aargs.form if not aargs.tag else "pos"
-        words, neural_network = domain.create_lm((aargs.task, result_form), lambda: stream_input_text(aargs.corpus_paths, aargs.form), aargs.epochs, aargs.verbose, aargs.save_dir)
+        words, neural_network = domain.create_lm((aargs.task, result_form), lambda: stream_input_text(aargs.corpus_paths, aargs.form), aargs)
     else:
         raise ValueError("Unknown task: %s" % aargs.task)
 
@@ -146,7 +150,17 @@ def main(argv):
     # The server can't do anything anyways until the neural_network is ready to handle requests.
     time.sleep(5)
     query_engine = domain.QueryEngine()
-    run(aargs.port, words, neural_network, query_engine)
+
+    if not aargs.headless:
+        run_server(aargs.port, words, neural_network, query_engine)
+
+    try:
+        neural_network._background_setup.join()
+    except KeyboardInterrupt as e:
+        neural_network._background_setup.complete_profile()
+        raise e
+
+    return 0
 
 
 POS_MAP = {
@@ -221,19 +235,12 @@ def stream_input_text(input_files, form):
 
                                 if tag in POS_MAP:
                                     pos = POS_MAP[tag]
-
-                                    if pos == "SYM" or pos == "PUNCT":
-                                        if word == "(" or word == ")":
-                                            sequence += [(word, pos)]
-                                        else:
-                                            pass
-                                    else:
-                                        sequence += [(word, pos)]
+                                    sequence += [(word, pos)]
                                 elif tag not in BAD_TAGS:
                                     BAD_TAGS[tag] = None
                                     print(tag)
 
-                            yield sequence + [(".", "PUNCT")]
+                            yield sequence
                     else:
                         sequence = []
 
@@ -246,19 +253,12 @@ def stream_input_text(input_files, form):
                                 if tag in POS_MAP:
                                     word = pair[1].lower()
                                     pos = POS_MAP[tag]
-
-                                    if pos == "SYM" or pos == "PUNCT":
-                                        if word == "(" or word == ")":
-                                            sequence += [(word, pos)]
-                                        else:
-                                            pass
-                                    else:
-                                        sequence += [(word, pos)]
+                                    sequence += [(word, pos)]
                                 elif tag not in BAD_TAGS:
                                     BAD_TAGS[tag] = None
                                     print(tag)
 
-                        yield sequence + [(".", "PUNCT")]
+                        yield sequence
 
 
 def stream_input_stanford(stanford_folder):
@@ -312,21 +312,12 @@ def stream_input_stanford(stanford_folder):
                 sequence = []
 
                 for word in sentence.split(" "):
-                    if word != "." \
-                        and word != "," \
-                        and word != "``" \
-                        and word != "''" \
-                        and word != ":" \
-                        and word != ";" \
-                        and word != "$" \
-                        and word != "!" \
-                        and word != "?":
-                        sequence += [word]
+                    sequence += [word]
 
                 #if dataset_splits[sentence_id] == "train":
                 #    train_sentences += [sequence]
 
-                yield (dataset_splits[sentence_id], sequence + ["."], dictionary[sentence])
+                yield (dataset_splits[sentence_id], sequence, dictionary[sentence])
 
     #data_tenth = max(1, int(len(dictionary) / 10.0))
 
@@ -342,23 +333,33 @@ def stream_input_stanford(stanford_folder):
     #            yield ("train", phrase.split(" "), sentiment)
 
 
-def patch_Thread_for_profiling():
+def patch_thread_for_profiling():
+    import cProfile
+    import pstats
     Thread.stats = None
     thread_run = Thread.run
 
-    def profile_run(self):
-        import cProfile
-        import pstats
-        self._prof = cProfile.Profile()
-        self._prof.enable()
-        thread_run(self)
+    def complete_profile(self):
         self._prof.disable()
         (_, number) = self.name.split("-")
         self._prof.dump_stats("Thread-%.3d-%s.profile" % (int(number), "".join([chr(97 + random.randrange(26)) for i in range(0, 2)])))
 
+    def profile_run(self):
+        self._prof = cProfile.Profile()
+        self._prof.enable()
+
+        try:
+            thread_run(self)
+        except Exception as e:
+            raise e
+        finally:
+            self.complete_profile()
+
     Thread.run = profile_run
+    Thread.complete_profile = complete_profile
 
 
 if __name__ == "__main__":
-    main(sys.argv[1:])
+    ret = main(sys.argv[1:])
+    sys.exit(ret)
 

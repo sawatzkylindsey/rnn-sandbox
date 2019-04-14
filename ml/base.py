@@ -267,6 +267,7 @@ class Labels(Field):
         assert len(self._encoding) == len(self._decoding), "%d != %d" % (len(self._encoding), len(self._decoding))
         # Include unknown in the correct position if it's being represented in the labels.
         self._labels = labels_prefix + labels
+        self._encoding_copy = {k: v for k, v in self._encoding.items()}
 
     def __repr__(self):
         return "Labels{%s}" % self._encoding
@@ -275,7 +276,7 @@ class Labels(Field):
         return len(self._encoding)
 
     def encoding(self):
-        return {k: v for k, v in self._encoding.items()}
+        return self._encoding_copy
 
     def labels(self):
         return self._labels
