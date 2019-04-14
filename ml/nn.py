@@ -16,7 +16,6 @@ from pytils import adjutant, check
 from pytils.log import user_log
 
 
-
 class Model:
     def __init__(self, scope, hyper_parameters, input_labels, output_labels):
         self.scope = scope
@@ -105,8 +104,8 @@ class Model:
                 xs = [self.input_labels.vector_encode(xy.x) for xy in batch]
                 ys = [self.output_labels.encode(xy.y, True) for xy in batch]
                 feed = {
-                    self.input_p: np.array(xs),
-                    self.output_p: np.array(ys),
+                    self.input_p: xs,
+                    self.output_p: ys,
                 }
                 _, training_loss = self.session.run([self.updates, self.cost], feed_dict=feed)
                 offset += training_parameters.batch()
@@ -164,8 +163,9 @@ class Model:
             xs = [self.input_labels.vector_encode(x, handle_unknown)]
 
         feed = {
-            self.input_p: np.array(xs),
+            self.input_p: xs,
         }
+
         distributions = self.session.run(self.output_distributions, feed_dict=feed)
 
         if isinstance(x, list):

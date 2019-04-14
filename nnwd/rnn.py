@@ -243,7 +243,7 @@ class Rnn:
 
     def evaluate(self, x, handle_unknown=False, state=None, instrument_names=[]):
         feed = {
-            self.unrolled_inputs_p: np.array([np.array([self.word_labels.encode(x, handle_unknown)])]),
+            self.unrolled_inputs_p: [[self.word_labels.encode(x, handle_unknown)]],
             self.initial_state_p: state if state is not None else self.initial_state(1),
         }
         instruments = self.get_instruments(instrument_names)
@@ -278,7 +278,7 @@ class Rnn:
 
     def embed(self, x):
         feed = {
-            self.unrolled_inputs_p: np.array([np.array([self.word_labels.encode(x, True)])]),
+            self.unrolled_inputs_p: [[self.word_labels.encode(x, True)]],
             self.initial_state_p: self.initial_state(1),
         }
         return self.session.run([self.session.graph.get_tensor_by_name("embedding:0")], feed_dict=feed)[0].tolist()
@@ -408,10 +408,10 @@ class RnnLm(Rnn):
         input_lengths = [len(sequence.x) for sequence in batch]
         output_labels = [[self.word_labels.encode(word_pos[0] if word_pos is not None else mlbase.BLANK, True) for word_pos in timespot] for timespot in data_y]
         return {
-            self.unrolled_inputs_p: np.array(input_labels),
-            self.input_lengths_p: np.array(input_lengths),
+            self.unrolled_inputs_p: input_labels,
+            self.input_lengths_p: input_lengths,
             self.initial_state_p: self.initial_state(len(batch)),
-            self.unrolled_outputs_p: np.array(output_labels),
+            self.unrolled_outputs_p: output_labels,
         }
 
     def get_testing_feed(self, batch):
@@ -419,8 +419,8 @@ class RnnLm(Rnn):
         input_labels = [[self.word_labels.encode(word_pos[0] if word_pos is not None else mlbase.BLANK, True) for word_pos in timespot] for timespot in data_x]
         input_lengths = [len(sequence.x) for sequence in batch]
         return {
-            self.unrolled_inputs_p: np.array(input_labels),
-            self.input_lengths_p: np.array(input_lengths),
+            self.unrolled_inputs_p: input_labels,
+            self.input_lengths_p: input_lengths,
             self.initial_state_p: self.initial_state(len(batch)),
         }
 
@@ -469,10 +469,10 @@ class RnnSa(Rnn):
         input_gathers = [[len(sequence.x) - 1, i] for i, sequence in enumerate(batch)]
         output_labels = [self.output_labels.encode(word if word is not None else mlbase.BLANK, True) for word in data_y]
         return {
-            self.unrolled_inputs_p: np.array(input_labels),
-            self.input_gathers_p: np.array(input_gathers),
+            self.unrolled_inputs_p: input_labels,
+            self.input_gathers_p: input_gathers,
             self.initial_state_p: self.initial_state(len(batch)),
-            self.output_p: np.array(output_labels),
+            self.output_p: output_labels,
         }
 
     def get_testing_feed(self, batch):
@@ -482,8 +482,8 @@ class RnnSa(Rnn):
         #                                 vvv
         input_gathers = [[len(sequence.x) - 1, i] for i, sequence in enumerate(batch)]
         return {
-            self.unrolled_inputs_p: np.array(input_labels),
-            self.input_gathers_p: np.array(input_gathers),
+            self.unrolled_inputs_p: input_labels,
+            self.input_gathers_p: input_gathers,
             self.initial_state_p: self.initial_state(len(batch)),
         }
 

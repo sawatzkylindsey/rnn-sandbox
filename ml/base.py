@@ -299,7 +299,7 @@ class Labels(Field):
         else:
             encoding[self.encode(value, handle_unknown)] = 1
 
-        return np.array(encoding, dtype="float32")
+        return np.array(encoding, dtype="float32", copy=False)
 
     def vector_empty(self):
         if self._empty is None:

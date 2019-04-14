@@ -460,8 +460,9 @@ class NeuralNetwork:
                     # TODO
                     pass
 
-        # Load which ever version was marked as the latest
-        self.lstm.load(lstm_dir)
+            # Load which ever version was marked as the latest
+            self.lstm.load(lstm_dir)
+
         logging.debug("Calculating final validation score.")
         score_validation = self.lstm.test(self.validation_xys, False)
         logging.debug("Calculating final test score.")

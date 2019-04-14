@@ -13,6 +13,7 @@ from pytils import check
 MAX_BYTES = (2**31) - 1
 # 100 MB = 100 * 1024 KB
 TARGET_FILE_SIZE = 100 * 1024 * 1024
+STREAM_TARGET_FILE_SIZE = 10 * 1024 * 1024
 
 
 def dump(data, file_path):
@@ -44,12 +45,12 @@ def _dump_stream(data, file_path):
             # If we're still building out the sample.
             if batch_size is None:
                 # Only try to discover the batch_size every so often.
-                if len(batch) % 50 == 0:
+                if len(batch) % 10 == 0:
                     sample_size = len(pickle.dumps(batch))
 
-                    if sample_size > TARGET_FILE_SIZE:
+                    if sample_size > STREAM_TARGET_FILE_SIZE:
                         average = sample_size / float(len(batch))
-                        batch_size = max(1, int(TARGET_FILE_SIZE / average))
+                        batch_size = max(1, int(STREAM_TARGET_FILE_SIZE / average))
             else:
                 # The batch_size has been determined.
                 while len(batch) > batch_size:
@@ -62,6 +63,8 @@ def _dump_stream(data, file_path):
             if len(batch) > 0:
                 bytes_out = pickle.dumps(batch)
                 _write_bytes(bytes_out, file_path, i)
+
+            break
 
 
 def _dump(data, file_path):
