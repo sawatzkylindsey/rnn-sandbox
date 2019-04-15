@@ -32,25 +32,24 @@ from pytils.log import setup_logging, user_log
 from pytils import adjutant, check
 
 
-MARKER = "-marker"
 ActivationPoint = collections.namedtuple("ActivationPoint", ["sequence", "expectation", "prediction", "part", "layer", "index", "point"])
 MatchPoint = collections.namedtuple("MatchPoint", ["distance", "word", "index", "prediction", "expectation"])
 
 
 def create_sa(task_form, corpus_stream_fn, aargs):
-    train_xys_file = os.path.join(save_dir, "xys.train.pickle")
-    validation_xys_file = os.path.join(save_dir, "xys.validation.pickle")
-    test_xys_file = os.path.join(save_dir, "xys.test.pickle")
-    sentiments_file = os.path.join(save_dir, "sentiments.pickle")
-    output_distribution_file = os.path.join(save_dir, "output-distribution.pickle")
-    words_file = os.path.join(save_dir, "words.pickle")
+    train_xys_path = os.path.join(save_dir, "xys.train")
+    validation_xys_path = os.path.join(save_dir, "xys.validation")
+    test_xys_path = os.path.join(save_dir, "xys.test")
+    sentiments_path = os.path.join(save_dir, "sentiments")
+    output_distribution_path = os.path.join(save_dir, "output-distribution")
+    words_path = os.path.join(save_dir, "words")
 
-    if os.path.exists(words_file + MARKER):
-        train_xys = [xy for xy in pickler.load(train_xys_file)]
-        validation_xys = [xy for xy in pickler.load(validation_xys_file)]
-        test_xys = [xy for xy in pickler.load(test_xys_file)]
-        sentiments = set([sentiment for sentiment in pickler.load(sentiments_file)])
-        words = set([word for word in pickler.load(words_file)])
+    if os.path.exists(words_path):
+        train_xys = [xy for xy in pickler.load(train_xys_path)]
+        validation_xys = [xy for xy in pickler.load(validation_xys_path)]
+        test_xys = [xy for xy in pickler.load(test_xys_path)]
+        sentiments = set([sentiment for sentiment in pickler.load(sentiments_path)])
+        words = set([word for word in pickler.load(words_path)])
     else:
         train_xys = []
         validation_xys = []
@@ -84,16 +83,13 @@ def create_sa(task_form, corpus_stream_fn, aargs):
             else:
                 test_xys += [xy]
 
-        pickler.dump(train_xys, train_xys_file)
-        pickler.dump(validation_xys, validation_xys_file)
-        pickler.dump(test_xys, test_xys_file)
-        pickler.dump(sorted(sentiments, key=sentiment_sort_key), sentiments_file)
-        pickler.dump([output_distribution], output_distribution_file)
+        pickler.dump(train_xys, train_xys_path)
+        pickler.dump(validation_xys, validation_xys_path)
+        pickler.dump(test_xys, test_xys_path)
+        pickler.dump(sorted(sentiments, key=sentiment_sort_key), sentiments_path)
+        pickler.dump([output_distribution], output_distribution_path)
         words = set([item[0] for item in words.items() if item[1] > 1])
-        pickler.dump([word for word in words], words_file)
-
-        with open(words_file + MARKER, "w") as fh:
-            fh.write("noop")
+        pickler.dump([word for word in words], words_path)
 
     #printer = lambda sequences: "\n".join([" ".join([str(word_pos) for word_pos in i]) for i in sequences])
     #print(printer(train_xys))
@@ -151,21 +147,21 @@ def sa_colour_mapping():
 
 
 def create_lm(task_form, corpus_stream_fn, aargs):
-    train_xys_file = os.path.join(aargs.save_dir, "xys.train.pickle")
-    validation_xys_file = os.path.join(aargs.save_dir, "xys.validation.pickle")
-    test_xys_file = os.path.join(aargs.save_dir, "xys.test.pickle")
-    pos_tags_file = os.path.join(aargs.save_dir, "pos-tags.pickle")
-    output_distribution_file = os.path.join(aargs.save_dir, "output-distribution.pickle")
-    pos_mapping_file = os.path.join(aargs.save_dir, "pos-mapping.pickle")
-    words_file = os.path.join(aargs.save_dir, "words.pickle")
+    train_xys_path = os.path.join(aargs.save_dir, "xys.train")
+    validation_xys_path = os.path.join(aargs.save_dir, "xys.validation")
+    test_xys_path = os.path.join(aargs.save_dir, "xys.test")
+    pos_tags_path = os.path.join(aargs.save_dir, "pos-tags")
+    output_distribution_path = os.path.join(aargs.save_dir, "output-distribution")
+    pos_mapping_path = os.path.join(aargs.save_dir, "pos-mapping")
+    words_path = os.path.join(aargs.save_dir, "words")
 
-    if os.path.exists(words_file + MARKER):
-        train_xys = [xy for xy in pickler.load(train_xys_file)]
-        validation_xys = [xy for xy in pickler.load(validation_xys_file)]
-        test_xys = [xy for xy in pickler.load(test_xys_file)]
-        pos_tags = set([word for word in pickler.load(pos_tags_file)])
-        pos_mapping = {item[0]: item[1] for item in pickler.load(pos_mapping_file)}
-        words = set([word for word in pickler.load(words_file)])
+    if os.path.exists(words_path):
+        train_xys = [xy for xy in pickler.load(train_xys_path)]
+        validation_xys = [xy for xy in pickler.load(validation_xys_path)]
+        test_xys = [xy for xy in pickler.load(test_xys_path)]
+        pos_tags = set([word for word in pickler.load(pos_tags_path)])
+        pos_mapping = {item[0]: item[1] for item in pickler.load(pos_mapping_path)}
+        words = set([word for word in pickler.load(words_path)])
     else:
         xys = [sentence for sentence in corpus_stream_fn()]
         random.shuffle(xys)
@@ -177,10 +173,10 @@ def create_lm(task_form, corpus_stream_fn, aargs):
         ## Words are actually only the subset from the training data.
         #words = set(adjutant.flat_map([[word_pos[0] for word_pos in sentence] for sentence in train_xys]))
         pos_tags = set(adjutant.flat_map([[word_pos[1] for word_pos in sentence] for sentence in train_xys]))
-        pickler.dump(train_xys, train_xys_file)
-        pickler.dump(validation_xys, validation_xys_file)
-        pickler.dump(test_xys, test_xys_file)
-        pickler.dump([pos for pos in pos_tags], pos_tags_file)
+        pickler.dump(train_xys, train_xys_path)
+        pickler.dump(validation_xys, validation_xys_path)
+        pickler.dump(test_xys, test_xys_path)
+        pickler.dump([pos for pos in pos_tags], pos_tags_path)
         word_pos_counts = {}
 
         for sentence in train_xys:
@@ -211,13 +207,10 @@ def create_lm(task_form, corpus_stream_fn, aargs):
             pos_count = sorted(counts.items(), key=lambda item: item[1], reverse=True)[0]
             pos_mapping[word] = pos_count[0]
 
-        pickler.dump([output_distribution], output_distribution_file)
-        pickler.dump([item for item in pos_mapping.items()], pos_mapping_file)
+        pickler.dump([output_distribution], output_distribution_path)
+        pickler.dump([item for item in pos_mapping.items()], pos_mapping_path)
         words = set([word for word in word_pos_counts2.keys()])
-        pickler.dump([word for word in words], words_file)
-
-        with open(words_file + MARKER, "w") as fh:
-            fh.write("noop")
+        pickler.dump([word for word in words], words_path)
 
     #printer = lambda sequences: "\n".join([" ".join([str(word_pos) for word_pos in i]) for i in sequences])
     #print(printer(train_xys))
@@ -512,19 +505,19 @@ class NeuralNetwork:
             .width(len(predictor_input))
         self.predictor = ffnn.Model("predictor", hyper_parameters, predictor_input, predictor_output)
         predictor_dir = os.path.join(self.save_dir, "predictor")
-        guassian_buckets_file = os.path.join(self.save_dir, "gaussian-buckets.pickle")
-        fixed_buckets_file = os.path.join(self.save_dir, "fixed-buckets.pickle")
+        guassian_buckets_path = os.path.join(self.save_dir, "gaussian-buckets")
+        fixed_buckets_path = os.path.join(self.save_dir, "fixed-buckets")
         predictor_xys = None
 
-        if os.path.exists(guassian_buckets_file + ".0"):
+        if os.path.exists(guassian_buckets_path):
             logging.debug("Loading existing reduction buckets.")
-            self.guassian_buckets = {item[0]: item[1] for item in pickler.load(guassian_buckets_file)}
-            self.fixed_buckets = {item[0]: item[1] for item in pickler.load(fixed_buckets_file)}
+            self.guassian_buckets = {item[0]: item[1] for item in pickler.load(guassian_buckets_path)}
+            self.fixed_buckets = {item[0]: item[1] for item in pickler.load(fixed_buckets_path)}
         else:
             predictor_xys = self._get_predictor_data()
             self.guassian_buckets, self.fixed_buckets = self._train_guassian_buckets(predictor_xys)
-            pickler.dump([item for item in self.guassian_buckets.items()], guassian_buckets_file)
-            pickler.dump([item for item in self.fixed_buckets.items()], fixed_buckets_file)
+            pickler.dump([item for item in self.guassian_buckets.items()], guassian_buckets_path)
+            pickler.dump([item for item in self.fixed_buckets.items()], fixed_buckets_path)
 
         # Technically not complete yet, but with the buckets setup an the predictor instantiated we can start answering queries.
         self.setup_complete = True
@@ -606,26 +599,31 @@ class NeuralNetwork:
 
     def _test_features(self):
         logging.debug("Testing features.")
-        data_tenth = max(1, int(len(self.test_xys) / 10.0))
-        data_hundredth = max(1, int(len(self.test_xys) / 100.0))
 
         if not self.skip_dr_test:
             dr_errors = {}
             fixed_errors = {}
 
+        manual_iteration = 0
+
         if not self.skip_sem_test:
             distributions_count = 0
             distributions = queue.Queue()
-            pickler.dump(distributions, os.path.join(self.save_dir, "sem-distributions.pickle"))
+            pickler.dump(distributions, os.path.join(self.save_dir, "sem-distributions_batch-%d" % manual_iteration))
 
+        manual_batch = len(self.test_xys)
+        #manual_batch = max(1, int(len(self.test_xys) / 2.0))
+        manual_offset = manual_iteration * manual_batch
+        data_tenth = max(1, int(manual_batch / 10.0))
+        data_hundredth = max(1, int(manual_batch / 100.0))
         count = 0
 
-        for j, xy in enumerate(self.test_xys):
-            if j % data_hundredth == 0 or j +1 == len(self.test_xys):
+        for j, xy in enumerate(self.test_xys[manual_offset:manual_offset + manual_batch]):
+            if j % data_hundredth == 0 or j + 1 == manual_batch:
                 logging.debug("resource usage: %d" % resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
 
-            if j % data_tenth == 0 or j + 1 == len(self.test_xys):
-                logging.debug("%d%% through.." % int((j + 1) * 100 / len(self.test_xys)))
+            if j % data_tenth == 0 or j + 1 == manual_batch:
+                logging.debug("%d%% through.." % int((j + 1) * 100 / manual_batch))
 
             stepwise_lstm = self.lstm.stepwise(handle_unknown=True)
 
@@ -654,6 +652,8 @@ class NeuralNetwork:
                         distributions_count += 1
                         distributions.put(result.distribution)
 
+                    del xs
+
                 if not self.skip_dr_test:
                     # Learned buckets
                     dr_reductions, errors = self.gaussian_dimensionality_reduce(points, True)
@@ -676,7 +676,7 @@ class NeuralNetwork:
         if not self.skip_dr_test:
             logging.debug("Dimensionality reduction test counts: %d." % count)
 
-            with open(os.path.join(self.save_dir, "dr-analysis.csv"), "w") as fh:
+            with open(os.path.join(self.save_dir, "dr-analysis-%d.csv" % manual_iteration), "w") as fh:
                 writer = csv_writer(fh)
                 writer.writerow(["technique", "key", "sum of squared error", "mean squared error", "mse normalized"])
 
@@ -704,11 +704,11 @@ class NeuralNetwork:
             prediction_fn = lambda y, i: y
 
         predictor_xys = []
-        predictor_xys_file = os.path.join(self.save_dir, "predictor-xys.pickle")
+        predictor_xys_path = os.path.join(self.save_dir, "predictor-xys")
 
-        if os.path.exists(predictor_xys_file + MARKER):
+        if os.path.exists(predictor_xys_path):
             logging.debug("Loading existing predictor data.")
-            predictor_xys = [xy for xy in pickler.load(predictor_xys_file)]
+            predictor_xys = [xy for xy in pickler.load(predictor_xys_path)]
         else:
             logging.debug("Producing predictor data.")
             # These are already shuffled.
@@ -739,10 +739,7 @@ class NeuralNetwork:
                             train_xy = mlbase.Xy(x, prediction)
                             predictor_xys += [train_xy]
 
-            pickler.dump(predictor_xys, predictor_xys_file)
-
-            with open(predictor_xys_file + MARKER, "w") as fh:
-                fh.write("noop")
+            pickler.dump(predictor_xys, predictor_xys_path)
 
         logging.debug("Predictor data: %d." % len(predictor_xys))
         return predictor_xys
@@ -755,9 +752,9 @@ class NeuralNetwork:
             # This is a sentiment analysis sa task.
             prediction_fn = lambda y, i: y
 
-        activation_data_file = os.path.join(self.save_dir, "activation-data.pickle")
+        activation_data_path = os.path.join(self.save_dir, "activation-data")
 
-        if os.path.exists(activation_data_file + MARKER):
+        if os.path.exists(activation_data_path):
             logging.debug("Activation data already generated.")
         else:
             logging.debug("Generating activation data.")
@@ -783,11 +780,7 @@ class NeuralNetwork:
                             point = tuple(instruments[part][layer])
                             activation_data += [ActivationPoint(sequence=sequence, expectation=prediction_fn(xy.y, i), prediction=result.prediction, part=part, layer=layer, index=i, point=point)]
 
-            pickler.dump(activation_data, activation_data_file)
-
-            with open(activation_data_file + MARKER, "w") as fh:
-                fh.write("noop")
-
+            pickler.dump(activation_data, activation_data_path)
             logging.debug("Generated activation data: %d." % len(activation_data))
             del activation_data
 
@@ -1202,17 +1195,17 @@ class QueryEngine:
         #self._background_setup.start()
 
     def _setup(self):
-        activation_data_file = os.path.join(self.save_dir, "activation-data.pickle")
+        activation_data_path = os.path.join(self.save_dir, "activation-data")
         logging.debug("Waiting on activation data.")
 
-        while not os.path.exists(activation_data_file + MARKER):
+        while not os.path.exists(activation_data_path):
             time.sleep(1)
 
         logging.debug("Processing activation data for query engine.")
         self.units = {}
         self.sequence_units = {}
 
-        for i, activation_point in enumerate(pickler.load(activation_data_file)):
+        for i, activation_point in enumerate(pickler.load(activation_data_path)):
             if i % 1000000 == 0:
                 logging.debug("At the %dMth instance." % int(i / 1000000))
 

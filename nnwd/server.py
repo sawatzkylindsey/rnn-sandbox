@@ -157,7 +157,9 @@ def main(argv):
     try:
         neural_network._background_setup.join()
     except KeyboardInterrupt as e:
-        neural_network._background_setup.complete_profile()
+        if patched:
+            neural_network._background_setup.complete_profile()
+
         raise e
 
     return 0
@@ -333,7 +335,12 @@ def stream_input_stanford(stanford_folder):
     #            yield ("train", phrase.split(" "), sentiment)
 
 
+patched = False
+
+
 def patch_thread_for_profiling():
+    global patched
+    patched = True
     import cProfile
     import pstats
     Thread.stats = None
