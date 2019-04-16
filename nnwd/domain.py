@@ -428,20 +428,24 @@ class NeuralNetwork:
             logging.debug("Training lstm parameters.")
             score = self.lstm.test(self.validation_xys)
             logging.debug("Baseline score (random initialized weights): %s" % score)
+            training_parameters = mlbase.TrainingParameters() \
+                .batch(self.batch) \
+                .epochs(self.arc_epochs) \
+                .convergence(False) \
+                .debug(True)
             score_validation = None
             best_score = None
             best_loss = None
-            batch = 64
             arc = -1
             version = -1
-            max_arc = 10
-            epochs = self.arc_epochs
+            converged = False
+            consecutive_decays = 0
 
-            while arc < max_arc:
+            while not converged:
                 arc += 1
-                logging.debug("train lstm arc %d (batch %d)" % (arc, batch))
-                loss, score = self.lstm_train_loop(batch, epochs, True)
-                logging.debug("train lstm arc %d (batch %d): (loss, score) (%s, %s)" % (arc, batch, loss, score))
+                logging.debug("train lstm arc %d: %s" % (arc, training_parameters))
+                loss, score = self.lstm_train_loop(training_parameters)
+                logging.debug("train lstm arc %d: (loss, score) (%s, %s)" % (arc, loss, score))
 
                 if best_score is None or score > best_score:
                     best_score = score
@@ -449,25 +453,28 @@ class NeuralNetwork:
                     score_validation = score
                     version += 1
                     self.lstm.save(lstm_dir, version, True)
+                    consecutive_decays = 0
                 else:
-                    # TODO
-                    pass
+                    if consecutive_decays > 2:
+                        converged = True
 
-            # Load which ever version was marked as the latest
+                    logging.debug("decaying..")
+                    training_parameters = training_parameters.decay()
+                    consecutive_decays += 1
+                    # Load the best known version to continue training off of.
+                    self.lstm.load(lstm_dir)
+
+            # Load which ever version was marked as the latest as the final trained lstm.
             self.lstm.load(lstm_dir)
 
         logging.debug("Calculating final validation score.")
         score_validation = self.lstm.test(self.validation_xys, False)
+        del self.validation_xys
         logging.debug("Calculating final test score.")
         score_test = self.lstm.test(self.test_xys, True)
         logging.debug("(v, t): (%s, %s)" % (score_validation, score_test))
 
-    def lstm_train_loop(self, batch, epoch_threshold, debug):
-        training_parameters = mlbase.TrainingParameters() \
-            .batch(batch) \
-            .epochs(epoch_threshold) \
-            .convergence(False) \
-            .debug(debug)
+    def lstm_train_loop(self, training_parameters):
         loss = self.lstm.train(self.train_xys, training_parameters)
         score = self.lstm.test(self.validation_xys)
         return loss, score
@@ -741,6 +748,7 @@ class NeuralNetwork:
 
             pickler.dump(predictor_xys, predictor_xys_path)
 
+        del self.train_xys
         logging.debug("Predictor data: %d." % len(predictor_xys))
         return predictor_xys
 

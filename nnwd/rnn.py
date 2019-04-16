@@ -43,6 +43,8 @@ class Rnn:
         #   _c      constant
         self.unrolled_inputs_p = self.placeholder("unrolled_inputs_p", [self.time_dimension, self.batch_dimension], tf.int32)
         self.initial_state_p = self.placeholder("initial_state_p", [Rnn.SCAN_STATES, self.layers, self.batch_dimension, self.width])
+        self.clip_norm_p = self.placeholder("clip_norm_p", [1], tf.float32)
+        self.dropout_keep_p = self.placeholder("dropout_keep_p", [1], tf.float32)
 
         self.E = self.variable("E", [len(self.word_labels), self.embedding_width])
         self.EP = self.variable("EP", [self.embedding_width, self.width])
@@ -72,6 +74,7 @@ class Rnn:
         self.unrolled_embedded_projected_inputs = tf.matmul(tf.reshape(self.unrolled_embedded_inputs, [-1, self.embedding_width]), self.EP)
         assert_shape(self.unrolled_embedded_projected_inputs, [self.combine_dimensions(), self.width])
 
+        # Dropout per: RECURRENT NEURAL NETWORK REGULARIZATION (Zaremba, Sutskever, Vinyals 2015)
         def step_lstm(previous_state, current_input):
             # This is all the other stacks, which we don't actually need for the looping (just there for instrumentation).
             #                                v
@@ -92,13 +95,13 @@ class Rnn:
                 assert_shape(output_previous[l], [self.batch_dimension, self.width])
                 assert_shape(cell_previous[l], [self.batch_dimension, self.width])
                 assert_shape(x, [self.batch_dimension, self.width])
-                remember_gate = tf.sigmoid(tf.matmul(tf.concat([output_previous[l], x], axis=-1), self.R[l]) + self.R_bias[l])
+                remember_gate = tf.sigmoid(tf.matmul(tf.concat([output_previous[l], self.dropout(x)], axis=-1), self.R[l]) + self.R_bias[l])
                 remember_gate_stack.append(remember_gate)
-                forget_gate = tf.sigmoid(tf.matmul(tf.concat([output_previous[l], x], axis=-1), self.F[l]) + self.F_bias[l])
+                forget_gate = tf.sigmoid(tf.matmul(tf.concat([output_previous[l], self.dropout(x)], axis=-1), self.F[l]) + self.F_bias[l])
                 forget_gate_stack.append(forget_gate)
-                output_gate = tf.sigmoid(tf.matmul(tf.concat([output_previous[l], x], axis=-1), self.O[l]) + self.O_bias[l])
+                output_gate = tf.sigmoid(tf.matmul(tf.concat([output_previous[l], self.dropout(x)], axis=-1), self.O[l]) + self.O_bias[l])
                 output_gate_stack.append(output_gate)
-                input_hat = tf.tanh(tf.matmul(tf.concat([output_previous[l], x], axis=-1), self.H[l]) + self.H_bias[l])
+                input_hat = tf.tanh(tf.matmul(tf.concat([output_previous[l], self.dropout(x)], axis=-1), self.H[l]) + self.H_bias[l])
                 input_hat_stack.append(input_hat)
                 remember = input_hat * remember_gate
                 remember_stack.append(remember)
@@ -167,7 +170,11 @@ class Rnn:
         assert_shape(self.output_distributions, [self.time_dimension, self.batch_dimension, len(self.output_labels)])
 
         self.cost = self.computational_graph_cost()
-        self.updates = tf.train.AdamOptimizer().minimize(self.cost)
+        #self.updates = tf.train.AdamOptimizer().minimize(self.cost)
+        optimizer = tf.train.AdamOptimizer()
+        gradients = optimizer.compute_gradients(self.cost)
+        gradients_clipped = [(tf.clip_by_norm(g, self.clip_norm_p[0]), var) for g, var in gradients]
+        self.updates = optimizer.apply_gradients(gradients_clipped)
 
         self.session = tf.Session()
         self.session.run(tf.global_variables_initializer())
@@ -185,6 +192,9 @@ class Rnn:
             self._initials[batch_length] = np.zeros([Rnn.SCAN_STATES, self.layers, batch_length, self.width], dtype="float32")
 
         return self._initials[batch_length]
+
+    def dropout(self, tensor):
+        return tf.nn.dropout(tensor, self.dropout_keep_p[0])
 
     def combine_dimensions(self):
         if self.time_dimension is None or self.batch_dimension is None:
@@ -245,6 +255,7 @@ class Rnn:
         feed = {
             self.unrolled_inputs_p: [[self.word_labels.encode(x, handle_unknown)]],
             self.initial_state_p: state if state is not None else self.initial_state(1),
+            self.dropout_keep_p: np.array([1.0]),
         }
         instruments = self.get_instruments(instrument_names)
         distributions, next_state, *instrument_values = self.session.run([self.output_distributions, self.state] + instruments, feed_dict=feed)
@@ -280,6 +291,7 @@ class Rnn:
         feed = {
             self.unrolled_inputs_p: [[self.word_labels.encode(x, True)]],
             self.initial_state_p: self.initial_state(1),
+            self.dropout_keep_p: np.array([1.0]),
         }
         return self.session.run([self.session.graph.get_tensor_by_name("embedding:0")], feed_dict=feed)[0].tolist()
 
@@ -411,6 +423,8 @@ class RnnLm(Rnn):
             self.unrolled_inputs_p: input_labels,
             self.input_lengths_p: input_lengths,
             self.initial_state_p: self.initial_state(len(batch)),
+            self.clip_norm_p: np.array([training_parameters.clip_norm()]),
+            self.dropout_keep_p: np.array([1.0 - training_parameters.dropout_rate()]),
             self.unrolled_outputs_p: output_labels,
         }
 
@@ -422,6 +436,7 @@ class RnnLm(Rnn):
             self.unrolled_inputs_p: input_labels,
             self.input_lengths_p: input_lengths,
             self.initial_state_p: self.initial_state(len(batch)),
+            self.dropout_keep_p: np.array([1.0]),
         }
 
     def score(self, batch, feed, time_distributions, debug, case_slot_length):
@@ -472,6 +487,8 @@ class RnnSa(Rnn):
             self.unrolled_inputs_p: input_labels,
             self.input_gathers_p: input_gathers,
             self.initial_state_p: self.initial_state(len(batch)),
+            self.clip_norm_p: np.array([training_parameters.clip_norm()]),
+            self.dropout_keep_p: np.array([1.0 - training_parameters.dropout_rate()]),
             self.output_p: output_labels,
         }
 
@@ -485,6 +502,7 @@ class RnnSa(Rnn):
             self.unrolled_inputs_p: input_labels,
             self.input_gathers_p: input_gathers,
             self.initial_state_p: self.initial_state(len(batch)),
+            self.dropout_keep_p: np.array([1.0]),
         }
 
     def score(self, batch, feed, time_distributions, debug, case_slot_length):

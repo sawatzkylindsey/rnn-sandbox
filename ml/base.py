@@ -74,8 +74,14 @@ class Result:
 
 
 class TrainingParameters:
-    DEFAULT_BATCH = 4
-    DEFAULT_EPOCHS = 1000
+    BATCH_DEFAULT = 32
+    BATCH_MINIMUM = 4
+    EPOCHS_DEFAULT = 10
+    EPOCHS_MAXIMUM = 1000
+    DROPOUT_RATE_DEFAULT = 0.3
+    DROPOUT_RATE_MAXIMUM = 0.9
+    CLIP_NORM_DEFAULT = 0.4
+    CLIP_NORM_MAXIMUM = 10
     DEFAULT_ABSOLUTE = 0.05
     # .005%
     DEFAULT_RELATIVE = 0.00005
@@ -89,14 +95,35 @@ class TrainingParameters:
     REASON_DEGRADING = "degradation"
 
     def __init__(self):
-        self._batch = TrainingParameters.DEFAULT_BATCH
-        self._epochs = TrainingParameters.DEFAULT_EPOCHS
+        self._batch = TrainingParameters.BATCH_DEFAULT
+        self._epochs = TrainingParameters.EPOCHS_DEFAULT
+        self._dropout_rate = TrainingParameters.DROPOUT_RATE_DEFAULT
+        self._clip_norm = TrainingParameters.CLIP_NORM_DEFAULT
         self._absolute = TrainingParameters.DEFAULT_ABSOLUTE
         self._relative = TrainingParameters.DEFAULT_RELATIVE
         self._convergence = True
         self._degradation = TrainingParameters.DEFAULT_DEGRADATION
         self._window = TrainingParameters.DEFAULT_WINDOW
         self._debug = TrainingParameters.DEFAULT_DEBUG
+        self._decays = 0
+
+    def decay(self):
+        new_tp= TrainingParameters.__new__(TrainingParameters)
+        new_tp.__dict__ = {k: v for k, v in self.__dict__.items()}
+        new_tp._decays += 1
+        period = self._decays + 2
+
+        if period % 2 == 0:
+            new_tp._epochs = min(self._epochs + 1, TrainingParameters.EPOCHS_MAXIMUM)
+
+        if period % 3 == 0:
+            new_tp._clip_norm = min(self._clip_norm * 2, TrainingParameters.CLIP_NORM_MAXIMUM)
+
+        if period % 5 == 0:
+            new_tp._batch = max(int(self._batch * 0.8), TrainingParameters.BATCH_MINIMUM)
+            new_tp._dropout_rate = min(self._dropout_rate * 1.2, TrainingParameters.DROPOUT_RATE_MAXIMUM)
+
+        return new_tp
 
     def losses(self):
         class Window:
@@ -176,6 +203,20 @@ class TrainingParameters:
         self._epochs = check.check_gte(value, 1)
         return self
 
+    def dropout_rate(self, value=None):
+        if value is None:
+            return self._dropout_rate
+
+        self._dropout_rate = check.check_gte(value, 0)
+        return self
+
+    def clip_norm(self, value=None):
+        if value is None:
+            return self._clip_norm
+
+        self._clip_norm = check.check_gt(value, 0)
+        return self
+
     def absolute(self, value=None):
         if value is None:
             return self._absolute
@@ -219,8 +260,12 @@ class TrainingParameters:
         return self
 
     def __repr__(self):
-        return "TrainingParameters{b=%d, e=%d, a=%.4f, r=%.4f, r=%d, w=%d, d=%s}" % \
-            (self._batch, self._epochs, self._absolute, self._relative, self._degradation, self._window, self._debug)
+        if self._convergence:
+            return "TrainingParameters{btch=%d, epch=%d, drop=%.4f, cnrm=%.4f, abs-c=%.4f, rel-c=%.4f, degr=%d, wndw=%d, debug=%s}" % \
+                (self._batch, self._epochs, self._dropout_rate, self._clip_norm, self._absolute, self._relative, self._degradation, self._window, self._debug)
+        else:
+            return "TrainingParameters{btch=%d, epch=%d, drop=%.4f, cnrm=%.4f, degr=%d, wndw=%d, debug=%s}" % \
+                (self._batch, self._epochs, self._dropout_rate, self._clip_norm, self._degradation, self._window, self._debug)
 
 
 class Field(object):
