@@ -45,12 +45,11 @@ def _dump_stream(data, dir_path):
             if batch_size is None:
                 # Only try to discover the batch_size every so often.
                 if len(batch) % 10 == 0:
-                    sample_size = len(pickle.dumps(batch))
+                    average = _average_size(batch)
+                    sample_size = average * len(batch)
 
                     if sample_size > STREAM_TARGET_FILE_SIZE:
-                        average = sample_size / float(len(batch))
                         batch_size = max(1, int(STREAM_TARGET_FILE_SIZE / average))
-
                 if batch_size is None and len(batch) == STREAM_MAX_BATCH:
                     # The batch is plenty large enough - just set it here.
                     batch_size = STREAM_MAX_BATCH
@@ -81,7 +80,7 @@ def _dump(data, dir_path):
             sample_indices.add(random.randint(0, len(data) - 1))
 
         sample = [data[index] for index in sample_indices]
-        average = len(pickle.dumps(sample)) / float(sample_size)
+        average = _average_size(sample)
         batch_size = max(1, int(TARGET_FILE_SIZE / average))
 
         for i, offset in enumerate(range(0, len(data), batch_size)):
@@ -90,6 +89,19 @@ def _dump(data, dir_path):
     else:
         _write_bytes(pickle.dumps([]), dir_path, 0)
 
+
+def _average_size(sample):
+    batch = [i for i in sample]
+    average = None
+
+    while average is None:
+        try:
+            batch_size = len(pickle.dumps(batch))
+            average = batch_size / float(len(batch))
+        except MemoryError as e:
+            batch = batch[:int(len(batch) / 2.0)]
+
+    return average
 
 def _write_bytes(bytes_out, dir_path, index):
     write_path = os.path.join(dir_path, str(index) + EXTENSION)

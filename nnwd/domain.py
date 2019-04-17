@@ -311,6 +311,7 @@ class NeuralNetwork:
     OUTPUT_WIDTH = 5
     HIDDEN_REDUCTION = 10
     EMBEDDING_REDUCTION = 10
+    MAXIMUM_CONSECUTIVE_DECAYS = 2
     TOP_PREDICTIONS = 3
     PREDICTOR_EPOCHS = 100
     PREDICTOR_SAMPLE_RATE = 0.5
@@ -455,7 +456,7 @@ class NeuralNetwork:
                     self.lstm.save(lstm_dir, version, True)
                     consecutive_decays = 0
                 else:
-                    if consecutive_decays > 2:
+                    if consecutive_decays > NeuralNetwork.MAXIMUM_CONSECUTIVE_DECAYS:
                         converged = True
 
                     logging.debug("decaying..")
@@ -533,13 +534,14 @@ class NeuralNetwork:
             logging.debug("Loading existing predictor parameters.")
             self.predictor.load(predictor_dir)
         else:
-            if predictor_xys is not None:
+            if predictor_xys is None:
                 predictor_xys = self._get_predictor_data()
 
             self._train_predictor(predictor_xys)
             self.predictor.save(predictor_dir)
 
         del predictor_xys
+        del self.train_xys
 
     def _train_predictor(self, predictor_xys):
         logging.debug("Training predictor parameters.")
@@ -748,7 +750,6 @@ class NeuralNetwork:
 
             pickler.dump(predictor_xys, predictor_xys_path)
 
-        del self.train_xys
         logging.debug("Predictor data: %d." % len(predictor_xys))
         return predictor_xys
 
