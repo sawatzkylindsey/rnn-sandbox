@@ -80,6 +80,7 @@ class TrainingParameters:
     EPOCHS_MAXIMUM = 1000
     DROPOUT_RATE_DEFAULT = 0.3
     DROPOUT_RATE_MAXIMUM = 0.9
+    LEARNING_RATE_DEFAULT = 1.0
     CLIP_NORM_DEFAULT = 0.4
     CLIP_NORM_MAXIMUM = 10
     DEFAULT_ABSOLUTE = 0.05
@@ -98,6 +99,7 @@ class TrainingParameters:
         self._batch = TrainingParameters.BATCH_DEFAULT
         self._epochs = TrainingParameters.EPOCHS_DEFAULT
         self._dropout_rate = TrainingParameters.DROPOUT_RATE_DEFAULT
+        self._learning_rate = TrainingParameters.LEARNING_RATE_DEFAULT
         self._clip_norm = TrainingParameters.CLIP_NORM_DEFAULT
         self._absolute = TrainingParameters.DEFAULT_ABSOLUTE
         self._relative = TrainingParameters.DEFAULT_RELATIVE
@@ -111,6 +113,8 @@ class TrainingParameters:
         new_tp= TrainingParameters.__new__(TrainingParameters)
         new_tp.__dict__ = {k: v for k, v in self.__dict__.items()}
         new_tp._decays += 1
+        new_tp._learning_rate /= 1.15
+        return new_tp
         period = self._decays + 2
 
         if period % 2 == 0:
@@ -210,6 +214,13 @@ class TrainingParameters:
         self._dropout_rate = check.check_gte(value, 0)
         return self
 
+    def learning_rate(self, value=None):
+        if value is None:
+            return self._learning_rate
+
+        self._learning_rate = check.check_gte(value, 0)
+        return self
+
     def clip_norm(self, value=None):
         if value is None:
             return self._clip_norm
@@ -261,11 +272,11 @@ class TrainingParameters:
 
     def __repr__(self):
         if self._convergence:
-            return "TrainingParameters{btch=%d, epch=%d, drop=%.4f, cnrm=%.4f, abs-c=%.4f, rel-c=%.4f, degr=%d, wndw=%d, debug=%s}" % \
-                (self._batch, self._epochs, self._dropout_rate, self._clip_norm, self._absolute, self._relative, self._degradation, self._window, self._debug)
+            return "TrainingParameters{btch=%d, epch=%d, drop=%.4f, learn=%.4f, cnrm=%.4f, abs-c=%.4f, rel-c=%.4f, degr=%d, wndw=%d, debug=%s}" % \
+                (self._batch, self._epochs, self._dropout_rate, self._learning_rate, self._clip_norm, self._absolute, self._relative, self._degradation, self._window, self._debug)
         else:
-            return "TrainingParameters{btch=%d, epch=%d, drop=%.4f, cnrm=%.4f, degr=%d, wndw=%d, debug=%s}" % \
-                (self._batch, self._epochs, self._dropout_rate, self._clip_norm, self._degradation, self._window, self._debug)
+            return "TrainingParameters{btch=%d, epch=%d, drop=%.4f, learn=%.4f, cnrm=%.4f, degr=%d, wndw=%d, debug=%s}" % \
+                (self._batch, self._epochs, self._dropout_rate, self._learning_rate, self._clip_norm, self._degradation, self._window, self._debug)
 
 
 class Field(object):

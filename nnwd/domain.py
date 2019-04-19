@@ -159,8 +159,8 @@ def create_lm(task_form, corpus_stream_fn, aargs):
         train_xys = [xy for xy in pickler.load(train_xys_path)]
         validation_xys = [xy for xy in pickler.load(validation_xys_path)]
         test_xys = [xy for xy in pickler.load(test_xys_path)]
-        pos_tags = set([word for word in pickler.load(pos_tags_path)])
-        pos_mapping = {item[0]: item[1] for item in pickler.load(pos_mapping_path)}
+        pos_tags = set([word for word in pickler.load(pos_tags_path, True)])
+        pos_mapping = {item[0]: item[1] for item in pickler.load(pos_mapping_path, True)}
         words = set([word for word in pickler.load(words_path)])
     else:
         xys = [sentence for sentence in corpus_stream_fn()]
@@ -218,7 +218,7 @@ def create_lm(task_form, corpus_stream_fn, aargs):
     #print(printer(test_xys))
     logging.debug("data sets (train, validation, test): %d, %d, %d" % (len(train_xys), len(validation_xys), len(test_xys)))
     #print(words)
-    word_labels = mlbase.Labels(words.union(set([mlbase.BLANK])), unknown=nlp.UNKNOWN)
+    word_labels = mlbase.Labels(words.union(set([mlbase.BLANK])), unknown="<unk>")
     return word_labels, NeuralNetwork(task_form, word_labels, None, pos_tags, pos_mapping, xy_sequence(train_xys), xy_sequence(validation_xys), xy_sequence(test_xys), lambda item: -item[1], aargs)
 
 

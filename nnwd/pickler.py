@@ -116,8 +116,14 @@ def _write_bytes(bytes_out, dir_path, index):
             bytes_out = bytes_out[MAX_BYTES:]
 
 
-def load(dir_path):
-    sub_files = os.listdir(dir_path)
+def load(dir_path, allow_not_found=False):
+    try:
+        sub_files = os.listdir(dir_path)
+    except FileNotFoundError as e:
+        if allow_not_found:
+            return None
+        else:
+            raise e
 
     for sub_file in sorted(sub_files, key=lambda item: int(item[:item.index(EXTENSION)])):
         file_path = os.path.join(dir_path, sub_file)

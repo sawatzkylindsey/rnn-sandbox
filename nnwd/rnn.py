@@ -43,6 +43,7 @@ class Rnn:
         #   _c      constant
         self.unrolled_inputs_p = self.placeholder("unrolled_inputs_p", [self.time_dimension, self.batch_dimension], tf.int32)
         self.initial_state_p = self.placeholder("initial_state_p", [Rnn.SCAN_STATES, self.layers, self.batch_dimension, self.width])
+        self.learning_rate_p = self.placeholder("learning_rate_p", [1], tf.float32)
         self.clip_norm_p = self.placeholder("clip_norm_p", [1], tf.float32)
         self.dropout_keep_p = self.placeholder("dropout_keep_p", [1], tf.float32)
 
@@ -171,7 +172,7 @@ class Rnn:
 
         self.cost = self.computational_graph_cost()
         #self.updates = tf.train.AdamOptimizer().minimize(self.cost)
-        optimizer = tf.train.AdamOptimizer()
+        optimizer = tf.train.GradientDescentOptimizer(self.learning_rate_p[0])
         gradients = optimizer.compute_gradients(self.cost)
         gradients_clipped = [(tf.clip_by_norm(g, self.clip_norm_p[0]), var) for g, var in gradients]
         self.updates = optimizer.apply_gradients(gradients_clipped)
@@ -423,8 +424,9 @@ class RnnLm(Rnn):
             self.unrolled_inputs_p: input_labels,
             self.input_lengths_p: input_lengths,
             self.initial_state_p: self.initial_state(len(batch)),
-            self.clip_norm_p: np.array([training_parameters.clip_norm()]),
-            self.dropout_keep_p: np.array([1.0 - training_parameters.dropout_rate()]),
+            self.learning_rate_p: [training_parameters.learning_rate()],
+            self.clip_norm_p: [training_parameters.clip_norm()],
+            self.dropout_keep_p: [1.0 - training_parameters.dropout_rate()],
             self.unrolled_outputs_p: output_labels,
         }
 
@@ -487,8 +489,9 @@ class RnnSa(Rnn):
             self.unrolled_inputs_p: input_labels,
             self.input_gathers_p: input_gathers,
             self.initial_state_p: self.initial_state(len(batch)),
-            self.clip_norm_p: np.array([training_parameters.clip_norm()]),
-            self.dropout_keep_p: np.array([1.0 - training_parameters.dropout_rate()]),
+            self.learning_rate_p: [training_parameters.learning_rate()],
+            self.clip_norm_p: [training_parameters.clip_norm()],
+            self.dropout_keep_p: [1.0 - training_parameters.dropout_rate()],
             self.output_p: output_labels,
         }
 
