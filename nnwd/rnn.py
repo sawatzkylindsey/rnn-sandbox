@@ -48,7 +48,6 @@ class Rnn:
         self.dropout_keep_p = self.placeholder("dropout_keep_p", [1], tf.float32)
 
         self.E = self.variable("E", [len(self.word_labels), self.embedding_width])
-        self.EP = self.variable("EP", [self.embedding_width, self.width])
 
         self.R = self.variable("R", [self.layers, self.width * 2, self.width])
         self.R_bias = self.variable("R_bias", [self.layers, self.width], initial=0.0)
@@ -72,7 +71,12 @@ class Rnn:
         assert_shape(self.unrolled_embedded_inputs, [self.time_dimension, self.batch_dimension, self.embedding_width])
         tf.identity(tf.reshape(self.unrolled_embedded_inputs, [self.embedding_width]), name="embedding")
 
-        self.unrolled_embedded_projected_inputs = tf.matmul(tf.reshape(self.unrolled_embedded_inputs, [-1, self.embedding_width]), self.EP)
+        if self.embedding_width != self.width:
+            self.EP = self.variable("EP", [self.embedding_width, self.width])
+            self.unrolled_embedded_projected_inputs = tf.matmul(tf.reshape(self.unrolled_embedded_inputs, [-1, self.embedding_width]), self.EP)
+        else:
+            self.unrolled_embedded_projected_inputs = tf.reshape(self.unrolled_embedded_inputs, [-1, self.embedding_width])
+
         assert_shape(self.unrolled_embedded_projected_inputs, [self.combine_dimensions(), self.width])
 
         # Dropout per: RECURRENT NEURAL NETWORK REGULARIZATION (Zaremba, Sutskever, Vinyals 2015)
