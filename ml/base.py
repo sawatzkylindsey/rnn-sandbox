@@ -78,11 +78,11 @@ class TrainingParameters:
     BATCH_MINIMUM = 4
     EPOCHS_DEFAULT = 10
     EPOCHS_MAXIMUM = 1000
-    DROPOUT_RATE_DEFAULT = 0.3
+    DROPOUT_RATE_DEFAULT = 0.1
     DROPOUT_RATE_MAXIMUM = 0.9
     LEARNING_RATE_DEFAULT = 1.0
-    CLIP_NORM_DEFAULT = 0.4
-    CLIP_NORM_MAXIMUM = 10
+    CLIP_NORM_DEFAULT = 5.0
+    CLIP_NORM_MAXIMUM = 100
     DEFAULT_ABSOLUTE = 0.05
     # .005%
     DEFAULT_RELATIVE = 0.00005
@@ -90,6 +90,7 @@ class TrainingParameters:
     DEFAULT_DEGRADATION = 0.25
     DEFAULT_WINDOW = 10
     DEFAULT_DEBUG = False
+    DEFAULT_SCORE = False
     REASON_EPOCHS = "maximum epochs"
     REASON_ABSOLUTE = "absolute convergence"
     REASON_RELATIVE = "relative convergence"
@@ -107,25 +108,21 @@ class TrainingParameters:
         self._degradation = TrainingParameters.DEFAULT_DEGRADATION
         self._window = TrainingParameters.DEFAULT_WINDOW
         self._debug = TrainingParameters.DEFAULT_DEBUG
+        self._score = TrainingParameters.DEFAULT_SCORE
         self._decays = 0
 
     def decay(self):
         new_tp= TrainingParameters.__new__(TrainingParameters)
         new_tp.__dict__ = {k: v for k, v in self.__dict__.items()}
         new_tp._decays += 1
-        new_tp._learning_rate /= 1.15
-        return new_tp
-        period = self._decays + 2
 
-        if period % 2 == 0:
-            new_tp._epochs = min(self._epochs + 1, TrainingParameters.EPOCHS_MAXIMUM)
+        if new_tp._decays % 2 == 0:
+            new_tp._learning_rate /= 1.15
 
-        if period % 3 == 0:
-            new_tp._clip_norm = min(self._clip_norm * 2, TrainingParameters.CLIP_NORM_MAXIMUM)
-
-        if period % 5 == 0:
-            new_tp._batch = max(int(self._batch * 0.8), TrainingParameters.BATCH_MINIMUM)
-            new_tp._dropout_rate = min(self._dropout_rate * 1.2, TrainingParameters.DROPOUT_RATE_MAXIMUM)
+        #new_tp._epochs = min(self._epochs + 1, TrainingParameters.EPOCHS_MAXIMUM)
+        #new_tp._clip_norm = min(self._clip_norm * 2, TrainingParameters.CLIP_NORM_MAXIMUM)
+        #new_tp._batch = max(int(self._batch * 0.8), TrainingParameters.BATCH_MINIMUM)
+        #new_tp._dropout_rate = min(self._dropout_rate * 1.2, TrainingParameters.DROPOUT_RATE_MAXIMUM)
 
         return new_tp
 
@@ -268,6 +265,13 @@ class TrainingParameters:
             return self._debug
 
         self._debug = check.check_one_of(value, [True, False])
+        return self
+
+    def score(self, value=None):
+        if value is None:
+            return self._score
+
+        self._score = check.check_one_of(value, [True, False])
         return self
 
     def __repr__(self):

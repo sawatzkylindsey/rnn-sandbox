@@ -80,7 +80,7 @@ class Rnn:
             # This is all the other stacks, which we don't actually need for the looping (just there for instrumentation).
             #                                v
             output_previous, cell_previous, *_ = tf.unstack(previous_state)
-            x = current_input
+            x = self.dropout(current_input)
             remember_gate_stack = []
             forget_gate_stack = []
             output_gate_stack = []
@@ -96,13 +96,13 @@ class Rnn:
                 assert_shape(output_previous[l], [self.batch_dimension, self.width])
                 assert_shape(cell_previous[l], [self.batch_dimension, self.width])
                 assert_shape(x, [self.batch_dimension, self.width])
-                remember_gate = tf.sigmoid(tf.matmul(tf.concat([output_previous[l], self.dropout(x)], axis=-1), self.R[l]) + self.R_bias[l])
+                remember_gate = tf.sigmoid(tf.matmul(tf.concat([output_previous[l], x], axis=-1), self.R[l]) + self.R_bias[l])
                 remember_gate_stack.append(remember_gate)
-                forget_gate = tf.sigmoid(tf.matmul(tf.concat([output_previous[l], self.dropout(x)], axis=-1), self.F[l]) + self.F_bias[l])
+                forget_gate = tf.sigmoid(tf.matmul(tf.concat([output_previous[l], x], axis=-1), self.F[l]) + self.F_bias[l])
                 forget_gate_stack.append(forget_gate)
-                output_gate = tf.sigmoid(tf.matmul(tf.concat([output_previous[l], self.dropout(x)], axis=-1), self.O[l]) + self.O_bias[l])
+                output_gate = tf.sigmoid(tf.matmul(tf.concat([output_previous[l], x], axis=-1), self.O[l]) + self.O_bias[l])
                 output_gate_stack.append(output_gate)
-                input_hat = tf.tanh(tf.matmul(tf.concat([output_previous[l], self.dropout(x)], axis=-1), self.H[l]) + self.H_bias[l])
+                input_hat = tf.tanh(tf.matmul(tf.concat([output_previous[l], x], axis=-1), self.H[l]) + self.H_bias[l])
                 input_hat_stack.append(input_hat)
                 remember = input_hat * remember_gate
                 remember_stack.append(remember)
@@ -117,7 +117,7 @@ class Rnn:
                 output = cell_hat * output_gate
                 assert_shape(output, [self.batch_dimension, self.width])
                 output_stack.append(output)
-                x = output
+                x = self.dropout(output)
 
             return tf.stack([output_stack, cell_stack, remember_gate_stack, forget_gate_stack, output_gate_stack, input_hat_stack, remember_stack, cell_previous_stack, forget_stack, cell_hat_stack])
 
@@ -161,7 +161,7 @@ class Rnn:
         final_state_for_matmul = tf.reshape(self.final_state, [-1, self.width])
         assert_shape(final_state_for_matmul, [self.combine_dimensions(), self.width])
 
-        self.output_logits = tf.matmul(final_state_for_matmul, self.Y) + self.Y_bias
+        self.output_logits = tf.matmul(self.dropout(final_state_for_matmul), self.Y) + self.Y_bias
         assert_shape(self.output_logits, [self.combine_dimensions(), len(self.output_labels)])
 
         self.unrolled_outputs = tf.reshape(self.output_logits, [self.max_time, self.batch_size, len(self.output_labels)])
@@ -207,7 +207,8 @@ class Rnn:
         check.check_instance(training_parameters, mlbase.TrainingParameters)
         shuffled_xys = xy_sequences.copy()
         slot_length = len(str(training_parameters.epochs())) - 1
-        epoch_template = "Epoch training {:%dd}: {:f}" % slot_length
+        case_slot_length = len(str(len(xy_sequences)))
+        epoch_template = "Epoch training {:%dd}: {:.6f}" % slot_length + (" (score {:.6f})" if training_parameters.score() else "")
         epochs_tenth = max(1, int(training_parameters.epochs() / 10))
         losses = training_parameters.losses()
         finished = False
@@ -216,6 +217,7 @@ class Rnn:
         while not finished:
             epoch += 1
             epoch_loss = 0
+            epoch_score = 0
             # Shuffle the training set for every epoch.
             random.shuffle(shuffled_xys)
             offset = 0
@@ -224,18 +226,31 @@ class Rnn:
                 batch = shuffled_xys[offset:offset + training_parameters.batch()]
                 offset += training_parameters.batch()
                 feed = self.get_training_feed(batch, training_parameters)
-                _, total_cost = self.session.run([self.updates, self.cost], feed_dict=feed)
-                epoch_loss += total_cost
+                _, loss = self.session.run([self.updates, self.cost], feed_dict=feed)
+                epoch_loss += loss
 
+                if training_parameters.score():
+                    feed = self.get_testing_feed(batch)
+                    time_distributions = self.session.run(self.output_distributions, feed_dict=feed)
+                    epoch_score += self.score(batch, feed, time_distributions, False, case_slot_length)
+
+            epoch_score /= len(xy_sequences)
             losses.append(epoch_loss)
             finished, reason = training_parameters.finished(epoch + 1, losses)
 
             if not finished and epoch % epochs_tenth == 0 and training_parameters.debug():
-                logging.debug(epoch_template.format(epoch, epoch_loss))
+                if training_parameters.score():
+                    logging.debug(epoch_template.format(epoch, epoch_loss, epoch_score))
+                else:
+                    logging.debug(epoch_template.format(epoch, epoch_loss))
 
-        logging.debug(epoch_template.format(epoch, epoch_loss))
-        logging.debug("Training finished due to %s (%s)." % (reason, losses))
-        return epoch_loss
+        if training_parameters.score():
+            logging.debug(epoch_template.format(epoch, epoch_loss, epoch_score))
+        else:
+            logging.debug(epoch_template.format(epoch, epoch_loss))
+
+        #logging.debug("Training finished due to %s (%s)." % (reason, losses))
+        return epoch_loss, epoch_score
 
     def test(self, xy_sequences, debug=False):
         assert len(xy_sequences) > 0

@@ -17,7 +17,6 @@ class Echo:
 class Words:
     def __init__(self, words):
         self.words = sorted([w for w in words])
-        user_log.info("Vocabulary %d" % len(self.words))
 
     def get(self, data):
         return self.words

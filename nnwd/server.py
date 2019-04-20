@@ -122,14 +122,17 @@ def main(argv):
                     help="Turn on verbose logging.")
     ap.add_argument("-p", "--port", default=8888, type=int)
     ap.add_argument("--batch", default=32, type=int)
-    ap.add_argument("--arc-epochs", default=2, type=int)
+    ap.add_argument("--arc-epochs", default=5, type=int)
     ap.add_argument("-s", "--save-dir", default=".resume")
     ap.add_argument("--tag", default=False, action="store_true")
     ap.add_argument("--headless", default=False, action="store_true")
     ap.add_argument("--skip-dr-test", default=False, action="store_true")
     ap.add_argument("--skip-sem-test", default=False, action="store_true")
     ap.add_argument("task", help="Either 'sa' or 'lm'.")
-    ap.add_argument("form", help="The appropriate selection of: ['stanford', 'raw', 'pos'].")
+    ap.add_argument("form", help="How the language data should be interpreted:\n" \
+                                 "raw: the text is raw (must still be run through a tokenizer)." \
+                                 "tokenized: the text has been tokenized (space separate tokens, new lines separate sentences)." \
+                                 "ptb: the text is tokenized and pos tagged in Penn Treebank form.")
     ap.add_argument("corpus_paths", nargs="+")
     aargs = ap.parse_args(argv)
     #patch_thread_for_profiling()
@@ -137,15 +140,14 @@ def main(argv):
     logging.debug(aargs)
 
     if aargs.task == "sa":
-        assert aargs.form == "stanford"
+        assert aargs.form == "tokenized"
         words, neural_network = domain.create_sa((aargs.task, aargs.form), lambda: stream_input_stanford(aargs.corpus_paths[0]), aargs)
     elif aargs.task == "lm":
-        assert aargs.form == "raw" or aargs.form == "pos"
-        result_form = aargs.form if not aargs.tag else "pos"
-        words, neural_network = domain.create_lm((aargs.task, result_form), lambda: stream_input_text(aargs.corpus_paths, aargs.form), aargs)
+        words, neural_network = domain.create_lm((aargs.task, aargs.form), lambda: stream_input_text(aargs.corpus_paths, aargs.form), aargs)
     else:
         raise ValueError("Unknown task: %s" % aargs.task)
 
+    user_log.info("Vocabulary %d" % len(words))
     # Also precautionary - the the neural_network start setting up before kicking off the server.
     # The server can't do anything anyways until the neural_network is ready to handle requests.
     time.sleep(5)
@@ -243,6 +245,8 @@ def stream_input_text(input_files, form):
                                     print(tag)
 
                             yield sequence
+                    elif form == "tokenized":
+                        yield [(word, None) for word in line.split(" ")]
                     else:
                         sequence = []
 
