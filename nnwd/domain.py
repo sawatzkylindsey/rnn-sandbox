@@ -311,7 +311,7 @@ class NeuralNetwork:
     OUTPUT_WIDTH = 5
     HIDDEN_REDUCTION = 10
     EMBEDDING_REDUCTION = 10
-    MAXIMUM_CONSECUTIVE_DECAYS = 10
+    MAXIMUM_CONSECUTIVE_DECAYS = 5
     TOP_PREDICTIONS = 3
     PREDICTOR_EPOCHS = 100
     PREDICTOR_SAMPLE_RATE = 0.5
@@ -429,7 +429,8 @@ class NeuralNetwork:
             logging.debug("Training lstm parameters.")
             best_score_train = self.lstm.test(self.train_xys)
             best_score_validation = self.lstm.test(self.validation_xys)
-            logging.debug("Baseline train/validation scores (random initialized weights): %s / %s" % (best_score_train, best_score_validation))
+            score_test = self.lstm.test(self.test_xys)
+            logging.debug("Baseline train/validation/test scores (random initialized weights): %.4f / %.4f / %.4f" % (best_score_train, best_score_validation, score_test))
             training_parameters = mlbase.TrainingParameters() \
                 .batch(self.batch) \
                 .epochs(self.arc_epochs) \
@@ -446,31 +447,41 @@ class NeuralNetwork:
                 arc += 1
                 logging.debug("train lstm arc %d: %s" % (arc, training_parameters))
                 loss, score_train, score_validation = self.lstm_train_loop(training_parameters)
-                loss_change = self._change(previous_loss, loss, "▲", "▼")
-                train_change = self._change(best_score_train, score_train, "▲", "▼")
-                validation_change = self._change(best_score_validation, score_validation, "▲", "▼")
+                loss_change = self._change(previous_loss, loss, lambda prev, curr: prev > curr)
+                train_change = self._change(best_score_train, score_train, lambda prev, curr: prev < curr)
+                validation_change = self._change(best_score_validation, score_validation, lambda prev, curr: prev < curr)
                 logging.debug("train lstm arc %d: (loss, tr, va) (%s %.4f, %s %.4f, %s %.4f)" % (arc, loss_change, loss, train_change, score_train, validation_change, score_validation))
+                both_improved = score_train > best_score_train and score_validation > best_score_validation
 
                 if score_train > best_score_train or score_validation > best_score_validation:
+                    previous_loss = loss
+                    version += 1
+                    self.lstm.save(lstm_dir, version, True)
+
+                    # At least one improved.
                     if score_train > best_score_train:
                         best_score_train = score_train
 
                     if score_validation > best_score_validation:
                         best_score_validation = score_validation
-
-                    previous_loss = loss
-                    version += 1
-                    self.lstm.save(lstm_dir, version, True)
-                    consecutive_decays = 0
+                    else:
+                        # The validation score didn't improve.  Lets see where the test score is at.
+                        score_test = self.lstm.test(self.test_xys)
+                        logging.debug("test score: %.4f" % score_test)
                 else:
+                    # Neither improved.
+                    # Load the best known version to continue training off of.
+                    self.lstm.load(lstm_dir)
+
+                if not both_improved:
                     if consecutive_decays > NeuralNetwork.MAXIMUM_CONSECUTIVE_DECAYS:
                         converged = True
 
                     logging.debug("decaying..")
                     training_parameters = training_parameters.decay()
                     consecutive_decays += 1
-                    # Load the best known version to continue training off of.
-                    self.lstm.load(lstm_dir)
+                else:
+                    consecutive_decays = 0
 
             # Load which ever version was marked as the latest as the final trained lstm.
             self.lstm.load(lstm_dir)
@@ -482,13 +493,13 @@ class NeuralNetwork:
         score_test = self.lstm.test(self.test_xys, True)
         logging.debug("(tr, va, te): (%.4f, %.4f, %.4f)" % (score_train, score_validation, score_test))
 
-    def _change(self, previous, current, lesser, greater):
+    def _change(self, previous, current, better_fn):
         if previous is None:
             return "-"
-        elif previous < current:
-            return lesser
+        elif better_fn(previous, current):
+            return "▲"
         else:
-            return greater
+            return "▼"
 
     def lstm_train_loop(self, training_parameters):
         loss, score_train = self.lstm.train(self.train_xys, training_parameters)

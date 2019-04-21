@@ -115,9 +115,7 @@ class TrainingParameters:
         new_tp= TrainingParameters.__new__(TrainingParameters)
         new_tp.__dict__ = {k: v for k, v in self.__dict__.items()}
         new_tp._decays += 1
-
-        if new_tp._decays % 2 == 0:
-            new_tp._learning_rate /= 1.15
+        new_tp._learning_rate /= 1.15
 
         #new_tp._epochs = min(self._epochs + 1, TrainingParameters.EPOCHS_MAXIMUM)
         #new_tp._clip_norm = min(self._clip_norm * 2, TrainingParameters.CLIP_NORM_MAXIMUM)

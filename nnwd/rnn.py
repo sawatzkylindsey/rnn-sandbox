@@ -176,10 +176,17 @@ class Rnn:
 
         self.cost = self.computational_graph_cost()
         #self.updates = tf.train.AdamOptimizer().minimize(self.cost)
+
         optimizer = tf.train.GradientDescentOptimizer(self.learning_rate_p[0])
         gradients = optimizer.compute_gradients(self.cost)
         gradients_clipped = [(tf.clip_by_norm(g, self.clip_norm_p[0]), var) for g, var in gradients]
         self.updates = optimizer.apply_gradients(gradients_clipped)
+
+        #trainable_variables = tf.trainable_variables()
+        #gradients = tf.gradients(self.cost, trainable_variables)
+        #gradients_clipped, _ = tf.clip_by_global_norm(gradients, self.clip_norm_p[0])
+        #optimizer = tf.train.GradientDescentOptimizer(self.learning_rate_p[0])
+        #self.updates = optimizer.apply_gradients(zip(gradients_clipped, trainable_variables))
 
         self.session = tf.Session()
         self.session.run(tf.global_variables_initializer())
@@ -238,6 +245,7 @@ class Rnn:
                     time_distributions = self.session.run(self.output_distributions, feed_dict=feed)
                     epoch_score += self.score(batch, feed, time_distributions, False, case_slot_length)
 
+            #logging.debug("%.4f, %.4f, %.4f, %.4f" % (2**epoch_loss, 2**(epoch_loss/len(xy_sequences)), math.exp(epoch_loss), math.exp(epoch_loss/len(xy_sequences))))
             epoch_score /= len(xy_sequences)
             losses.append(epoch_loss)
             finished, reason = training_parameters.finished(epoch + 1, losses)
