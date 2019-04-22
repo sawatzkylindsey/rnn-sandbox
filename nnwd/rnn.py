@@ -34,6 +34,7 @@ class Rnn:
         self.scope = scope
         self._initials = {}
         self._instruments = {}
+        self._training_id = None
 
         self.time_dimension = None
         self.batch_dimension = None
@@ -216,7 +217,12 @@ class Rnn:
 
     def train(self, xy_sequences, training_parameters):
         check.check_instance(training_parameters, mlbase.TrainingParameters)
-        shuffled_xys = xy_sequences.copy()
+
+        if id(xy_sequences) != self._training_id:
+            self._training_id = id(xy_sequences)
+            # Sort the training sequences by their length to minimize padding (each batch will consist of roughly equal lengthed sequences).
+            self.training_xys = sorted(xy_sequences, key=lambda xy: len(xy.x))
+
         slot_length = len(str(training_parameters.epochs())) - 1
         case_slot_length = len(str(len(xy_sequences)))
         epoch_template = "Epoch training {:%dd}: {:.6f}" % slot_length + (" (score {:.6f})" if training_parameters.score() else "")
@@ -229,21 +235,28 @@ class Rnn:
             epoch += 1
             epoch_loss = 0
             epoch_score = 0
-            # Shuffle the training set for every epoch.
-            random.shuffle(shuffled_xys)
-            offset = 0
+            # Start at a different offset for every epoch to help avoid overfitting.
+            offset = random.randint(0, training_parameters.batch() - 1)
+            first = True
 
-            while offset < len(shuffled_xys):
-                batch = shuffled_xys[offset:offset + training_parameters.batch()]
-                offset += training_parameters.batch()
-                feed = self.get_training_feed(batch, training_parameters)
-                _, loss = self.session.run([self.updates, self.cost], feed_dict=feed)
-                epoch_loss += loss
+            while offset < len(self.training_xys):
+                if first:
+                    first = False
+                    batch = self.training_xys[0:offset]
+                else:
+                    batch = self.training_xys[offset:offset + training_parameters.batch()]
+                    offset += training_parameters.batch()
 
-                if training_parameters.score():
-                    feed = self.get_testing_feed(batch)
-                    time_distributions = self.session.run(self.output_distributions, feed_dict=feed)
-                    epoch_score += self.score(batch, feed, time_distributions, False, case_slot_length)
+                # To account for when offset is randomly assigned 0
+                if len(batch) > 0:
+                    feed = self.get_training_feed(batch, training_parameters)
+                    _, loss = self.session.run([self.updates, self.cost], feed_dict=feed)
+                    epoch_loss += loss
+
+                    if training_parameters.score():
+                        feed = self.get_testing_feed(batch)
+                        time_distributions = self.session.run(self.output_distributions, feed_dict=feed)
+                        epoch_score += self.score(batch, feed, time_distributions, False, case_slot_length)
 
             #logging.debug("%.4f, %.4f, %.4f, %.4f" % (2**epoch_loss, 2**(epoch_loss/len(xy_sequences)), math.exp(epoch_loss), math.exp(epoch_loss/len(xy_sequences))))
             epoch_score /= len(xy_sequences)
