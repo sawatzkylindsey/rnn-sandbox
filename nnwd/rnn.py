@@ -451,9 +451,10 @@ class RnnLm(Rnn):
     def computational_graph_cost(self):
         self.input_lengths_p = self.placeholder("input_lengths_p", [self.batch_dimension], tf.int32)
         self.unrolled_outputs_p = self.placeholder("unrolled_outputs_p", [self.time_dimension, self.batch_dimension], tf.int32)
-        expected_outputs = tf.reshape(self.output_logits, [self.max_time, self.batch_size, len(self.output_labels)])
         self.mask = tf.sequence_mask(self.input_lengths_p, dtype=tf.float32)
-        return tf.contrib.seq2seq.sequence_loss(logits=expected_outputs, targets=self.unrolled_outputs_p, weights=self.mask)
+        logits = tf.reshape(self.output_logits, [self.batch_size, self.max_time, len(self.output_labels)])
+        targets = tf.reshape(self.unrolled_outputs_p, [self.batch_size, self.max_time])
+        return tf.contrib.seq2seq.sequence_loss(logits=logits, targets=targets, weights=self.mask)
 
     def get_training_feed(self, batch, training_parameters):
         data_x, data_y = mlbase.as_time_major(batch, True)
