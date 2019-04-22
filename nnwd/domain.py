@@ -440,6 +440,7 @@ class NeuralNetwork:
             previous_loss = None
             arc = -1
             version = -1
+            self.lstm.save(lstm_dir, version, True)
             converged = False
             consecutive_decays = 0
 
