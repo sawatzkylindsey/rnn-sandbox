@@ -218,7 +218,7 @@ def create_lm(task_form, corpus_stream_fn, aargs):
     #print(printer(test_xys))
     logging.debug("data sets (train, validation, test): %d, %d, %d" % (len(train_xys), len(validation_xys), len(test_xys)))
     #print(words)
-    word_labels = mlbase.Labels(words.union(set([mlbase.BLANK])), unknown="<unk>")
+    word_labels = mlbase.Labels(words.union(set([mlbase.BLANK])), unknown=nlp.UNKNOWN)
     return word_labels, NeuralNetwork(task_form, word_labels, None, pos_tags, pos_mapping, xy_sequence(train_xys), xy_sequence(validation_xys), xy_sequence(test_xys), lambda item: -item[1], aargs)
 
 
