@@ -523,30 +523,28 @@ class RnnLm(Rnn):
                 float_points = 4
                 string_lengths = []
 
-                for timestep in range(input_lengths[case] + 1):
+                for timestep in range(input_lengths[case]):
                     maximum = float_points + 1
 
-                    if timestep < input_lengths[case]:
-                        if len(sequence[case][timestep]) > maximum:
-                            maximum = len(sequence[case][timestep])
+                    if len(sequence[case][timestep]) > maximum:
+                        maximum = len(sequence[case][timestep])
 
-                    if timestep > 0:
-                        if len(predictions[case][timestep - 1]) > maximum:
-                            maximum = len(predictions[case][timestep - 1])
+                    if len(predictions[case][timestep]) > maximum:
+                        maximum = len(predictions[case][timestep])
 
-                        if len(expectations[case][timestep - 1]) > maximum:
-                            maximum = len(expectations[case][timestep - 1])
+                    if len(expectations[case][timestep]) > maximum:
+                        maximum = len(expectations[case][timestep])
 
                     string_lengths += [maximum]
 
                 debug_template = " ".join(["{:%d.%ds}" % (l, l) for l in string_lengths])
                 float_template = "{:.%df}" % float_points
-                sequence_str = debug_template.format(*(sequence[case] + [""]))
-                predicted_str = debug_template.format("", *predictions[case])
-                predicted_probability_str = debug_template.format("", *[float_template.format(p)[1:] for p in predictions_probabilities[case]])
-                expected_str = debug_template.format("", *expectations[case])
-                expected_probability_str = debug_template.format("", *[float_template.format(p)[1:] for p in expectations_probabilities[case]])
-                debug_str = "   Sequence: %s\n  Predicted: %s\n             %s\n   Expected: %s\n             %s" % \
+                sequence_str = debug_template.format(*(sequence[case]))
+                predicted_str = debug_template.format(*predictions[case])
+                predicted_probability_str = debug_template.format(*[float_template.format(p)[1:] for p in predictions_probabilities[case]])
+                expected_str = debug_template.format(*expectations[case])
+                expected_probability_str = debug_template.format(*[float_template.format(p)[1:] for p in expectations_probabilities[case]])
+                debug_str = "   Inputed: %s\n Predicted: %s\n            %s\n  Expected: %s\n            %s" % \
                     (sequence_str, predicted_str, predicted_probability_str, expected_str, expected_probability_str)
                 logging.debug("%s perplexity %.4f.\n%s" % (case_template.format(case), perplexity, debug_str))
 
