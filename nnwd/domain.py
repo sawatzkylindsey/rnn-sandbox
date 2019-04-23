@@ -439,7 +439,7 @@ class NeuralNetwork:
                 .score(True)
             previous_loss = None
             arc = -1
-            version = -1
+            version = 0
             self.lstm.save(lstm_dir, version, True)
             converged = False
             consecutive_decays = 0
@@ -540,18 +540,18 @@ class NeuralNetwork:
             .width(len(predictor_input))
         self.predictor = ffnn.Model("predictor", hyper_parameters, predictor_input, predictor_output)
         predictor_dir = os.path.join(self.save_dir, "predictor")
-        guassian_buckets_path = os.path.join(self.save_dir, "gaussian-buckets")
+        gaussian_buckets_path = os.path.join(self.save_dir, "gaussian-buckets")
         fixed_buckets_path = os.path.join(self.save_dir, "fixed-buckets")
         predictor_xys = None
 
-        if os.path.exists(guassian_buckets_path):
+        if os.path.exists(gaussian_buckets_path):
             logging.debug("Loading existing reduction buckets.")
-            self.guassian_buckets = {item[0]: item[1] for item in pickler.load(guassian_buckets_path)}
+            self.gaussian_buckets = {item[0]: item[1] for item in pickler.load(gaussian_buckets_path)}
             self.fixed_buckets = {item[0]: item[1] for item in pickler.load(fixed_buckets_path)}
         else:
             predictor_xys = self._get_predictor_data()
-            self.guassian_buckets, self.fixed_buckets = self._train_guassian_buckets(predictor_xys)
-            pickler.dump([item for item in self.guassian_buckets.items()], guassian_buckets_path)
+            self.gaussian_buckets, self.fixed_buckets = self._train_gaussian_buckets(predictor_xys)
+            pickler.dump([item for item in self.gaussian_buckets.items()], gaussian_buckets_path)
             pickler.dump([item for item in self.fixed_buckets.items()], fixed_buckets_path)
 
         # Technically not complete yet, but with the buckets setup an the predictor instantiated we can start answering queries.
@@ -578,7 +578,7 @@ class NeuralNetwork:
         loss = self.predictor.train(predictor_xys, training_parameters)
         logging.debug("train predictor %s" % loss)
 
-    def _train_guassian_buckets(self, predictor_xys):
+    def _train_gaussian_buckets(self, predictor_xys):
         logging.debug("Training reduction buckets.")
         data = {}
 
@@ -591,7 +591,7 @@ class NeuralNetwork:
 
             data[key] += [point]
 
-        guassian_buckets = {}
+        gaussian_buckets = {}
         fixed_buckets = {}
 
         for key, points in data.items():
@@ -603,8 +603,7 @@ class NeuralNetwork:
                 reduction = NeuralNetwork.HIDDEN_REDUCTION
 
             logging.debug("dr calc for %s (%d -> %d) with %d data points sampled to %d" % (key, width, reduction, len(points), int(len(points) * NeuralNetwork.GAUSSIAN_SAMPLE_RATE)))
-            gm = GaussianMixture(reduction)
-            guassian_buckets[key] = [[] for i in range(reduction)]
+            gaussian_buckets[key] = [[] for i in range(reduction)]
             fixed_buckets[key] = []
             fixed_size = math.ceil(float(width) / reduction)
 
@@ -614,6 +613,7 @@ class NeuralNetwork:
             # Truncate accordingly                                                          vvvvvv
             X = np.array(points[:int(len(points) * NeuralNetwork.GAUSSIAN_SAMPLE_RATE)])[:, :width] \
                 .transpose()
+            gm = GaussianMixture(reduction)
             dimension_grouping = gm.fit_predict(X)
             fixed_group = []
             incrementing_group = -1
@@ -624,14 +624,14 @@ class NeuralNetwork:
                 if len(fixed_group) == 0 and fixed_size > 1 and len(fixed_buckets[key]) + ((width - dimension) / (fixed_size - 1)) == reduction:
                     fixed_size -= 1
 
-                guassian_buckets[key][group] += [dimension]
+                gaussian_buckets[key][group] += [dimension]
                 fixed_group += [dimension]
 
                 if len(fixed_group) == fixed_size:
                     fixed_buckets[key] += [fixed_group]
                     fixed_group = []
 
-        return guassian_buckets, fixed_buckets
+        return gaussian_buckets, fixed_buckets
 
     def _test_features(self):
         logging.debug("Testing features.")
@@ -924,7 +924,7 @@ class NeuralNetwork:
         return self._dimensionality_reduce(points, self.fixed_buckets, calculate_error)
 
     def gaussian_dimensionality_reduce(self, points, calculate_error=False):
-        return self._dimensionality_reduce(points, self.guassian_buckets, calculate_error)
+        return self._dimensionality_reduce(points, self.gaussian_buckets, calculate_error)
 
     def predict_distributions(self, points):
         xs = [self.decode_key(key) + (tuple(point) + (self.embedding_padding if self.decode_key(key)[0] == "embedding" else self.hidden_padding),) for key, point in points.items()]
@@ -1011,7 +1011,7 @@ class NeuralNetwork:
         reorganized_point = [[] for i in range(len(point))]
         i = 0
 
-        for bucket, dimensions in enumerate(self.guassian_buckets[key]):
+        for bucket, dimensions in enumerate(self.gaussian_buckets[key]):
             for dimension in dimensions:
                 assert i not in back_links, "%d already in %s" % (i, back_links)
                 back_links[i] = bucket
