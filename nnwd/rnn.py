@@ -251,6 +251,16 @@ class Rnn:
                 if len(batch) > 0:
                     feed = self.get_training_feed(batch, training_parameters)
                     _, loss = self.session.run([self.updates, self.cost], feed_dict=feed)
+                    #_, loss, mask, uop1, lrs, mmm, mmn = self.session.run([self.updates, self.cost, self.mask, self.unrolled_outputs_p, self.losses_reduced, self.masked, self.masked2], feed_dict=feed)
+                    #_, loss, mask, uop1, tgs, lrs, mmm = self.session.run([self.updates, self.cost, self.mask, self.unrolled_outputs_p, self.targets, self.losses_reduced, self.masked], feed_dict=feed)
+                    #if epoch == 0:
+                        #print(mask)
+                        #print(uop1)
+                        #print(tgs)
+                        #print(lrs)
+                        #print(mmm)
+                        #print(mmn)
+                        #print(dd)
                     epoch_loss += loss
 
                     if training_parameters.score():
@@ -448,7 +458,28 @@ class RnnLm(Rnn):
         super(RnnLm, self).__init__(layers, width, embedding_width, word_labels, word_labels)
         pass
 
+    def xcomputational_graph_cost(self):
+        self.input_lengths_p = self.placeholder("input_lengths_p", [self.batch_dimension], tf.int32)
+        self.unrolled_outputs_p = self.placeholder("unrolled_outputs_p", [self.time_dimension, self.batch_dimension], tf.int32)
+        self.mask = tf.sequence_mask(self.input_lengths_p, dtype=tf.float32)
+        self.losses_reduced = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.unrolled_outputs, labels=self.unrolled_outputs_p)
+        self.masked = tf.multiply(self.losses_reduced, tf.transpose(self.mask))
+        return tf.reduce_mean(self.masked)
+
     def computational_graph_cost(self):
+        self.input_lengths_p = self.placeholder("input_lengths_p", [self.batch_dimension], tf.int32)
+        self.unrolled_outputs_p = self.placeholder("unrolled_outputs_p", [self.time_dimension, self.batch_dimension], tf.int32)
+        self.mask = tf.sequence_mask(self.input_lengths_p, dtype=tf.float32)
+        self.targets = tf.one_hot(self.unrolled_outputs_p, len(self.output_labels))
+        logits = self.output_distributions
+        epsilon = 1e-7
+        losses = -tf.multiply(self.targets, tf.log(logits + epsilon)) - tf.multiply((1 - self.targets), tf.log(1 - logits + epsilon))
+        self.losses_reduced = tf.reduce_sum(losses, 2)
+        self.masked = tf.multiply(self.losses_reduced, tf.transpose(self.mask))
+        self.masked2 = tf.reduce_sum(self.masked, 0)
+        return tf.reduce_mean(tf.divide(self.masked2, tf.cast(self.input_lengths_p, tf.float32)))
+
+    def ycomputational_graph_cost(self):
         self.input_lengths_p = self.placeholder("input_lengths_p", [self.batch_dimension], tf.int32)
         self.unrolled_outputs_p = self.placeholder("unrolled_outputs_p", [self.time_dimension, self.batch_dimension], tf.int32)
         self.mask = tf.sequence_mask(self.input_lengths_p, dtype=tf.float32)
@@ -525,7 +556,7 @@ class RnnLm(Rnn):
                 string_lengths = []
 
                 for timestep in range(input_lengths[case]):
-                    maximum = float_points + 1
+                    maximum = float_points + 2
 
                     if len(sequence[case][timestep]) > maximum:
                         maximum = len(sequence[case][timestep])
@@ -542,9 +573,9 @@ class RnnLm(Rnn):
                 float_template = "{:.%df}" % float_points
                 sequence_str = debug_template.format(*(sequence[case]))
                 predicted_str = debug_template.format(*predictions[case])
-                predicted_probability_str = debug_template.format(*[float_template.format(p)[1:] for p in predictions_probabilities[case]])
+                predicted_probability_str = debug_template.format(*[float_template.format(p) for p in predictions_probabilities[case]])
                 expected_str = debug_template.format(*expectations[case])
-                expected_probability_str = debug_template.format(*[float_template.format(p)[1:] for p in expectations_probabilities[case]])
+                expected_probability_str = debug_template.format(*[float_template.format(p) for p in expectations_probabilities[case]])
                 debug_str = "   Inputed: %s\n Predicted: %s\n            %s\n  Expected: %s\n            %s" % \
                     (sequence_str, predicted_str, predicted_probability_str, expected_str, expected_probability_str)
                 logging.debug("%s perplexity %.4f.\n%s" % (case_template.format(case), perplexity, debug_str))
