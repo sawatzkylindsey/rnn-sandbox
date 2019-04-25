@@ -37,12 +37,12 @@ MatchPoint = collections.namedtuple("MatchPoint", ["distance", "word", "index", 
 
 
 def create_sa(task_form, corpus_stream_fn, aargs):
-    train_xys_path = os.path.join(save_dir, "xys.train")
-    validation_xys_path = os.path.join(save_dir, "xys.validation")
-    test_xys_path = os.path.join(save_dir, "xys.test")
-    sentiments_path = os.path.join(save_dir, "sentiments")
-    output_distribution_path = os.path.join(save_dir, "output-distribution")
-    words_path = os.path.join(save_dir, "words")
+    train_xys_path = os.path.join(aargs.save_dir, "xys.train")
+    validation_xys_path = os.path.join(aargs.save_dir, "xys.validation")
+    test_xys_path = os.path.join(aargs.save_dir, "xys.test")
+    sentiments_path = os.path.join(aargs.save_dir, "sentiments")
+    output_distribution_path = os.path.join(aargs.save_dir, "output-distribution")
+    words_path = os.path.join(aargs.save_dir, "words")
 
     if os.path.exists(words_path):
         train_xys = [xy for xy in pickler.load(train_xys_path)]
@@ -383,6 +383,7 @@ class NeuralNetwork:
         self.batch = aargs.batch
         self.arc_epochs = aargs.arc_epochs
         self.save_dir = aargs.save_dir
+        self.headless = aargs.headless
         self.skip_dr_test = aargs.skip_dr_test
         self.skip_sem_test = aargs.skip_sem_test
         self.setup_complete = False
@@ -400,12 +401,14 @@ class NeuralNetwork:
 
     def _setup(self):
         self._train_rnn()
-        #self._generate_activation_data()
-        # Sets setup_complete
-        self._train_features()
 
-        if not self.skip_dr_test or not self.skip_sem_test:
-            self._test_features()
+        if not self.headless:
+            #self._generate_activation_data()
+            # Sets setup_complete
+            self._train_features()
+
+            if not self.skip_dr_test or not self.skip_sem_test:
+                self._test_features()
 
         user_log.info("Setup NeuralNetwork")
 

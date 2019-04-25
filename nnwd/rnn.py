@@ -290,22 +290,31 @@ class Rnn:
             logging.debug(epoch_template.format(epoch, epoch_loss, epoch_perplexity))
 
         #logging.debug("Training finished due to %s (%s)." % (reason, losses))
-        return epoch_loss, epoch_score
+        return epoch_loss, -epoch_perplexity
 
     def test(self, xy_sequences, debug=False):
         assert len(xy_sequences) > 0
-        total = 0.0
+        training_parameters = mlbase.TrainingParameters() \
+            .dropout_rate(0)
+        #total = 0.0
+        total_loss = 0.0
         case_slot_length = len(str(len(xy_sequences)))
         offset = 0
+        batch_count = 0
 
         while offset < len(xy_sequences):
             batch = xy_sequences[offset:offset + 32]
             offset += 32
-            feed = self.get_testing_feed(batch)
-            time_distributions = self.session.run(self.output_distributions, feed_dict=feed)
-            total += self.score(batch, feed, time_distributions, debug, case_slot_length)
+            feed = self.get_training_feed(batch, training_parameters)
+            time_distributions, loss = self.session.run([self.output_distributions, self.cost], feed_dict=feed)
+            total_loss += loss
+            batch_count += 1
 
-        return total / len(xy_sequences)
+            if debug:
+                self.score(batch, feed, time_distributions, debug, case_slot_length)
+
+        #return (total / len(xy_sequences))
+        return -math.exp(total_loss / batch_count)
 
     def evaluate(self, x, handle_unknown=False, state=None, instrument_names=[]):
         feed = {
