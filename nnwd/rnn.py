@@ -225,7 +225,7 @@ class Rnn:
 
         slot_length = len(str(training_parameters.epochs())) - 1
         case_slot_length = len(str(len(xy_sequences)))
-        epoch_template = "Epoch training {:%dd}: {:.6f}" % slot_length + (" (score {:.6f})" if training_parameters.score() else "")
+        epoch_template = "Epoch training {:%dd} (loss, perplexity): {:.6f}, {:.6f}" % slot_length + (" (score {:.6f})" if training_parameters.score() else "")
         epochs_tenth = max(1, int(training_parameters.epochs() / 10))
         losses = training_parameters.losses()
         finished = False
@@ -236,7 +236,8 @@ class Rnn:
             epoch_loss = 0
             epoch_score = 0
             # Start at a different offset for every epoch to help avoid overfitting.
-            offset = random.randint(0, training_parameters.batch() - 1)
+            offset = random.randint(0, min(training_parameters.batch(), len(self.training_xys)) - 1)
+            batch_count = 0
             first = True
 
             while offset < len(self.training_xys):
@@ -249,9 +250,11 @@ class Rnn:
 
                 # To account for when offset is randomly assigned 0
                 if len(batch) > 0:
+                    batch_count += 1
                     feed = self.get_training_feed(batch, training_parameters)
                     _, loss = self.session.run([self.updates, self.cost], feed_dict=feed)
-                    #_, loss, mask, uop1, lrs, mmm, mmn = self.session.run([self.updates, self.cost, self.mask, self.unrolled_outputs_p, self.losses_reduced, self.masked, self.masked2], feed_dict=feed)
+                    #_, loss, logits, targets = self.session.run([self.updates, self.cost, self.logits, self.targets], feed_dict=feed)
+                    #_, loss, mask, uop1, lrs, mmm, mmn, mnn = self.session.run([self.updates, self.cost, self.mask, self.unrolled_outputs_p, self.losses_reduced, self.masked, self.masked2, self.masked3], feed_dict=feed)
                     #_, loss, mask, uop1, tgs, lrs, mmm = self.session.run([self.updates, self.cost, self.mask, self.unrolled_outputs_p, self.targets, self.losses_reduced, self.masked], feed_dict=feed)
                     #if epoch == 0:
                         #print(mask)
@@ -260,6 +263,7 @@ class Rnn:
                         #print(lrs)
                         #print(mmm)
                         #print(mmn)
+                        #print(mnn)
                         #print(dd)
                     epoch_loss += loss
 
@@ -268,21 +272,22 @@ class Rnn:
                         time_distributions = self.session.run(self.output_distributions, feed_dict=feed)
                         epoch_score += self.score(batch, feed, time_distributions, False, case_slot_length)
 
-            #logging.debug("%.4f, %.4f, %.4f, %.4f" % (2**epoch_loss, 2**(epoch_loss/len(xy_sequences)), math.exp(epoch_loss), math.exp(epoch_loss/len(xy_sequences))))
+            epoch_loss /= batch_count
+            epoch_perplexity = math.exp(epoch_loss)
             epoch_score /= len(xy_sequences)
             losses.append(epoch_loss)
             finished, reason = training_parameters.finished(epoch + 1, losses)
 
             if not finished and epoch % epochs_tenth == 0 and training_parameters.debug():
                 if training_parameters.score():
-                    logging.debug(epoch_template.format(epoch, epoch_loss, epoch_score))
+                    logging.debug(epoch_template.format(epoch, epoch_loss, epoch_perplexity, epoch_score))
                 else:
-                    logging.debug(epoch_template.format(epoch, epoch_loss))
+                    logging.debug(epoch_template.format(epoch, epoch_loss, epoch_perplexity))
 
         if training_parameters.score():
-            logging.debug(epoch_template.format(epoch, epoch_loss, epoch_score))
+            logging.debug(epoch_template.format(epoch, epoch_loss, epoch_perplexity, epoch_score))
         else:
-            logging.debug(epoch_template.format(epoch, epoch_loss))
+            logging.debug(epoch_template.format(epoch, epoch_loss, epoch_perplexity))
 
         #logging.debug("Training finished due to %s (%s)." % (reason, losses))
         return epoch_loss, epoch_score
@@ -458,15 +463,17 @@ class RnnLm(Rnn):
         super(RnnLm, self).__init__(layers, width, embedding_width, word_labels, word_labels)
         pass
 
-    def xcomputational_graph_cost(self):
+    def computational_graph_cost(self):
         self.input_lengths_p = self.placeholder("input_lengths_p", [self.batch_dimension], tf.int32)
         self.unrolled_outputs_p = self.placeholder("unrolled_outputs_p", [self.time_dimension, self.batch_dimension], tf.int32)
         self.mask = tf.sequence_mask(self.input_lengths_p, dtype=tf.float32)
         self.losses_reduced = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.unrolled_outputs, labels=self.unrolled_outputs_p)
         self.masked = tf.multiply(self.losses_reduced, tf.transpose(self.mask))
-        return tf.reduce_mean(self.masked)
+        self.masked2 = tf.reduce_sum(self.masked, 0)
+        self.masked3 = tf.divide(self.masked2, tf.cast(self.input_lengths_p, tf.float32))
+        return tf.reduce_mean(self.masked3)
 
-    def computational_graph_cost(self):
+    def xcomputational_graph_cost(self):
         self.input_lengths_p = self.placeholder("input_lengths_p", [self.batch_dimension], tf.int32)
         self.unrolled_outputs_p = self.placeholder("unrolled_outputs_p", [self.time_dimension, self.batch_dimension], tf.int32)
         self.mask = tf.sequence_mask(self.input_lengths_p, dtype=tf.float32)
@@ -474,10 +481,13 @@ class RnnLm(Rnn):
         logits = self.output_distributions
         epsilon = 1e-7
         losses = -tf.multiply(self.targets, tf.log(logits + epsilon)) - tf.multiply((1 - self.targets), tf.log(1 - logits + epsilon))
+        assert_shape(losses, [self.time_dimension, self.batch_dimension, len(self.output_labels)])
         self.losses_reduced = tf.reduce_sum(losses, 2)
+        assert_shape(self.losses_reduced, [self.time_dimension, self.batch_dimension])
         self.masked = tf.multiply(self.losses_reduced, tf.transpose(self.mask))
         self.masked2 = tf.reduce_sum(self.masked, 0)
-        return tf.reduce_mean(tf.divide(self.masked2, tf.cast(self.input_lengths_p, tf.float32)))
+        self.masked3 = tf.divide(self.masked2, tf.cast(self.input_lengths_p, tf.float32))
+        return tf.reduce_mean(self.masked3)
 
     def ycomputational_graph_cost(self):
         self.input_lengths_p = self.placeholder("input_lengths_p", [self.batch_dimension], tf.int32)
@@ -485,7 +495,7 @@ class RnnLm(Rnn):
         self.mask = tf.sequence_mask(self.input_lengths_p, dtype=tf.float32)
         logits = tf.reshape(self.output_logits, [self.batch_size, self.max_time, len(self.output_labels)])
         targets = tf.reshape(self.unrolled_outputs_p, [self.batch_size, self.max_time])
-        return tf.contrib.seq2seq.sequence_loss(logits=logits, targets=targets, weights=self.mask)
+        return tf.contrib.seq2seq.sequence_loss(logits=logits, targets=targets, weights=self.mask, average_across_timesteps=True, average_across_batch=True)
 
     def get_training_feed(self, batch, training_parameters):
         data_x, data_y = mlbase.as_time_major(batch, True)
