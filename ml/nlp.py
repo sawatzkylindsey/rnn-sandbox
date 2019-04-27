@@ -17,6 +17,7 @@ from pytils import check
 START = "<start>"
 END = "<end>"
 UNKNOWN = "<unknown>"
+NUMBER = "<number>"
 
 
 def split_words(corpus):

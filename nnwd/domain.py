@@ -34,6 +34,7 @@ from pytils import adjutant, check
 
 ActivationPoint = collections.namedtuple("ActivationPoint", ["sequence", "expectation", "prediction", "part", "layer", "index", "point"])
 MatchPoint = collections.namedtuple("MatchPoint", ["distance", "word", "index", "prediction", "expectation"])
+MINIMUM_OCCURRENCE_COUNT = 2
 
 
 def create_sa(task_form, corpus_stream_fn, aargs):
@@ -195,7 +196,7 @@ def create_lm(task_form, corpus_stream_fn, aargs):
         for word, counts in word_pos_counts.items():
             summed = sum(counts.values())
 
-            if summed > 1:
+            if summed > MINIMUM_OCCURRENCE_COUNT:
                 word_pos_counts2[word] = counts
                 total += summed
 

@@ -238,6 +238,7 @@ def stream_input_text(input_files, form):
                                 word, tag = item
 
                                 if tag in POS_MAP:
+                                    word = word if tag != "CD" else nlp.NUMBER
                                     pos = POS_MAP[tag]
                                     sequence += [(word, pos)]
                                 elif tag not in BAD_TAGS:
@@ -257,7 +258,7 @@ def stream_input_text(input_files, form):
                                 tag = pair[0]
 
                                 if tag in POS_MAP:
-                                    word = pair[1].lower()
+                                    word = pair[1].lower() if tag != "CD" else nlp.NUMBER
                                     pos = POS_MAP[tag]
                                     sequence += [(word, pos)]
                                 elif tag not in BAD_TAGS:
