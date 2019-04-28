@@ -127,7 +127,7 @@ def main(argv):
     ap.add_argument("--tag", default=False, action="store_true")
     ap.add_argument("--headless", default=False, action="store_true")
     ap.add_argument("--skip-dr-test", default=False, action="store_true")
-    ap.add_argument("--skip-sem-test", default=False, action="store_true")
+    ap.add_argument("--skip-pse-test", default=False, action="store_true")
     ap.add_argument("task", help="Either 'sa' or 'lm'.")
     ap.add_argument("form", help="How the language data should be interpreted:\n" \
                                  "raw: the text is raw (must still be run through a tokenizer)." \

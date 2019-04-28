@@ -97,6 +97,7 @@ def create_sa(task_form, corpus_stream_fn, aargs):
     #print(printer(validation_xys))
     #print(printer(test_xys))
     logging.debug("data sets (train, validation, test): %d, %d, %d" % (len(train_xys), len(validation_xys), len(test_xys)))
+    logging.debug("total pairs (t, v, t): %d, %d, %d" % (sum([len(xy[0]) for xy in train_xys]), sum([len(xy[0]) for xy in validation_xys]), sum([len(xy[0]) for xy in test_xys])))
     words = mlbase.Labels(words.union(set([mlbase.BLANK])), unknown=nlp.UNKNOWN)
     #print(words)
     output_labels = mlbase.Labels(sentiments)
@@ -218,6 +219,7 @@ def create_lm(task_form, corpus_stream_fn, aargs):
     #print(printer(validation_xys))
     #print(printer(test_xys))
     logging.debug("data sets (train, validation, test): %d, %d, %d" % (len(train_xys), len(validation_xys), len(test_xys)))
+    logging.debug("total pairs (t, v, t): %d, %d, %d" % (sum([len(xy) for xy in train_xys]), sum([len(xy) for xy in validation_xys]), sum([len(xy) for xy in test_xys])))
     #print(words)
     word_labels = mlbase.Labels(words.union(set([mlbase.BLANK])), unknown=nlp.UNKNOWN)
     return word_labels, NeuralNetwork(task_form, word_labels, None, pos_tags, pos_mapping, xy_sequence(train_xys), xy_sequence(validation_xys), xy_sequence(test_xys), lambda item: -item[1], aargs)
@@ -386,7 +388,7 @@ class NeuralNetwork:
         self.save_dir = aargs.save_dir
         self.headless = aargs.headless
         self.skip_dr_test = aargs.skip_dr_test
-        self.skip_sem_test = aargs.skip_sem_test
+        self.skip_pse_test = aargs.skip_pse_test
         self.setup_complete = False
         self.embedding_padding = tuple([0] * max(0, NeuralNetwork.HIDDEN_WIDTH - NeuralNetwork.EMBEDDING_WIDTH))
         self.hidden_padding = tuple([0] * max(0, NeuralNetwork.EMBEDDING_WIDTH - NeuralNetwork.HIDDEN_WIDTH))
@@ -402,14 +404,11 @@ class NeuralNetwork:
 
     def _setup(self):
         self._train_rnn()
+        # Sets setup_complete
+        self._train_features()
 
-        if not self.headless:
-            #self._generate_activation_data()
-            # Sets setup_complete
-            self._train_features()
-
-            if not self.skip_dr_test or not self.skip_sem_test:
-                self._test_features()
+        #if not self.skip_dr_test or not self.skip_sem_test:
+        #    self._test_features()
 
         user_log.info("Setup NeuralNetwork")
 
@@ -546,59 +545,72 @@ class NeuralNetwork:
         predictor_dir = os.path.join(self.save_dir, "predictor")
         gaussian_buckets_path = os.path.join(self.save_dir, "gaussian-buckets")
         fixed_buckets_path = os.path.join(self.save_dir, "fixed-buckets")
-        predictor_xys = None
+        predictor_train_xys = None
+        predictor_test_xys = None
 
         if os.path.exists(gaussian_buckets_path):
             logging.debug("Loading existing reduction buckets.")
             self.gaussian_buckets = {item[0]: item[1] for item in pickler.load(gaussian_buckets_path)}
             self.fixed_buckets = {item[0]: item[1] for item in pickler.load(fixed_buckets_path)}
         else:
-            predictor_xys = self._get_predictor_data()
-            self.gaussian_buckets, self.fixed_buckets = self._train_gaussian_buckets(predictor_xys)
-            pickler.dump([item for item in self.gaussian_buckets.items()], gaussian_buckets_path)
-            pickler.dump([item for item in self.fixed_buckets.items()], fixed_buckets_path)
+            predictor_train_xys, predictor_test_xys = self._get_predictor_data()
+            self._train_gaussian_buckets(predictor_train_xys, predictor_test_xys)
 
         # Technically not complete yet, but with the buckets setup an the predictor instantiated we can start answering queries.
         self.setup_complete = True
 
-        if os.path.exists(predictor_dir):
-            logging.debug("Loading existing predictor parameters.")
-            self.predictor.load(predictor_dir)
-        else:
-            if predictor_xys is None:
-                predictor_xys = self._get_predictor_data()
+        if not self.skip_pse_test:
+            if os.path.exists(predictor_dir):
+                logging.debug("Loading existing predictor parameters.")
+                self.predictor.load(predictor_dir)
+            else:
+                if predictor_train_xys is None:
+                    predictor_train_xys, predictor_test_xys = self._get_predictor_data()
 
-            self._train_predictor(predictor_xys)
-            self.predictor.save(predictor_dir)
+                self._train_predictor(predictor_train_xys, predictor_test_xys)
+                self.predictor.save(predictor_dir)
 
-        del predictor_xys
+        del predictor_train_xys
+        del predictor_test_xys
         del self.train_xys
 
-    def _train_predictor(self, predictor_xys):
+    def _train_predictor(self, predictor_train_xys, predictor_test_xys):
         logging.debug("Training predictor parameters.")
         training_parameters = mlbase.TrainingParameters() \
             .epochs(NeuralNetwork.PREDICTOR_EPOCHS) \
             .batch(32)
-        loss = self.predictor.train(predictor_xys, training_parameters)
-        logging.debug("train predictor %s" % loss)
+        loss = self.predictor.train(predictor_train_xys, training_parameters)
+        accuracy = self.predictor.test(predictor_test_xys)
+        logging.debug("train predictor %s, %s" % (loss, accuracy))
 
-    def _train_gaussian_buckets(self, predictor_xys):
+    def _train_gaussian_buckets(self, predictor_train_xys, predictor_test_xys):
         logging.debug("Training reduction buckets.")
-        data = {}
+        train_data = {}
 
-        for xy in predictor_xys:
+        for xy in predictor_train_xys:
             part, layer, point = xy.x
             key = self.encode_key(part, layer)
 
-            if key not in data:
-                data[key] = []
+            if key not in train_data:
+                train_data[key] = []
 
-            data[key] += [point]
+            train_data[key] += [point]
+
+        test_data = {}
+
+        for xy in predictor_test_xys:
+            part, layer, point = xy.x
+            key = self.encode_key(part, layer)
+
+            if key not in test_data:
+                test_data[key] = []
+
+            test_data[key] += [point]
 
         gaussian_buckets = {}
         fixed_buckets = {}
 
-        for key, points in data.items():
+        for key, points in train_data.items():
             if self.decode_key(key)[0] == "embedding":
                 width = NeuralNetwork.EMBEDDING_WIDTH
                 reduction = NeuralNetwork.EMBEDDING_REDUCTION
@@ -634,6 +646,52 @@ class NeuralNetwork:
                 if len(fixed_group) == fixed_size:
                     fixed_buckets[key] += [fixed_group]
                     fixed_group = []
+
+        self.gaussian_buckets = gaussian_buckets
+        self.fixed_buckets = fixed_buckets
+        gaussian_buckets_path = os.path.join(self.save_dir, "gaussian-buckets")
+        fixed_buckets_path = os.path.join(self.save_dir, "fixed-buckets")
+        pickler.dump([item for item in self.gaussian_buckets.items()], gaussian_buckets_path)
+        pickler.dump([item for item in self.fixed_buckets.items()], fixed_buckets_path)
+        dr_errors = {}
+        fixed_errors = {}
+        count = None
+
+        for key, points in test_data.items():
+            if count is None:
+                count = len(points)
+
+            for point in points:
+                # Learned buckets
+                _, errors = self.gaussian_dimensionality_reduce({key: point}, True)
+
+                for key, error in errors.items():
+                    if key not in dr_errors:
+                        dr_errors[key] = 0.0
+
+                    dr_errors[key] += error
+
+                # Fixed buckets
+                _, errors = self.fixed_dimensionality_reduce({key: point}, True)
+
+                for key, error in errors.items():
+                    if key not in fixed_errors:
+                        fixed_errors[key] = 0.0
+
+                    fixed_errors[key] += error
+
+        with open(os.path.join(self.save_dir, "dr-analysis.csv"), "w") as fh:
+            logging.debug("Dimensionality reduction test counts: %d." % count)
+            writer = csv_writer(fh)
+            writer.writerow(["technique", "key", "sum of squared error", "mean squared error", "mse normalized"])
+
+            for key, error in dr_errors.items():
+                dimensions = NeuralNetwork.EMBEDDING_WIDTH if self.decode_key(key)[0] == "embedding" else NeuralNetwork.HIDDEN_WIDTH
+                writer.writerow(["dr", key, "%f" % error, "%f" % (error / count), "%f" % (error / (count * dimensions))])
+
+            for key, error in fixed_errors.items():
+                dimensions = NeuralNetwork.EMBEDDING_WIDTH if self.decode_key(key)[0] == "embedding" else NeuralNetwork.HIDDEN_WIDTH
+                writer.writerow(["fixed", key, "%f" % error, "%f" % (error / count), "%f" % (error / (count * dimensions))])
 
         return gaussian_buckets, fixed_buckets
 
@@ -743,45 +801,56 @@ class NeuralNetwork:
             # This is a sentiment analysis sa task.
             prediction_fn = lambda y, i: y
 
-        predictor_xys = []
-        predictor_xys_path = os.path.join(self.save_dir, "predictor-xys")
+        predictor_train_xys = []
+        predictor_train_xys_path = os.path.join(self.save_dir, "predictor-xys.train")
+        predictor_test_xys = []
+        predictor_test_xys_path = os.path.join(self.save_dir, "predictor-xys.test")
 
-        if os.path.exists(predictor_xys_path):
+        if os.path.exists(predictor_test_xys_path):
             logging.debug("Loading existing predictor data.")
-            predictor_xys = [xy for xy in pickler.load(predictor_xys_path)]
+            predictor_train_xys = [xy for xy in pickler.load(predictor_train_xys_path)]
+            predictor_test_xys = [xy for xy in pickler.load(predictor_test_xys_path)]
         else:
             logging.debug("Producing predictor data.")
-            # These are already shuffled.
-            #      vvvvvvvvvvvvvv
-            data = self.train_xys[:int(len(self.train_xys) * NeuralNetwork.PREDICTOR_SAMPLE_RATE)]
-            data_quarter = max(1, int(len(data) / 4.0))
+            predictor_train_xys = self._derive_predictor_data(self.train_xys, prediction_fn)
+            pickler.dump(predictor_train_xys, predictor_train_xys_path)
+            predictor_test_xys = self._derive_predictor_data(self.test_xys, prediction_fn)
+            pickler.dump(predictor_test_xys, predictor_test_xys_path)
 
-            for j, xy in enumerate(data):
-                if j % data_quarter == 0 or j + 1 == len(data):
-                    logging.debug("%d%% through.." % int((j + 1) * 100 / len(data)))
+        logging.debug("Predictor data: %d, %d." % (len(predictor_train_xys), len(predictor_test_xys)))
+        return predictor_train_xys, predictor_test_xys
 
-                stepwise_lstm = self.lstm.stepwise(handle_unknown=True)
+    def _derive_predictor_data(self, xys, prediction_fn):
+        data = xys[:int(len(xys) * NeuralNetwork.PREDICTOR_SAMPLE_RATE)]
+        data_quarter = max(1, int(len(data) / 4.0))
+        predictor_xys = []
+        instances = 0
 
-                for i, word_pos in enumerate(xy.x):
-                    # Set the prediction to that which the lstm has been trained against, not the actual learned prediction (which will be fixed).
-                    # For example, consider the two training examples: "the little prince" -> "was" and "the little prince" -> "is".
-                    # We need predictor samples for both "was" and "is", but if we use the actual lstm prediction this will fixate on just one of these.
-                    prediction = prediction_fn(xy.y, i)
-                    result, instruments = stepwise_lstm.step(word_pos[0], NeuralNetwork.INSTRUMENTS)
-                    x = ("embedding", 0, tuple(instruments["embedding"]) + self.embedding_padding)
-                    train_xy = mlbase.Xy(x, prediction)
-                    predictor_xys += [train_xy]
+        for j, xy in enumerate(data):
+            if j % data_quarter == 0 or j + 1 == len(data):
+                logging.debug("%d%% through.." % int((j + 1) * 100 / len(data)))
 
-                    for part in NeuralNetwork.LSTM_PARTS:
-                        for layer in range(NeuralNetwork.LAYERS):
-                            point = tuple(instruments[part][layer]) + self.hidden_padding
-                            x = (part, layer, point)
-                            train_xy = mlbase.Xy(x, prediction)
-                            predictor_xys += [train_xy]
+            stepwise_lstm = self.lstm.stepwise(handle_unknown=True)
 
-            pickler.dump(predictor_xys, predictor_xys_path)
+            for i, word_pos in enumerate(xy.x):
+                instances += 1
+                # Set the prediction to that which the lstm has been trained against, not the actual learned prediction (which will be fixed).
+                # For example, consider the two training examples: "the little prince" -> "was" and "the little prince" -> "is".
+                # We need predictor samples for both "was" and "is", but if we use the actual lstm prediction this will fixate on just one of these.
+                prediction = prediction_fn(xy.y, i)
+                result, instruments = stepwise_lstm.step(word_pos[0], NeuralNetwork.INSTRUMENTS)
+                x = ("embedding", 0, tuple(instruments["embedding"]) + self.embedding_padding)
+                train_xy = mlbase.Xy(x, prediction)
+                predictor_xys += [train_xy]
 
-        logging.debug("Predictor data: %d." % len(predictor_xys))
+                for part in NeuralNetwork.LSTM_PARTS:
+                    for layer in range(NeuralNetwork.LAYERS):
+                        point = tuple(instruments[part][layer]) + self.hidden_padding
+                        x = (part, layer, point)
+                        train_xy = mlbase.Xy(x, prediction)
+                        predictor_xys += [train_xy]
+
+        logging.debug("derived instances: %d" % instances)
         return predictor_xys
 
     def _generate_activation_data(self):
