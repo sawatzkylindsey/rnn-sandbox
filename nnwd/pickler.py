@@ -1,5 +1,5 @@
 
-import glob
+import logging
 import os
 import pickle
 import queue
@@ -23,10 +23,13 @@ def dump(data, dir_path):
 
     if isinstance(data, queue.Queue):
         thread = threading.Thread(target=_dump_stream, args=[data, dir_path])
-        thread.daemon = True
+        # Non-daemon threads will keep the program running until they finish (as per documentation).
+        thread.daemon = False
         thread.start()
+        return thread
     else:
         _dump(data, dir_path)
+        return None
 
 
 def _dump_stream(data, dir_path):
@@ -34,6 +37,7 @@ def _dump_stream(data, dir_path):
     batch = []
     batch_size = None
     i = 0
+    try_size = 10
 
     while True:
         item = data.get()
@@ -44,12 +48,17 @@ def _dump_stream(data, dir_path):
             # If we're still building out the sample.
             if batch_size is None:
                 # Only try to discover the batch_size every so often.
-                if len(batch) % 10 == 0:
+                if len(batch) % try_size == 0:
                     average = _average_size(batch)
                     sample_size = average * len(batch)
 
                     if sample_size > STREAM_TARGET_FILE_SIZE:
                         batch_size = max(1, int(STREAM_TARGET_FILE_SIZE / average))
+
+                if len(batch) > 2 * try_size:
+                    # Notice we don't need to worry about this growing too large, because the next check upper bounds the batch size.
+                    try_size = try_size * 2
+
                 if batch_size is None and len(batch) == STREAM_MAX_BATCH:
                     # The batch is plenty large enough - just set it here.
                     batch_size = STREAM_MAX_BATCH
@@ -66,6 +75,7 @@ def _dump_stream(data, dir_path):
                 bytes_out = pickle.dumps(batch)
                 _write_bytes(bytes_out, dir_path, i)
 
+            logging.debug("Completed pickling stream for '%s'." % dir_path)
             break
 
 
@@ -88,6 +98,8 @@ def _dump(data, dir_path):
             _write_bytes(bytes_out, dir_path, i)
     else:
         _write_bytes(pickle.dumps([]), dir_path, 0)
+
+    logging.debug("Completed pickling for '%s'." % dir_path)
 
 
 def _average_size(sample):
@@ -116,7 +128,7 @@ def _write_bytes(bytes_out, dir_path, index):
             bytes_out = bytes_out[MAX_BYTES:]
 
 
-def load(dir_path, allow_not_found=False):
+def load(dir_path, allow_not_found=False, converter=None):
     try:
         sub_files = os.listdir(dir_path)
     except FileNotFoundError as e:
@@ -136,5 +148,11 @@ def load(dir_path, allow_not_found=False):
                 bytes_in += fh.read(MAX_BYTES)
 
             for item in pickle.loads(bytes_in):
-                yield item
+                if converter is None:
+                    yield item
+                else:
+                    result = converter(item)
+
+                    if result is not None:
+                        yield result
 
