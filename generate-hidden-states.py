@@ -28,17 +28,25 @@ hidden_padding = tuple([0] * max(0, NeuralNetwork.EMBEDDING_WIDTH - NeuralNetwor
 def main(argv):
     ap = ArgumentParser(prog="generate-hidden-states")
     ap.add_argument("--verbose", "-v", default=False, action="store_true", help="Turn on verbose logging.")
-    ap.add_argument("-s", "--sample-rate", type=float, default=0.1)
+    ap.add_argument("-s", "--sample-rates", type=float, default=0.1, nargs=2, help="train then test sampling rates.")
     ap.add_argument("-d", "--dry-run", default=False, action="store_true")
     ap.add_argument("data_dir")
     ap.add_argument("rnn_dir")
     ap.add_argument("hs_dir")
     aargs = ap.parse_args(argv)
     setup_logging(".%s.log" % os.path.splitext(os.path.basename(__file__))[0], aargs.verbose, False, True, True)
+    logging.debug(aargs)
+
+    if isinstance(aargs.sample_rates, list):
+        sample_rate_train = aargs.sample_rates[0]
+        sample_rate_test = aargs.sample_rates[1]
+    else:
+        sample_rate_train = aargs.sample_rates
+        sample_rate_test = aargs.sample_rates
 
     if aargs.dry_run:
-        dry_run(data.stream_train(aargs.data_dir), aargs.sample_rate, is_train=True)
-        dry_run(data.stream_test(aargs.data_dir), aargs.sample_rate, is_train=False)
+        dry_run(data.stream_train(aargs.data_dir), sample_rate_train, is_train=True)
+        dry_run(data.stream_test(aargs.data_dir), sample_rate_test, is_train=False)
         return 0
 
     description = data.get_description(aargs.data_dir)
@@ -53,8 +61,8 @@ def main(argv):
         lstm = rnn.RnnSa(NeuralNetwork.LAYERS, NeuralNetwork.HIDDEN_WIDTH, NeuralNetwork.EMBEDDING_WIDTH, words, outputs)
 
     lstm.load(os.path.join(aargs.rnn_dir, parameters.LSTM))
-    threads1 = elicit_hidden_states(lstm, data.stream_train(aargs.data_dir), annotation_fn, aargs.sample_rate, aargs.hs_dir, is_train=True)
-    threads2 = elicit_hidden_states(lstm, data.stream_test(aargs.data_dir), annotation_fn, aargs.sample_rate, aargs.hs_dir, is_train=False)
+    threads1 = elicit_hidden_states(lstm, data.stream_train(aargs.data_dir), annotation_fn, sample_rate_train, aargs.hs_dir, is_train=True)
+    threads2 = elicit_hidden_states(lstm, data.stream_test(aargs.data_dir), annotation_fn, sample_rate_test, aargs.hs_dir, is_train=False)
 
     # Technically, we don't need to wait on these threads (they will keep the program alive until complete).
     # But this way it is more clear what is going on.
@@ -105,7 +113,7 @@ def elicit_hidden_states(lstm, xys, annotation_fn, sample_rate, hs_dir, is_train
         value.put(None)
 
     prefix = "Train" if is_train else "Test"
-    user_log.info("%s: %d sentences sampled down to %d, eliciting %d hidden states (per part-layer)." % (prefix, total, sampled, instances))
+    user_log.info("%s %.4f: %d sentences sampled down to %d, eliciting %d hidden states (per part-layer)." % (prefix, sample_rate, total, sampled, instances))
     return threads
 
 
@@ -122,7 +130,7 @@ def dry_run(xys, sample_rate, is_train):
             instances += len(xy.x)
 
     prefix = "Train" if is_train else "Test"
-    user_log.info("(dry run) %s: %d sentences sampled down to %d, eliciting %d hidden states (per part-layer)." % (prefix, total, sampled, instances))
+    user_log.info("(dry run) %s %.4f: %d sentences sampled down to %d, eliciting %d hidden states (per part-layer)." % (prefix, sample_rate, total, sampled, instances))
 
 
 def start_queue(hidden_states, key, hs_dir, is_train):
