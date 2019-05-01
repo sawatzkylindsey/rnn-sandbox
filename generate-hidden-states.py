@@ -29,11 +29,17 @@ def main(argv):
     ap = ArgumentParser(prog="generate-hidden-states")
     ap.add_argument("--verbose", "-v", default=False, action="store_true", help="Turn on verbose logging.")
     ap.add_argument("-s", "--sample-rate", type=float, default=0.1)
+    ap.add_argument("-d", "--dry-run", default=False, action="store_true")
     ap.add_argument("data_dir")
     ap.add_argument("rnn_dir")
     ap.add_argument("hs_dir")
     aargs = ap.parse_args(argv)
     setup_logging(".%s.log" % os.path.splitext(os.path.basename(__file__))[0], aargs.verbose, False, True, True)
+
+    if aargs.dry_run:
+        dry_run(data.stream_train(aargs.data_dir), aargs.sample_rate, is_train=True)
+        dry_run(data.stream_test(aargs.data_dir), aargs.sample_rate, is_train=False)
+        return 0
 
     description = data.get_description(aargs.data_dir)
     words = data.get_words(aargs.data_dir)
@@ -77,10 +83,10 @@ def elicit_hidden_states(lstm, xys, annotation_fn, sample_rate, hs_dir, is_train
 
         if random.random() <= sample_rate:
             sampled += 1
+            instances += len(xy.x)
             stepwise_lstm = lstm.stepwise(handle_unknown=True)
 
             for i, word_pos in enumerate(xy.x):
-                instances += 1
                 # Set the annotation to that which the lstm has been trained against, not the actual learned annotation (which will be fixed).
                 # For example, consider the two training examples: "the little prince" -> "was" and "the little prince" -> "is".
                 # We need predictor samples for both "was" and "is", but if we use the actual lstm annotation this will fixate on just one of these.
@@ -101,6 +107,22 @@ def elicit_hidden_states(lstm, xys, annotation_fn, sample_rate, hs_dir, is_train
     prefix = "Train" if is_train else "Test"
     user_log.info("%s: %d sentences sampled down to %d, eliciting %d hidden states (per part-layer)." % (prefix, total, sampled, instances))
     return threads
+
+
+def dry_run(xys, sample_rate, is_train):
+    total = 0
+    sampled = 0
+    instances = 0
+
+    for j, xy in enumerate(xys):
+        total += 1
+
+        if random.random() <= sample_rate:
+            sampled += 1
+            instances += len(xy.x)
+
+    prefix = "Train" if is_train else "Test"
+    user_log.info("(dry run) %s: %d sentences sampled down to %d, eliciting %d hidden states (per part-layer)." % (prefix, total, sampled, instances))
 
 
 def start_queue(hidden_states, key, hs_dir, is_train):
