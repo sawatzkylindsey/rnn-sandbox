@@ -16,16 +16,16 @@ def as_point(array, is_embedding=False):
     return tuple(array) + (EMBEDDING_PADDING if is_embedding else HIDDEN_PADDING)
 
 
-def set_buckets(reduction_dir, reduction, key, learned_buckets, fixed_buckets):
-    learned_path = os.path.join(reduction_dir, os.path.join(LEARNED_BUCKETS + "." + str(reduction), key))
-    fixed_path = os.path.join(reduction_dir, os.path.join(FIXED_BUCKETS + "." + str(reduction), key))
+def set_buckets(reduction_dir, key, learned_buckets, fixed_buckets):
+    learned_path = os.path.join(reduction_dir, os.path.join(LEARNED_BUCKETS, key))
+    fixed_path = os.path.join(reduction_dir, os.path.join(FIXED_BUCKETS, key))
     pickler.dump([item for item in learned_buckets.items()], learned_path)
     pickler.dump([item for item in fixed_buckets.items()], fixed_path)
 
 
-def get_buckets(reduction_dir, reduction, key):
-    learned_path = os.path.join(reduction_dir, os.path.join(LEARNED_BUCKETS + "." + str(reduction), key))
-    fixed_path = os.path.join(reduction_dir, os.path.join(FIXED_BUCKETS + "." + str(reduction), key))
+def get_buckets(reduction_dir, key):
+    learned_path = os.path.join(reduction_dir, os.path.join(LEARNED_BUCKETS, key))
+    fixed_path = os.path.join(reduction_dir, os.path.join(FIXED_BUCKETS, key))
     learned = {item[0]: item[1] for item in pickler.load(learned_path)}
     fixed = {item[0]: item[1] for item in pickler.load(fixed_path)}
     return learned, fixed

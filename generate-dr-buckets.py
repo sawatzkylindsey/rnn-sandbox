@@ -27,9 +27,8 @@ from pytils.log import setup_logging, user_log
 
 
 def main(argv):
-    ap = ArgumentParser(prog="generate-hidden-states")
+    ap = ArgumentParser(prog="generate-dr-buckets")
     ap.add_argument("--verbose", "-v", default=False, action="store_true", help="Turn on verbose logging.")
-    #ap.add_argument("-d", "--dry-run", default=False, action="store_true")
     ap.add_argument("states_dir")
     ap.add_argument("reduction_dir")
     ap.add_argument("target", type=int)
@@ -44,7 +43,7 @@ def main(argv):
         part_learned_mse[key] = learned_mse
         part_fixed_mse[key] = fixed_mse
 
-    with open(os.path.join(aargs.reduction_dir, "dr-analysis-%d.csv" % aargs.target), "w") as fh:
+    with open(os.path.join(aargs.reduction_dir, "analysis.csv"), "w") as fh:
         writer = csv_writer(fh)
         writer.writerow(["technique", "key", "mse"])
 
@@ -62,7 +61,7 @@ def generate_buckets(states_dir, key, reduction_dir, target):
     train_points, test_points = states.get_points(states_dir, key)
     width = view.part_width(key)
     learned_buckets, fixed_buckets = calculate_buckets(train_points, width, target)
-    reduction.set_buckets(reduction_dir, target, key, learned_buckets, fixed_buckets)
+    reduction.set_buckets(reduction_dir, key, learned_buckets, fixed_buckets)
     learned_mse = 0.0
     fixed_mse = 0.0
     count = 0
