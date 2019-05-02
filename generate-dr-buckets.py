@@ -75,7 +75,7 @@ def generate_buckets(states_dir, key, reduction_dir, target):
 
     learned_mse /= count
     fixed_mse /= count
-    logging.debug("'%s' with mse (learned, fixed): %.6f, %.6f" % (key, learned_mse, fixed_mse))
+    logging.debug("tested %d instances of '%s' resulting in mse (learned, fixed): %.6f, %.6f" % (count, key, learned_mse, fixed_mse))
     return learned_mse, fixed_mse
 
 
@@ -84,9 +84,10 @@ def calculate_buckets(points, width, target):
     fixed_buckets = {i: [] for i in range(target)}
     fixed_size = math.ceil(float(width) / target)
 
-    X = np.array([p for p in points]).transpose()
+    X = np.array([p for p in points])
+    logging.debug("learning gaussian mixture model from %d points (%d wide)." % X.shape)
     gm = GaussianMixture(target)
-    dimension_grouping = gm.fit_predict(X)
+    dimension_grouping = gm.fit_predict(X.transpose())
     fixed_group = 0
 
     for dimension, learned_group in enumerate(dimension_grouping):
