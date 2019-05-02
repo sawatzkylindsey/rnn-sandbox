@@ -12,17 +12,12 @@ import sys
 
 from nnwd import data
 from nnwd.domain import NeuralNetwork
+from nnwd import states
 from nnwd import parameters
 from nnwd import pickler
 from nnwd import rnn
 
 from pytils.log import setup_logging, user_log
-
-
-#part_keys = {"%s-%d" % (part, layer): [] for layer in range(NeuralNetwork.LAYERS) for part in NeuralNetwork.LSTM_PARTS}
-#part_keys["embedding-0"] = []
-embedding_padding = tuple([0] * max(0, NeuralNetwork.HIDDEN_WIDTH - NeuralNetwork.EMBEDDING_WIDTH))
-hidden_padding = tuple([0] * max(0, NeuralNetwork.EMBEDDING_WIDTH - NeuralNetwork.HIDDEN_WIDTH))
 
 
 def main(argv):
@@ -75,12 +70,12 @@ def main(argv):
 def elicit_hidden_states(lstm, xys, annotation_fn, sample_rate, hs_dir, is_train):
     hidden_states = {}
     threads = []
-    threads.append(start_queue(hidden_states, "embedding-0", hs_dir, is_train))
+    threads.append(start_queue(hidden_states, hs_dir, is_train, "embedding-0"))
 
     for part in NeuralNetwork.LSTM_PARTS:
         for layer in range(NeuralNetwork.LAYERS):
             key = "%s-%d" % (part, layer)
-            threads.append(start_queue(hidden_states, key, hs_dir, is_train))
+            threads.append(start_queue(hidden_states, hs_dir, is_train, key))
 
     total = 0
     sampled = 0
@@ -100,13 +95,11 @@ def elicit_hidden_states(lstm, xys, annotation_fn, sample_rate, hs_dir, is_train
                 # We need predictor samples for both "was" and "is", but if we use the actual lstm annotation this will fixate on just one of these.
                 annotation = annotation_fn(xy.y, i)
                 result, instruments = stepwise_lstm.step(word_pos[0], NeuralNetwork.INSTRUMENTS)
-                x = (tuple(instruments["embedding"]) + embedding_padding)
-                hidden_states["embedding-0"].put((x, annotation))
+                hidden_states["embedding-0"].put((states.as_point(instruments["embedding"], True), annotation))
 
                 for part in NeuralNetwork.LSTM_PARTS:
                     for layer in range(NeuralNetwork.LAYERS):
-                        point = tuple(instruments[part][layer]) + hidden_padding
-                        hidden_states["%s-%d" % (part, layer)].put((point, annotation))
+                        hidden_states["%s-%d" % (part, layer)].put((states.as_point(instruments[part][layer]), annotation))
 
     # Mark the queue as finished.
     for value in hidden_states.values():
@@ -133,10 +126,10 @@ def dry_run(xys, sample_rate, is_train):
     user_log.info("(dry run) %s %.4f: %d sentences sampled down to %d, eliciting %d hidden states (per part-layer)." % (prefix, sample_rate, total, sampled, instances))
 
 
-def start_queue(hidden_states, key, hs_dir, is_train):
+def start_queue(hidden_states, hs_dir, is_train, key):
     states = queue.Queue()
     hidden_states[key] = states
-    return pickler.dump(states, os.path.join(hs_dir, (parameters.STATES_TRAIN if is_train else parameters.STATES_TEST) + "." + key))
+    return states.set_states(hs_dir, is_train, key, states)
 
 
 if __name__ == "__main__":

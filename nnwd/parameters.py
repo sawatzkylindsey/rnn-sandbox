@@ -9,8 +9,4 @@ DESCRIPTION = "description.json"
 # Rnn dir pieces
 LSTM = "lstm"
 
-# Hidden states dir pieces
-STATES_TRAIN = "hidden-states-xys.train"
-STATES_TEST = "hidden-states-xys.test"
-
 
