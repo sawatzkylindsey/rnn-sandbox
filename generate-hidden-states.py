@@ -27,7 +27,7 @@ def main(argv):
     ap.add_argument("-d", "--dry-run", default=False, action="store_true")
     ap.add_argument("data_dir")
     ap.add_argument("rnn_dir")
-    ap.add_argument("hs_dir")
+    ap.add_argument("states_dir")
     aargs = ap.parse_args(argv)
     setup_logging(".%s.log" % os.path.splitext(os.path.basename(__file__))[0], aargs.verbose, False, True, True)
     logging.debug(aargs)
@@ -56,8 +56,8 @@ def main(argv):
         lstm = rnn.RnnSa(NeuralNetwork.LAYERS, NeuralNetwork.HIDDEN_WIDTH, NeuralNetwork.EMBEDDING_WIDTH, words, outputs)
 
     lstm.load(os.path.join(aargs.rnn_dir, parameters.LSTM))
-    threads1 = elicit_hidden_states(lstm, data.stream_train(aargs.data_dir), annotation_fn, sample_rate_train, aargs.hs_dir, is_train=True)
-    threads2 = elicit_hidden_states(lstm, data.stream_test(aargs.data_dir), annotation_fn, sample_rate_test, aargs.hs_dir, is_train=False)
+    threads1 = elicit_hidden_states(lstm, data.stream_train(aargs.data_dir), annotation_fn, sample_rate_train, aargs.states_dir, is_train=True)
+    threads2 = elicit_hidden_states(lstm, data.stream_test(aargs.data_dir), annotation_fn, sample_rate_test, aargs.states_dir, is_train=False)
 
     # Technically, we don't need to wait on these threads (they will keep the program alive until complete).
     # But this way it is more clear what is going on.
@@ -67,15 +67,15 @@ def main(argv):
     return 0
 
 
-def elicit_hidden_states(lstm, xys, annotation_fn, sample_rate, hs_dir, is_train):
+def elicit_hidden_states(lstm, xys, annotation_fn, sample_rate, states_dir, is_train):
     hidden_states = {}
     threads = []
-    threads.append(start_queue(hidden_states, hs_dir, is_train, "embedding-0"))
+    threads.append(start_queue(hidden_states, states_dir, is_train, "embedding-0"))
 
     for part in NeuralNetwork.LSTM_PARTS:
         for layer in range(NeuralNetwork.LAYERS):
             key = "%s-%d" % (part, layer)
-            threads.append(start_queue(hidden_states, hs_dir, is_train, key))
+            threads.append(start_queue(hidden_states, states_dir, is_train, key))
 
     total = 0
     sampled = 0
@@ -126,10 +126,10 @@ def dry_run(xys, sample_rate, is_train):
     user_log.info("(dry run) %s %.4f: %d sentences sampled down to %d, eliciting %d hidden states (per part-layer)." % (prefix, sample_rate, total, sampled, instances))
 
 
-def start_queue(hidden_states, hs_dir, is_train, key):
-    states = queue.Queue()
-    hidden_states[key] = states
-    return states.set_states(hs_dir, is_train, key, states)
+def start_queue(hidden_states, states_dir, is_train, key):
+    states_queue = queue.Queue()
+    hidden_states[key] = states_queue
+    return states.set_states(states_dir, is_train, key, states_queue)
 
 
 if __name__ == "__main__":

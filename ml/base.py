@@ -65,12 +65,34 @@ class Xy:
 
 
 class Result:
-    def __init__(self, prediction, distribution):
-        self.prediction = prediction
-        self.distribution = distribution
+    def __init__(self, labels, array):
+        self.labels = labels
+        self.array = array
+        self._prediction = None
+        self._distribution = None
+        self._ranked_items = None
+
+    def prediction(self):
+        if self._prediction is None:
+            self._prediction = self.labels.vector_decode(self.array)
+
+        return self._prediction
+
+    def distribution(self):
+        if self._distribution is None:
+            self._distribution = self.labels.vector_decode_distribution(self.array)
+
+        return self._distribution
+
+    def rank_of(self, value, handle_unknown=False):
+        if self._ranked_items is None:
+            self._ranked_items = [item[0] for item in sorted(self.distribution().items(), key=lambda item: item[1], reverse=True)]
+
+        target = self.labels.decode(self.labels.encode(value, handle_unknown))
+        return self._ranked_items.index(target)
 
     def __repr__(self):
-        return "(prediction=%s, distribution=%s)" % (self.prediction, sorted(self.distribution.items()))
+        return "(.., prediction=%s)" % (self.prediction())
 
 
 class TrainingParameters:
