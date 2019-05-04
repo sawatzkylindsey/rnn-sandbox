@@ -45,13 +45,16 @@ def main(argv):
     ap.add_argument("--verbose", "-v", default=False, action="store_true", help="Turn on verbose logging.")
     #ap.add_argument("-d", "--dry-run", default=False, action="store_true")
     ap.add_argument("-e", "--epochs", default=10, type=int)
+    ap.add_argument("-l", "--layers", default=2, type=int)
+    ap.add_argument("-w", "--width", default=100, type=int)
     ap.add_argument("data_dir")
     ap.add_argument("states_dir")
     ap.add_argument("encoding_dir")
     aargs = ap.parse_args(argv)
     setup_logging(".%s.log" % os.path.splitext(os.path.basename(__file__))[0], aargs.verbose, False, True, True)
     logging.debug(aargs)
-    key_scores = generate_model(aargs.data_dir, aargs.states_dir, aargs.encoding_dir, aargs.epochs)
+    sem = encoding.model_for(aargs.data_dir, aargs.layers, aargs.width)
+    key_scores = generate_model(sem, aargs.states_dir, aargs.encoding_dir, aargs.epochs)
 
     with open(os.path.join(aargs.encoding_dir, "analysis.csv"), "w") as fh:
         writer = csv_writer(fh)
@@ -64,8 +67,7 @@ def main(argv):
     return 0
 
 
-def generate_model(data_dir, states_dir, encoding_dir, epochs):
-    sem = encoding.model_for(data_dir)
+def generate_model(sem, states_dir, encoding_dir, epochs):
     train_xys = []
 
     for key in view.part_keys():

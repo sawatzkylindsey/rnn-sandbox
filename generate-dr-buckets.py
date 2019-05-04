@@ -60,7 +60,7 @@ def generate_buckets(states_dir, key, reduction_dir, target):
     logging.debug("Calculating for '%s'." % key)
     train_points, test_points = states.get_points(states_dir, key)
     width = view.part_width(key)
-    learned_buckets, fixed_buckets = calculate_buckets(train_points, width, target)
+    learned_buckets, fixed_buckets = calculate_buckets(width, target, train_points)
     reduction.set_buckets(reduction_dir, key, learned_buckets, fixed_buckets)
     learned_mse = 0.0
     fixed_mse = 0.0
@@ -79,31 +79,43 @@ def generate_buckets(states_dir, key, reduction_dir, target):
     return learned_mse, fixed_mse
 
 
-def calculate_buckets(points, width, target):
-    learned_buckets = {i: [] for i in range(target)}
-    fixed_buckets = {i: [] for i in range(target)}
-    fixed_size = math.ceil(float(width) / target)
+def calculate_buckets(width, target, points):
+    fixed_buckets = calculate_fixed(width, target)
+    learned_buckets = calculate_learned(width, target, points)
+    logging.debug("Buckets:\n  %s\n  %s" % (adjutant.dict_as_str(learned_buckets), adjutant.dict_as_str(fixed_buckets)))
+    return learned_buckets, fixed_buckets
 
+
+def calculate_fixed(width, target):
+    buckets = {i: [] for i in range(target)}
+    size = math.ceil(float(width) / target)
+    group = 0
+
+    for dimension in range(width):
+        # If its the start of the transition to building out a new grouping of dimensions, and
+        # if its the case that the remaining dimensions can be reduced evenly into a bucket of size less than 1, then do so.
+        if len(buckets[group]) == 0 and size > 1 and group + ((width - dimension) / (size - 1)) == target:
+            size -= 1
+
+        buckets[group] += [dimension]
+
+        if len(buckets[group]) == size:
+            group += 1
+
+    return buckets
+
+
+def calculate_learned(width, target, points):
+    buckets = {i: [] for i in range(target)}
     X = np.array([p for p in points])
     logging.debug("learning gaussian mixture model from %d points (%d wide)." % X.shape)
     gm = GaussianMixture(target)
     dimension_grouping = gm.fit_predict(X.transpose())
-    fixed_group = 0
 
-    for dimension, learned_group in enumerate(dimension_grouping):
-        # If its the start of the transition to building out a new grouping of dimensions, and
-        # if its the case that the remaining dimensions can be reduced evenly into a bucket of size less than 1, then do so.
-        if len(fixed_buckets[fixed_group]) == 0 and fixed_size > 1 and len(fixed_buckets[fixed_group]) + ((width - dimension) / (fixed_size - 1)) == target:
-            fixed_size -= 1
+    for dimension, group in enumerate(dimension_grouping):
+        buckets[group] += [dimension]
 
-        learned_buckets[learned_group] += [dimension]
-        fixed_buckets[fixed_group] += [dimension]
-
-        if len(fixed_buckets[fixed_group]) == fixed_size:
-            fixed_group += 1
-
-    logging.debug("Buckets:\n  %s\n  %s" % (adjutant.dict_as_str(learned_buckets), adjutant.dict_as_str(fixed_buckets)))
-    return learned_buckets, fixed_buckets
+    return buckets
 
 
 if __name__ == "__main__":

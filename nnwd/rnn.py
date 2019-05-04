@@ -237,7 +237,7 @@ class Rnn:
             epoch_score = 0
             # Start at a different offset for every epoch to help avoid overfitting.
             offset = random.randint(0, min(training_parameters.batch(), len(self.training_xys)) - 1)
-            batch_count = 0
+            count = 0
             first = True
 
             while offset < len(self.training_xys):
@@ -250,7 +250,7 @@ class Rnn:
 
                 # To account for when offset is randomly assigned 0
                 if len(batch) > 0:
-                    batch_count += 1
+                    count += len(batch)
                     feed = self.get_training_feed(batch, training_parameters)
                     _, loss = self.session.run([self.updates, self.cost], feed_dict=feed)
                     #_, loss, logits, targets = self.session.run([self.updates, self.cost, self.logits, self.targets], feed_dict=feed)
@@ -272,7 +272,7 @@ class Rnn:
                         time_distributions = self.session.run(self.output_distributions, feed_dict=feed)
                         epoch_score += self.score(batch, feed, time_distributions, False, case_slot_length)
 
-            epoch_loss /= batch_count
+            epoch_loss /= count
             epoch_perplexity = math.exp(epoch_loss)
             epoch_score /= len(xy_sequences)
             losses.append(epoch_loss)
@@ -480,7 +480,7 @@ class RnnLm(Rnn):
         self.masked = tf.multiply(self.losses_reduced, tf.transpose(self.mask))
         self.masked2 = tf.reduce_sum(self.masked, 0)
         self.masked3 = tf.divide(self.masked2, tf.cast(self.input_lengths_p, tf.float32))
-        return tf.reduce_mean(self.masked3)
+        return tf.reduce_sum(self.masked3)
 
     def xcomputational_graph_cost(self):
         self.input_lengths_p = self.placeholder("input_lengths_p", [self.batch_dimension], tf.int32)

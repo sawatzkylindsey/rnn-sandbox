@@ -68,7 +68,7 @@ class Model:
         #    num_sampled=1,
         #    num_classes=len(self.output_labels)))
         loss_fn = tf.nn.sparse_softmax_cross_entropy_with_logits
-        self.cost = tf.reduce_mean(loss_fn(labels=tf.stop_gradient(self.output_p), logits=self.output_logit))
+        self.cost = tf.reduce_sum(loss_fn(labels=tf.stop_gradient(self.output_p), logits=self.output_logit))
         self.updates = tf.train.AdamOptimizer().minimize(self.cost)
 
         self.session = tf.Session()
@@ -100,8 +100,8 @@ class Model:
             epoch_loss = 0
             # Start at a different offset for every epoch to help avoid overfitting.
             offset = random.randint(0, min(training_parameters.batch(), len(shuffled_xys)) - 1)
-            batch_count = 0
             first = True
+            count = 0
 
             while offset < len(shuffled_xys):
                 if first:
@@ -113,7 +113,7 @@ class Model:
 
                 # To account for when offset is randomly assigned 0
                 if len(batch) > 0:
-                    batch_count += 1
+                    count += len(batch)
                     xs = [self.input_labels.vector_encode(xy.x) for xy in batch]
                     ys = [self.output_labels.encode(xy.y, True) for xy in batch]
                     feed = {
@@ -124,7 +124,7 @@ class Model:
                     offset += training_parameters.batch()
                     epoch_loss += training_loss
 
-            epoch_loss /= batch_count
+            epoch_loss /= count
             losses.append(epoch_loss)
             finished, reason = training_parameters.finished(epoch, losses)
 
