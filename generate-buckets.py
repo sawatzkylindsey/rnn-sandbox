@@ -27,7 +27,7 @@ from pytils.log import setup_logging, user_log
 
 
 def main(argv):
-    ap = ArgumentParser(prog="generate-dr-buckets")
+    ap = ArgumentParser(prog="generate-buckets")
     ap.add_argument("--verbose", "-v", default=False, action="store_true", help="Turn on verbose logging.")
     ap.add_argument("states_dir")
     ap.add_argument("reduction_dir")

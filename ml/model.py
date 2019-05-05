@@ -18,11 +18,57 @@ from pytils.log import user_log
 
 
 class Model:
-    def __init__(self, scope, hyper_parameters, input_labels, output_labels):
+    def __init__(self, scope, input_labels, output_labels):
         self.scope = scope
-        self.hyper = check.check_instance(hyper_parameters, HyperParameters)
         self.input_labels = input_labels
         self.output_labels = output_labels
+
+    def evaluate(self, x, handle_unknown=False):
+        raise NotImplementedError()
+
+    def _transform_x(self, x, handle_unknown):
+        if isinstance(x, list):
+            return [self.input_labels.vector_encode(i, handle_unknown) for i in x]
+        else:
+            return [self.input_labels.vector_encode(x, handle_unknown)]
+
+    def test(self, xys, debug=False, score_fns={"accuracy": scoring.accuracy}):
+        total_scores = {key: 0 for key in score_fns.keys()}
+        count = 0
+        case_slot_length = len(str(len(xys) if hasattr(xys, "__len__") else 1000000))
+        case_template = "{{Case {:%dd}}}" % case_slot_length
+
+        for case, xy in enumerate(xys):
+            count += 1
+            result = self.evaluate(xy.x)
+
+            if debug:
+                logging.debug("[%s] %s" % (self.scope, case_template.format(case)))
+
+            for key, fn in score_fns.items():
+                passed, score = fn(xy, result)
+                total_scores[key] += score
+
+                if debug:
+                    if passed:
+                        logging.debug("  Passed '%s' (%.4f)!\n  Full correctly predicted output: '%s'." % (key, score, result.prediction()))
+                    else:
+                        logging.debug("  Failed '%s' (%.4f)!\n  Expected: %s\n  Predicted: %s" % (key, score, str(xy.y), str(result.prediction())))
+
+            #if debug:
+            #    output_template = "[{:s}] {:s} probability distribution: {:s}"
+            #    logging.debug(output_template.format(self.scope, case_template.format(case), adjutant.dict_as_str(result.distribution(), False, True, 6)))
+
+        logging.info("Tested on %d instances." % count)
+        # We count (rather then using len()) in case the xys come from a stream.
+        #                          v
+        return {key: score / float(count) for key, score in total_scores.items()}
+
+
+class Ffnn(Model):
+    def __init__(self, scope, input_labels, output_labels, hyper_parameters):
+        super(Ffnn, self).__init__(scope, input_labels, output_labels)
+        self.hyper = check.check_instance(hyper_parameters, HyperParameters)
 
         batch_size_dimension = None
 
@@ -139,44 +185,8 @@ class Model:
         logging.debug("Training on %d instances finished due to %s (%s)." % (len(shuffled_xys), reason, losses))
         return epoch_loss
 
-    def test(self, xys, debug=False, score_fns={"accuracy": scoring.accuracy}):
-        total_scores = {key: 0 for key in score_fns.keys()}
-        count = 0
-        case_slot_length = len(str(len(xys) if hasattr(xys, "__len__") else 1000000))
-        case_template = "{{Case {:%dd}}}" % case_slot_length
-
-        for case, xy in enumerate(xys):
-            count += 1
-            result = self.evaluate(xy.x)
-
-            if debug:
-                logging.debug("[%s] %s" % (self.scope, case_template.format(case)))
-
-            for key, fn in score_fns.items():
-                passed, score = fn(xy, result)
-                total_scores[key] += score
-
-                if debug:
-                    if passed:
-                        logging.debug("  Passed '%s' (%.4f)!\n  Full correctly predicted output: '%s'." % (key, score, result.prediction()))
-                    else:
-                        logging.debug("  Failed '%s' (%.4f)!\n  Expected: %s\n  Predicted: %s" % (key, score, str(xy.y), str(result.prediction())))
-
-            #if debug:
-            #    output_template = "[{:s}] {:s} probability distribution: {:s}"
-            #    logging.debug(output_template.format(self.scope, case_template.format(case), adjutant.dict_as_str(result.distribution(), False, True, 6)))
-
-        logging.info("Tested on %d instances." % count)
-        # We count (rather then using len()) in case the xys come from a stream.
-        #                          v
-        return {key: score / float(count) for key, score in total_scores.items()}
-
     def evaluate(self, x, handle_unknown=False):
-        if isinstance(x, list):
-            xs = [self.input_labels.vector_encode(i, handle_unknown) for i in x]
-        else:
-            xs = [self.input_labels.vector_encode(x, handle_unknown)]
-
+        xs = self._transform_x(x, handle_unknown)
         feed = {
             self.input_p: xs,
         }
@@ -202,6 +212,22 @@ class Model:
         model_file = os.path.join(model_dir, "basename")
         saver = tf.train.Saver(tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=self.scope))
         saver.save(self.session, model_file)
+
+
+class CustomOutput(Model):
+    def __init__(self, scope, input_labels, output_labels, output_distribution):
+        super(FixedModel, self).__init__(scope, input_labels, output_labels)
+        check.check_pdist(output_distribution)
+        assert len(output_labels) == len(output_distribution), "%d != %d" % (len(output_labels), len(output_distribution))
+
+    def evaluate(self, x, handle_unknown=False):
+        # Don't need xs, but run through the transformation to check data anyways.
+        xs = self._transform_x(x, handle_unknown)
+
+        if isinstance(x, list):
+            return [mlbase.Result(self.output_labels, self.output_distribution) for i in range(len(x))]
+        else:
+            return mlbase.Result(self.output_labels, self.output_distribution)
 
 
 class HyperParameters:

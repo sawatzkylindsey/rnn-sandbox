@@ -4,7 +4,7 @@ import os
 
 from ml import base as mlbase
 from ml import nlp
-from ml import nn as ffnn
+from ml import model
 from nnwd import data
 from nnwd.domain import NeuralNetwork
 from nnwd import parameters
@@ -12,7 +12,7 @@ from nnwd import pickler
 from nnwd import view
 
 
-def model_for(data_dir, layers, width):
+def model_for(data_dir, model_fn):
     part_labels = mlbase.Labels(set(NeuralNetwork.INSTRUMENTS))
     layer_labels = mlbase.Labels(set(range(NeuralNetwork.LAYERS)))
     hidden_vector = mlbase.VectorField(max(NeuralNetwork.HIDDEN_WIDTH, NeuralNetwork.EMBEDDING_WIDTH))
@@ -24,10 +24,7 @@ def model_for(data_dir, layers, width):
     else:
         predictor_output = data.get_outputs(data_dir)
 
-    hyper_parameters = ffnn.HyperParameters() \
-        .layers(layers) \
-        .width(width)
-    return ffnn.Model("sem", hyper_parameters, predictor_input, predictor_output)
+    return model_fn("sem", predictor_input, predictor_output)
 
 
 def as_input(key, point):

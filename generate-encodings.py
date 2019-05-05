@@ -14,6 +14,7 @@ from sklearn.mixture import GaussianMixture
 import sys
 
 from ml import base as mlbase
+from ml import model
 from ml import scoring
 from nnwd import data
 from nnwd.domain import NeuralNetwork
@@ -53,21 +54,34 @@ def main(argv):
     aargs = ap.parse_args(argv)
     setup_logging(".%s.log" % os.path.splitext(os.path.basename(__file__))[0], aargs.verbose, False, True, True)
     logging.debug(aargs)
-    sem = encoding.model_for(aargs.data_dir, aargs.layers, aargs.width)
-    key_scores = generate_model(sem, aargs.states_dir, aargs.encoding_dir, aargs.epochs)
+
+    sem = generate_sem(aargs.data_dir, aargs.layers, aargs.width, aargs.states_dir, aargs.epochs)
+    sem.save(os.path.join(aargs.encoding_dir, "sem"))
+    baseline = generate_baseline(aargs.data_dir)
+
+    scores_sem = test_model(sem, aargs.states_dir)
+    scores_baseline = test_model(baseline, aargs.states_dir)
 
     with open(os.path.join(aargs.encoding_dir, "analysis.csv"), "w") as fh:
         writer = csv_writer(fh)
-        writer.writerow(["key", "score_fn", "result"])
+        writer.writerow(["technique", "key", "score_fn", "result"])
 
-        for key, scores in sorted(key_scores.items()):
+        for key, scores in sorted(scores_sem.items()):
             for name, score in sorted(scores.items()):
-                writer.writerow([key, name, "%f" % score])
+                writer.writerow(["sem", key, name, "%f" % score])
+
+        for key, scores in sorted(scores_baseline.items()):
+            for name, score in sorted(scores.items()):
+                writer.writerow(["baseline", key, name, "%f" % score])
 
     return 0
 
 
-def generate_model(sem, states_dir, encoding_dir, epochs):
+def generate_sem(data_dir, layers, width, states_dir, epochs):
+    hyper_parameters = model.HyperParameters() \
+        .layers(layers) \
+        .width(width)
+    sem = encoding.model_for(data_dir, lambda s, i, o: model.Ffnn(s, i, o, hyper_parameters))
     train_xys = []
 
     for key in view.part_keys():
@@ -80,23 +94,42 @@ def generate_model(sem, states_dir, encoding_dir, epochs):
     loss = sem.train(train_xys, training_parameters)
     del train_xys
     logging.info("Trained encoding to a final loss of: %.6f" % loss)
-    sem.save(os.path.join(encoding_dir, "sem"))
-    _ = score_parts(sem, lambda key: states.stream_train(states_dir, key), False)
-    key_scores = score_parts(sem, lambda key: states.stream_test(states_dir, key), True)
+    return sem
+
+
+def generate_baseline(data_dir):
+    output_distribution = data.get_output_distribution(data_dir)
+
+    def model_fn(s, i, o):
+        custom_distribution = [0] * len(o)
+
+        for key, value in output_distribution.items():
+            custom_distribution[o.encode(key)] = value
+
+        print(output_distribution)
+        print(custom_distribution)
+        return model.CustomOutput(s, i, o, custom_distribution)
+
+    return encoding.model_for(data_dir, model_fn)
+
+
+def test_model(model, states_dir):
+    _ = score_parts(model, lambda key: states.stream_train(states_dir, key), False)
+    key_scores = score_parts(model, lambda key: states.stream_test(states_dir, key), True)
     return key_scores
 
 
-def score_parts(sem, stream_fn, output):
+def score_parts(model, stream_fn, debug):
     key_scores = {}
     total_scores = {name: 0.0 for name in SCORES.keys()}
     count = 0
 
     for key in view.part_keys():
         count += 1
-        scores = sem.test(stream_fn(key), False, SCORES)
+        scores = model.test(stream_fn(key), False, SCORES)
         key_scores[key] = scores
 
-        if output:
+        if debug:
             logging.debug("Scores for '%s': %s" % (key, adjutant.dict_as_str(scores)))
 
         for name, score in scores.items():
