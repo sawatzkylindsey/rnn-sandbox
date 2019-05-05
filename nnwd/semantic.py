@@ -12,6 +12,8 @@ from nnwd import pickler
 from nnwd import view
 
 
+SEM = "sem"
+
 def model_for(data_dir, model_fn):
     part_labels = mlbase.Labels(set(NeuralNetwork.INSTRUMENTS))
     layer_labels = mlbase.Labels(set(range(NeuralNetwork.LAYERS)))
@@ -25,6 +27,14 @@ def model_for(data_dir, model_fn):
         predictor_output = data.get_outputs(data_dir)
 
     return model_fn("sem", predictor_input, predictor_output)
+
+
+def load_model(rnn, sequential_dir):
+    rnn.load(os.path.join(sequential_dir, SEM))
+
+
+def save_model(rnn, sequential_dir):
+    rnn.save(os.path.join(sequential_dir, SEM))
 
 
 def as_input(key, point):

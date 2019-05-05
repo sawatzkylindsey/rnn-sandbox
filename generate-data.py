@@ -21,12 +21,12 @@ from ml import nlp
 from ml import scoring
 from nnwd import data
 from nnwd.domain import NeuralNetwork
-from nnwd import encoding
 from nnwd import lm
 from nnwd import pickler
 from nnwd import reduction
 from nnwd import rnn
 from nnwd import sa
+from nnwd import semantic
 from nnwd import states
 from nnwd import view
 

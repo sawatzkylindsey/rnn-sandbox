@@ -216,9 +216,10 @@ class Ffnn(Model):
 
 class CustomOutput(Model):
     def __init__(self, scope, input_labels, output_labels, output_distribution):
-        super(FixedModel, self).__init__(scope, input_labels, output_labels)
+        super(CustomOutput, self).__init__(scope, input_labels, output_labels)
         check.check_pdist(output_distribution)
         assert len(output_labels) == len(output_distribution), "%d != %d" % (len(output_labels), len(output_distribution))
+        self.output_distribution = output_distribution
 
     def evaluate(self, x, handle_unknown=False):
         # Don't need xs, but run through the transformation to check data anyways.

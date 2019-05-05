@@ -27,10 +27,10 @@ from pytils.log import setup_logging, user_log
 
 
 def main(argv):
-    ap = ArgumentParser(prog="generate-buckets")
+    ap = ArgumentParser(prog="generate-reduction-buckets")
     ap.add_argument("--verbose", "-v", default=False, action="store_true", help="Turn on verbose logging.")
     ap.add_argument("states_dir")
-    ap.add_argument("reduction_dir")
+    ap.add_argument("buckets_dir")
     ap.add_argument("target", type=int)
     aargs = ap.parse_args(argv)
     setup_logging(".%s.log" % os.path.splitext(os.path.basename(__file__))[0], aargs.verbose, False, True, True)
@@ -39,11 +39,11 @@ def main(argv):
     part_fixed_mse = {}
 
     for key in view.part_keys():
-        learned_mse, fixed_mse = generate_buckets(aargs.states_dir, key, aargs.reduction_dir, aargs.target)
+        learned_mse, fixed_mse = generate_buckets(aargs.states_dir, key, aargs.buckets_dir, aargs.target)
         part_learned_mse[key] = learned_mse
         part_fixed_mse[key] = fixed_mse
 
-    with open(os.path.join(aargs.reduction_dir, "analysis.csv"), "w") as fh:
+    with open(os.path.join(aargs.buckets_dir, "analysis.csv"), "w") as fh:
         writer = csv_writer(fh)
         writer.writerow(["technique", "key", "mse"])
 
@@ -56,12 +56,12 @@ def main(argv):
     return 0
 
 
-def generate_buckets(states_dir, key, reduction_dir, target):
+def generate_buckets(states_dir, key, buckets_dir, target):
     logging.debug("Calculating for '%s'." % key)
     train_points, test_points = states.get_points(states_dir, key)
     width = view.part_width(key)
     learned_buckets, fixed_buckets = calculate_buckets(width, target, train_points)
-    reduction.set_buckets(reduction_dir, key, learned_buckets, fixed_buckets)
+    reduction.set_buckets(buckets_dir, key, learned_buckets, fixed_buckets)
     learned_mse = 0.0
     fixed_mse = 0.0
     count = 0

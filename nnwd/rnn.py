@@ -296,11 +296,9 @@ class Rnn:
         assert len(xy_sequences) > 0
         training_parameters = mlbase.TrainingParameters() \
             .dropout_rate(0)
-        #total = 0.0
         total_loss = 0.0
         case_slot_length = len(str(len(xy_sequences)))
         offset = 0
-        batch_count = 0
 
         while offset < len(xy_sequences):
             batch = xy_sequences[offset:offset + 32]
@@ -308,13 +306,11 @@ class Rnn:
             feed = self.get_training_feed(batch, training_parameters)
             time_distributions, loss = self.session.run([self.output_distributions, self.cost], feed_dict=feed)
             total_loss += loss
-            batch_count += 1
 
             if debug:
                 self.score(batch, feed, time_distributions, debug, case_slot_length)
 
-        #return (total / len(xy_sequences))
-        return -math.exp(total_loss / batch_count)
+        return -math.exp(total_loss / len(xy_sequences))
 
     def evaluate(self, x, handle_unknown=False, state=None, instrument_names=[]):
         feed = {

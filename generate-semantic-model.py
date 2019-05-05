@@ -18,11 +18,11 @@ from ml import model
 from ml import scoring
 from nnwd import data
 from nnwd.domain import NeuralNetwork
-from nnwd import encoding
 from nnwd import parameters
 from nnwd import pickler
 from nnwd import reduction
 from nnwd import rnn
+from nnwd import semantic
 from nnwd import states
 from nnwd import view
 
@@ -42,7 +42,7 @@ SCORES = {
 
 
 def main(argv):
-    ap = ArgumentParser(prog="generate-encodings")
+    ap = ArgumentParser(prog="generate-semantic-model")
     ap.add_argument("--verbose", "-v", default=False, action="store_true", help="Turn on verbose logging.")
     #ap.add_argument("-d", "--dry-run", default=False, action="store_true")
     ap.add_argument("-e", "--epochs", default=10, type=int)
@@ -55,11 +55,12 @@ def main(argv):
     setup_logging(".%s.log" % os.path.splitext(os.path.basename(__file__))[0], aargs.verbose, False, True, True)
     logging.debug(aargs)
 
-    sem = generate_sem(aargs.data_dir, aargs.layers, aargs.width, aargs.states_dir, aargs.epochs)
-    sem.save(os.path.join(aargs.encoding_dir, "sem"))
+    sem = generate_sem(aargs.data_dir, aargs.layers, aargs.width, aargs.states_dir, aargs.epochs, aargs.encoding_dir)
     baseline = generate_baseline(aargs.data_dir)
 
+    user_log.info("Sem")
     scores_sem = test_model(sem, aargs.states_dir)
+    user_log.info("Baseline")
     scores_baseline = test_model(baseline, aargs.states_dir)
 
     with open(os.path.join(aargs.encoding_dir, "analysis.csv"), "w") as fh:
@@ -77,11 +78,11 @@ def main(argv):
     return 0
 
 
-def generate_sem(data_dir, layers, width, states_dir, epochs):
+def generate_sem(data_dir, layers, width, states_dir, epochs, encoding_dir):
     hyper_parameters = model.HyperParameters() \
         .layers(layers) \
         .width(width)
-    sem = encoding.model_for(data_dir, lambda s, i, o: model.Ffnn(s, i, o, hyper_parameters))
+    sem = semantic.model_for(data_dir, lambda s, i, o: model.Ffnn(s, i, o, hyper_parameters))
     train_xys = []
 
     for key in view.part_keys():
@@ -93,7 +94,8 @@ def generate_sem(data_dir, layers, width, states_dir, epochs):
         .batch(32)
     loss = sem.train(train_xys, training_parameters)
     del train_xys
-    logging.info("Trained encoding to a final loss of: %.6f" % loss)
+    logging.info("Trained semantic encoding to a final loss of: %.6f" % loss)
+    semantic.save_model(sem, encoding_dir)
     return sem
 
 
@@ -106,15 +108,15 @@ def generate_baseline(data_dir):
         for key, value in output_distribution.items():
             custom_distribution[o.encode(key)] = value
 
-        print(output_distribution)
-        print(custom_distribution)
-        return model.CustomOutput(s, i, o, custom_distribution)
+        return model.CustomOutput(s, i, o, np.array(custom_distribution))
 
-    return encoding.model_for(data_dir, model_fn)
+    return semantic.model_for(data_dir, model_fn)
 
 
 def test_model(model, states_dir):
+    user_log.info("Train data.")
     _ = score_parts(model, lambda key: states.stream_train(states_dir, key), False)
+    user_log.info("Test data.")
     key_scores = score_parts(model, lambda key: states.stream_test(states_dir, key), True)
     return key_scores
 

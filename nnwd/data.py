@@ -64,19 +64,18 @@ def set_output_distribution(data_dir, distribution):
 
 
 def stream_train(data_dir):
-    description = get_description(data_dir)
+    return _stream_data(data_dir, "train")
 
-    if description.task == LM:
-        converter = _xy_lm
-    elif description.task == SA:
-        converter = _xy_sa
-    else:
-        raise ValueError()
 
-    return pickler.load(os.path.join(data_dir, XYS_TRAIN), converter=converter)
+def stream_validation(data_dir):
+    return _stream_data(data_dir, "validation")
 
 
 def stream_test(data_dir):
+    return _stream_data(data_dir, "test")
+
+
+def _stream_data(data_dir, kind):
     description = get_description(data_dir)
 
     if description.task == LM:
@@ -86,7 +85,8 @@ def stream_test(data_dir):
     else:
         raise ValueError()
 
-    return pickler.load(os.path.join(data_dir, XYS_TEST), converter=converter)
+    target_path = os.path.join(data_dir, XYS_TRAIN if kind == "train" else (XYS_TEST if kind == "test" else XYS_VALIDATION))
+    return pickler.load(target_path, converter=converter)
 
 
 def _xy_sa(data):
@@ -96,7 +96,7 @@ def _xy_sa(data):
 
 def _xy_lm(data):
     # data is a sequence: [(word1, pos1), .., (wordN, posN)]
-    if len(data) > 0:
+    if len(data) > 1:
         return mlbase.Xy(data[:-1], data[1:])
     else:
         return None

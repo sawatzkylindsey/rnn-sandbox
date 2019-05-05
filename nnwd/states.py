@@ -6,7 +6,7 @@ import pdb
 from ml import base as mlbase
 from ml import nlp
 from nnwd.domain import NeuralNetwork
-from nnwd import encoding
+from nnwd import semantic
 from nnwd import parameters
 from nnwd import pickler
 from nnwd import view
@@ -43,7 +43,7 @@ def stream_test(states_dir, key):
 
 def _xy(key):
     def _fn(pair):
-        return mlbase.Xy(encoding.as_input(key, pair[0]), pair[1])
+        return mlbase.Xy(semantic.as_input(key, pair[0]), pair[1])
 
     return _fn
 
