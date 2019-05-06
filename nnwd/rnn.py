@@ -276,7 +276,7 @@ class Rnn:
             epoch_perplexity = math.exp(epoch_loss)
             epoch_score /= len(xy_sequences)
             losses.append(epoch_loss)
-            finished, reason = training_parameters.finished(epoch + 1, losses)
+            finished, reason = training_parameters.finished(epoch, losses)
 
             if not finished and epoch % epochs_tenth == 0 and training_parameters.debug():
                 if training_parameters.score():
