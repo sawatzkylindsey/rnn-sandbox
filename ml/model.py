@@ -37,33 +37,49 @@ class Model:
         count = 0
         case_slot_length = len(str(len(xys) if hasattr(xys, "__len__") else 1000000))
         case_template = "{{Case {:%dd}}}" % case_slot_length
+        batch = []
+        cases = []
 
         for case, xy in enumerate(xys):
             count += 1
-            result = self.evaluate(xy.x)
+            batch += [xy]
+            cases += [case]
 
-            if debug:
-                logging.debug("[%s] %s" % (self.scope, case_template.format(case)))
+            if len(batch) == 100:
+                for key, score in self._invoke(batch, cases, debug, score_fns).items():
+                    total_scores[key] += score
 
-            for key, fn in score_fns.items():
-                passed, score = fn(xy, result)
+                batch = []
+                cases = []
+
+        if len(batch) > 0:
+            for key, score in self._invoke(batch, cases, debug, score_fns).items():
                 total_scores[key] += score
-
-                if debug:
-                    if passed:
-                        logging.debug("  Passed '%s' (%.4f)!\n  Full correctly predicted output: '%s'." % (key, score, result.prediction()))
-                    else:
-                        logging.debug("  Failed '%s' (%.4f)!\n  Expected: %s\n  Predicted: %s" % (key, score, str(xy.y), str(result.prediction())))
-
-            #if debug:
-            #    output_template = "[{:s}] {:s} probability distribution: {:s}"
-            #    logging.debug(output_template.format(self.scope, case_template.format(case), adjutant.dict_as_str(result.distribution(), False, True, 6)))
 
         logging.info("Tested on %d instances." % count)
         # We count (rather then using len()) in case the xys come from a stream.
         #                          v
         return {key: score / float(count) for key, score in total_scores.items()}
 
+    def _invoke(self, batch, cases, debug, score_fns):
+        scores = {key: 0 for key in score_fns.keys()}
+        results = self.evaluate([xy.x for xy in batch])
+
+        for i, case in enumerate(cases):
+            if debug:
+                logging.debug("[%s] %s" % (self.scope, case_template.format(case)))
+
+            for key, fn in score_fns.items():
+                passed, score = fn(batch[i], results[i])
+                scores[key] += score
+
+                if debug:
+                    if passed:
+                        logging.debug("  Passed '%s' (%.4f)!\n  Full correctly predicted output: '%s'." % (key, score, results[i].prediction()))
+                    else:
+                        logging.debug("  Failed '%s' (%.4f)!\n  Expected: %s\n  Predicted: %s" % (key, score, str(results[i].y), str(results[i].prediction())))
+
+        return scores
 
 class Ffnn(Model):
     def __init__(self, scope, input_labels, output_labels, hyper_parameters):
