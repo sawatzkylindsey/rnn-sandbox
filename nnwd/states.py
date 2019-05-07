@@ -5,7 +5,6 @@ import pdb
 
 from ml import base as mlbase
 from ml import nlp
-from nnwd.domain import NeuralNetwork
 from nnwd import semantic
 from nnwd import parameters
 from nnwd import pickler
@@ -14,13 +13,6 @@ from nnwd import view
 
 STATES_TRAIN = "hidden-states-xys.train"
 STATES_TEST = "hidden-states-xys.test"
-
-EMBEDDING_PADDING = tuple([0] * max(0, NeuralNetwork.HIDDEN_WIDTH - NeuralNetwork.EMBEDDING_WIDTH))
-HIDDEN_PADDING = tuple([0] * max(0, NeuralNetwork.EMBEDDING_WIDTH - NeuralNetwork.HIDDEN_WIDTH))
-
-
-def as_point(array, is_embedding=False):
-    return tuple(array) + (EMBEDDING_PADDING if is_embedding else HIDDEN_PADDING)
 
 
 def set_states(states_dir, is_train, key, states):
@@ -33,19 +25,12 @@ def get_states(states_dir, key):
     return train, test
 
 
-def stream_train(states_dir, key):
-    return pickler.load(os.path.join(states_dir, STATES_TRAIN + "." + key), converter=_xy(key))
+def stream_train(states_dir, key, converter=None):
+    return pickler.load(os.path.join(states_dir, STATES_TRAIN + "." + key), converter=converter)
 
 
-def stream_test(states_dir, key):
-    return pickler.load(os.path.join(states_dir, STATES_TEST + "." + key), converter=_xy(key))
-
-
-def _xy(key):
-    def _fn(pair):
-        return mlbase.Xy(semantic.as_input(key, pair[0]), pair[1])
-
-    return _fn
+def stream_test(states_dir, key, converter=None):
+    return pickler.load(os.path.join(states_dir, STATES_TEST + "." + key), converter=converter)
 
 
 def get_points(states_dir, key):

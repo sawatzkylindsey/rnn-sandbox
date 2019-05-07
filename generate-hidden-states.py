@@ -92,12 +92,12 @@ def elicit_hidden_states(rnn, xys, annotation_fn, sample_rate, states_dir, is_tr
                 # For example, consider the two training examples: "the little prince" -> "was" and "the little prince" -> "is".
                 # We need predictor samples for both "was" and "is", but if we use the actual rnn annotation this will fixate on just one of these.
                 annotation = annotation_fn(xy.y, i)
-                result, instruments = stepwise_rnn.step(word_pos[0], NeuralNetwork.INSTRUMENTS)
-                hidden_states["embedding-0"].put((states.as_point(instruments["embedding"], True), annotation))
+                result, instruments = stepwise_rnn.step(word_pos[0], view.INSTRUMENTS)
+                hidden_states["embedding-0"].put((tuple(instruments["embedding"]), annotation))
 
                 for part in NeuralNetwork.LSTM_PARTS:
                     for layer in range(NeuralNetwork.LAYERS):
-                        hidden_states["%s-%d" % (part, layer)].put((states.as_point(instruments[part][layer]), annotation))
+                        hidden_states["%s-%d" % (part, layer)].put((tuple(instruments[part][layer]), annotation))
 
     # Mark the queue as finished.
     for value in hidden_states.values():

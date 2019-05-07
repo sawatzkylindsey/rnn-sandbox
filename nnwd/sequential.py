@@ -6,7 +6,6 @@ from ml import base as mlbase
 from ml import nlp
 from ml import model
 from nnwd import data
-from nnwd.domain import NeuralNetwork
 from nnwd import parameters
 from nnwd import pickler
 from nnwd import rnn
@@ -21,10 +20,10 @@ def model_for(data_dir):
     words = data.get_words(data_dir)
 
     if description.task == data.LM:
-        return rnn.RnnLm(NeuralNetwork.LAYERS, NeuralNetwork.HIDDEN_WIDTH, NeuralNetwork.EMBEDDING_WIDTH, words)
+        return rnn.RnnLm(parameters.LAYERS, parameters.HIDDEN_WIDTH, parameters.EMBEDDING_WIDTH, words)
     else:
         outputs = data.get_outputs(data_dir)
-        return rnn.RnnSa(NeuralNetwork.LAYERS, NeuralNetwork.HIDDEN_WIDTH, NeuralNetwork.EMBEDDING_WIDTH, words, outputs)
+        return rnn.RnnSa(parameters.LAYERS, parameters.HIDDEN_WIDTH, parameters.EMBEDDING_WIDTH, words, outputs)
 
 
 def load_model(rnn, sequential_dir):

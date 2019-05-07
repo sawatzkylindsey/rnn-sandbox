@@ -123,6 +123,10 @@ def set_pos_mapping(data_dir, pos_mapping):
     pickler.dump([item for item in pos_mapping.items()], os.path.join(data_dir, POS_MAPPING))
 
 
+def get_pos_mapping(data_dir):
+    return {item[0]: item[1] for item in pickler.load(os.path.join(data_dir, POS_MAPPING))}
+
+
 def set_pos(data_dir, pos_tags):
     pickler.dump([pos for pos in pos_tags], os.path.join(data_dir, POS_TAGS))
 

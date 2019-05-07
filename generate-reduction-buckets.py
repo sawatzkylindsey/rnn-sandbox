@@ -38,7 +38,7 @@ def main(argv):
     part_learned_mse = {}
     part_fixed_mse = {}
 
-    for key in view.part_keys():
+    for key in view.keys():
         learned_mse, fixed_mse = generate_buckets(aargs.states_dir, key, aargs.buckets_dir, aargs.target)
         part_learned_mse[key] = learned_mse
         part_fixed_mse[key] = fixed_mse
@@ -68,10 +68,8 @@ def generate_buckets(states_dir, key, buckets_dir, target):
 
     for point in test_points:
         count += 1
-        reduced, error = reduction.reduce(learned_buckets, point, calculate_mse=True)
-        learned_mse += error
-        reduced, error = reduction.reduce(fixed_buckets, point, calculate_mse=True)
-        fixed_mse += error
+        learned_mse += reduction.mean_squared_error(learned_buckets, point)
+        fixed_mse += reduction.mean_squared_error(fixed_buckets, point)
 
     learned_mse /= count
     fixed_mse /= count

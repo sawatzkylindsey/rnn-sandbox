@@ -21,6 +21,7 @@ from threading import Thread
 import urllib
 
 from ml import nlp
+from nnwd import data
 from nnwd import domain
 from nnwd import errorhandler
 from nnwd import errors
@@ -121,40 +122,19 @@ def main(argv):
                     action="store_true",
                     help="Turn on verbose logging.")
     ap.add_argument("-p", "--port", default=8888, type=int)
-    ap.add_argument("--batch", default=32, type=int)
-    ap.add_argument("--arc-epochs", default=5, type=int)
-    ap.add_argument("-s", "--save-dir", default=".resume")
-    ap.add_argument("--tag", default=False, action="store_true")
-    ap.add_argument("--headless", default=False, action="store_true")
-    ap.add_argument("--skip-dr-test", default=False, action="store_true")
-    ap.add_argument("--skip-pse-test", default=False, action="store_true")
-    ap.add_argument("task", help="Either 'sa' or 'lm'.")
-    ap.add_argument("form", help="How the language data should be interpreted:\n" \
-                                 "raw: the text is raw (must still be run through a tokenizer)." \
-                                 "tokenized: the text has been tokenized (space separate tokens, new lines separate sentences)." \
-                                 "ptb: the text is tokenized and pos tagged in Penn Treebank form.")
-    ap.add_argument("corpus_paths", nargs="+")
+    ap.add_argument("data_dir")
+    ap.add_argument("sequential_dir")
+    ap.add_argument("buckets_dir")
+    ap.add_argument("encoding_dir")
     aargs = ap.parse_args(argv)
     #patch_thread_for_profiling()
     setup_logging(".%s.log" % os.path.splitext(os.path.basename(__file__))[0], aargs.verbose, False, True, True)
     logging.debug(aargs)
 
-    if aargs.task == "sa":
-        assert aargs.form == "tokenized"
-        words, neural_network = domain.create_sa((aargs.task, aargs.form), lambda: stream_input_stanford(aargs.corpus_paths[0]), aargs)
-    elif aargs.task == "lm":
-        words, neural_network = domain.create_lm((aargs.task, aargs.form), lambda: stream_input_text(aargs.corpus_paths, aargs.form), aargs)
-    else:
-        raise ValueError("Unknown task: %s" % aargs.task)
-
-    user_log.info("Vocabulary %d" % len(words))
-    # Also precautionary - the the neural_network start setting up before kicking off the server.
-    # The server can't do anything anyways until the neural_network is ready to handle requests.
-    time.sleep(5)
+    words = data.get_words(aargs.data_dir)
+    neural_network = domain.NeuralNetwork(aargs.data_dir, aargs.sequential_dir, aargs.buckets_dir, aargs.encoding_dir)
     query_engine = domain.QueryEngine()
-
-    if not aargs.headless:
-        run_server(aargs.port, words, neural_network, query_engine)
+    run_server(aargs.port, words, neural_network, query_engine)
 
     try:
         neural_network._background_setup.join()
@@ -165,179 +145,6 @@ def main(argv):
         raise e
 
     return 0
-
-
-POS_MAP = {
-    "CC": "CC",
-    "CD": "CD",
-    "DT": "DT",
-    "EX": "EX",
-    "FW": "FW",
-    "IN": "IN",
-    "JJ": "JJ",
-    "JJR": "JJR",
-    "JJS": "JJS",
-    "LS": "LS",
-    "MD": "MD",
-    "NN": "NN",
-    "NNS": "NNS",
-    "NNP": "NNP",
-    "NNPS": "NNPS",
-    "PDT": "PDT",
-    "POS": "POS",
-    "PRP": "PRP",
-    "PRP$": "PRP$",
-    "RB": "RB",
-    "RBR": "RBR",
-    "RBS": "RBS",
-    "RP": "RP",
-    "SYM": "SYM",
-    "TO": "TO",
-    "UH": "UH",
-    "VB": "VB",
-    "VBD": "VBD",
-    "VBG": "VBG",
-    "VBN": "VBN",
-    "VBP": "VBP",
-    "VBZ": "VBZ",
-    "WDT": "WDT",
-    "WP": "WP",
-    "WP$": "WP$",
-    "WRB": "WRB",
-    ".": "PUNCT",
-    ",": "PUNCT",
-    "``": "PUNCT",
-    "''": "PUNCT",
-    ":": "PUNCT",
-    ";": "PUNCT",
-    "(": "PUNCT",
-    ")": "PUNCT",
-    "$": "PUNCT",
-    "!": "PUNCT",
-    "?": "PUNCT",
-}
-BAD_TAGS = {}
-
-
-def stream_input_text(input_files, form):
-    for input_file in input_files:
-        opener = lambda: open(input_file, "r") if not input_file.endswith("bz2") else bz2.BZ2File(input_file)
-
-        with opener() as fh:
-            for line in fh.readlines():
-                if isinstance(line, bytes):
-                    line = line.decode("utf-8")
-
-                if line.strip() != "":
-                    if form == "raw":
-                        for sentence in nlp.split_sentences(line):
-                            tagged = nltk.pos_tag(sentence)
-                            sequence = []
-
-                            for item in tagged:
-                                word, tag = item
-
-                                if tag in POS_MAP:
-                                    word = word if tag != "CD" else nlp.NUMBER
-                                    pos = POS_MAP[tag]
-                                    sequence += [(word, pos)]
-                                elif tag not in BAD_TAGS:
-                                    BAD_TAGS[tag] = None
-                                    print(tag)
-
-                            yield sequence
-                    elif form == "tokenized":
-                        yield [(word, None) for word in line.split(" ")]
-                    else:
-                        sequence = []
-
-                        for item in re.split("[()]", line):
-                            pair = item.strip().split(" ")
-
-                            if len(pair) == 2:
-                                tag = pair[0]
-
-                                if tag in POS_MAP:
-                                    word = pair[1].lower() if tag != "CD" else nlp.NUMBER
-                                    pos = POS_MAP[tag]
-                                    sequence += [(word, pos)]
-                                elif tag not in BAD_TAGS:
-                                    BAD_TAGS[tag] = None
-                                    print(tag)
-
-                        yield sequence
-
-
-def stream_input_stanford(stanford_folder):
-    sentiments = {}
-
-    with open(os.path.join(stanford_folder, "sentiment_labels.txt"), "r") as fh:
-        first = True
-
-        for line in fh.readlines():
-            if first:
-                first = False
-            else:
-                phrase_id, sentiment = line.split("|")
-                sentiment = sentiment.strip()
-                sentiments[phrase_id] = float(sentiment)
-
-    dictionary = {}
-
-    with open(os.path.join(stanford_folder, "dictionary.txt"), "r") as fh:
-        for line in fh.readlines():
-            line = line.strip()
-            index = line.rindex("|")
-            phrase = line[:index].lower()
-            dictionary[phrase] = sentiments[line[index + 1:]]
-            dictionary[phrase + " ."] = sentiments[line[index + 1:]]
-
-    dataset_splits = {}
-
-    with open(os.path.join(stanford_folder, "datasetSplit.txt"), "r") as fh:
-        first = True
-
-        for line in fh.readlines():
-            if first:
-                first = False
-            else:
-                sentence_id, label = line.split(",")
-                label = label.strip()
-                dataset_splits[sentence_id] = "train" if label == "1" else ("test" if label == "2" else "dev")
-
-    #train_sentences = []
-
-    with open(os.path.join(stanford_folder, "datasetSentences.txt"), "r") as fh:
-        first = True
-
-        for line in fh.readlines():
-            if first:
-                first = False
-            else:
-                sentence_id, sentence = line.split("\t")
-                sentence = sentence.strip().lower()
-                sequence = []
-
-                for word in sentence.split(" "):
-                    sequence += [word]
-
-                #if dataset_splits[sentence_id] == "train":
-                #    train_sentences += [sequence]
-
-                yield (dataset_splits[sentence_id], sequence, dictionary[sentence])
-
-    #data_tenth = max(1, int(len(dictionary) / 10.0))
-
-    #for i, phrase_sentiment in enumerate(dictionary.items()):
-    #    if i % data_tenth == 0 or i + 1 == len(dictionary):
-    #        print("%d%% through" % int((i + 1) * 100 / len(dictionary)))
-
-    #    # Sample at 30% rate.
-    #    if random.randint(0, 9) < 3:
-    #        phrase, sentiment = phrase_sentiment
-
-    #        if any([phrase in sentence for sentence in train_sentences]):
-    #            yield ("train", phrase.split(" "), sentiment)
 
 
 patched = False

@@ -85,8 +85,8 @@ def generate_sem(data_dir, layers, width, states_dir, epochs, encoding_dir):
     sem = semantic.model_for(data_dir, lambda s, i, o: model.Ffnn(s, i, o, hyper_parameters))
     train_xys = []
 
-    for key in view.part_keys():
-        for xy in states.stream_train(states_dir, key):
+    for key in view.keys():
+        for xy in states.stream_train(states_dir, key, _data_converter(key)):
             train_xys += [xy]
 
     training_parameters = mlbase.TrainingParameters() \
@@ -115,9 +115,9 @@ def generate_baseline(data_dir):
 
 def test_model(model, states_dir):
     user_log.info("Train data.")
-    _ = score_parts(model, lambda key: states.stream_train(states_dir, key), False)
+    _ = score_parts(model, lambda key: states.stream_train(states_dir, key, _data_converter(key)), False)
     user_log.info("Test data.")
-    key_scores = score_parts(model, lambda key: states.stream_test(states_dir, key), True)
+    key_scores = score_parts(model, lambda key: states.stream_test(states_dir, key, _data_converter(key)), True)
     return key_scores
 
 
@@ -126,7 +126,7 @@ def score_parts(model, stream_fn, debug):
     total_scores = {name: 0.0 for name in SCORES.keys()}
     count = 0
 
-    for key in view.part_keys():
+    for key in view.keys():
         count += 1
         scores = model.test(stream_fn(key), False, SCORES)
         key_scores[key] = scores
@@ -139,6 +139,10 @@ def score_parts(model, stream_fn, debug):
 
     user_log.info("Total scores: %s" % (adjutant.dict_as_str({name: score / float(count) for name, score in total_scores.items()})))
     return key_scores
+
+
+def _data_converter(key):
+    return lambda data: mlbase.Xy(semantic.as_input(key, data[0]), data[1])
 
 
 if __name__ == "__main__":

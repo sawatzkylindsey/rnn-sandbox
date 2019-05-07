@@ -74,7 +74,7 @@ class HiddenState:
 
 
 class LabelDistribution:
-    def __init__(self, name, label_weights, sort_key=lambda item: -item[1], top_k=None, colour_fn=lambda i: None):
+    def __init__(self, name, label_weights, sort_key=lambda key_value: -key_value[1], top_k=None, colour_fn=lambda i: None):
         self.name = name
         self.label_weights = [(str(item[0]), float(item[1])) for item in sorted(label_weights.items(), key=sort_key)[:len(label_weights) if top_k is None else top_k]]
         self.minimum = 0

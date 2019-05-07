@@ -6,14 +6,11 @@ from ml import base as mlbase
 from ml import nlp
 from nnwd import parameters
 from nnwd import pickler
+from nnwd import view
 
 
 LEARNED_BUCKETS = "buckets-learned"
 FIXED_BUCKETS = "buckets-fixed"
-
-
-def as_point(array, is_embedding=False):
-    return tuple(array) + (EMBEDDING_PADDING if is_embedding else HIDDEN_PADDING)
 
 
 def set_buckets(reduction_dir, key, learned_buckets, fixed_buckets):
@@ -31,6 +28,10 @@ def get_buckets(reduction_dir, key):
     return learned, fixed
 
 
+def get_learned_buckets(reduction_dir):
+    return {key: {item[0]: item[1] for item in pickler.load(os.path.join(reduction_dir, os.path.join(LEARNED_BUCKETS, key)))} for key in view.keys()}
+
+
 def get_points(hs_dir, key):
     width = view.part_width(key)
 
@@ -43,18 +44,24 @@ def get_points(hs_dir, key):
     return train, test
 
 
-def reduce(bucket_mapping, point, calculate_mse=False):
+def reduce(bucket_mapping, point):
     reduced = []
-    error = 0.0
 
     for bucket, dimensions in sorted(bucket_mapping.items()):
         value = sum([point[dimension] for dimension in dimensions]) / len(dimensions)
         reduced += [value]
 
-        if calculate_mse:
-            # Actual hidden state value compared to the reduced value.
-            #              v                  v
-            error += sum([(point[dimension] - value)**2 for dimension in dimensions])
+    return reduced
 
-    return reduced, (error / len(point)) if calculate_mse else None
+
+def mean_squared_error(bucket_mapping, point):
+    error = 0.0
+
+    for bucket, dimensions in sorted(bucket_mapping.items()):
+        value = sum([point[dimension] for dimension in dimensions]) / len(dimensions)
+        # Actual hidden state value compared to the reduced value.
+        #              v                  v
+        error += sum([(point[dimension] - value)**2 for dimension in dimensions])
+
+    return error / len(point)
 
