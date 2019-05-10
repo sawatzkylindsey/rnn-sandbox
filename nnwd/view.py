@@ -74,6 +74,10 @@ def part_layers():
     return parts
 
 
+def is_embedding(part, layer):
+    return part == "embedding"
+
+
 def part_width(key):
     if key == encode_key("embedding"):
         return parameters.EMBEDDING_WIDTH

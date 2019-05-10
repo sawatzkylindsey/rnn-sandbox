@@ -11,12 +11,12 @@ import random
 import sys
 
 from nnwd import data
-from nnwd.domain import NeuralNetwork
 from nnwd import sequential
 from nnwd import states
 from nnwd import parameters
 from nnwd import pickler
 from nnwd import rnn
+from nnwd import view
 
 from pytils.log import setup_logging, user_log
 
@@ -68,12 +68,9 @@ def main(argv):
 def elicit_hidden_states(rnn, xys, annotation_fn, sample_rate, states_dir, is_train):
     hidden_states = {}
     threads = []
-    threads.append(start_queue(hidden_states, states_dir, is_train, "embedding-0"))
 
-    for part in NeuralNetwork.LSTM_PARTS:
-        for layer in range(NeuralNetwork.LAYERS):
-            key = "%s-%d" % (part, layer)
-            threads.append(start_queue(hidden_states, states_dir, is_train, key))
+    for key in view.keys():
+        threads.append(start_queue(hidden_states, states_dir, is_train, key))
 
     total = 0
     sampled = 0
@@ -93,11 +90,13 @@ def elicit_hidden_states(rnn, xys, annotation_fn, sample_rate, states_dir, is_tr
                 # We need predictor samples for both "was" and "is", but if we use the actual rnn annotation this will fixate on just one of these.
                 annotation = annotation_fn(xy.y, i)
                 result, instruments = stepwise_rnn.step(word_pos[0], view.INSTRUMENTS)
-                hidden_states["embedding-0"].put((tuple(instruments["embedding"]), annotation))
 
-                for part in NeuralNetwork.LSTM_PARTS:
-                    for layer in range(NeuralNetwork.LAYERS):
-                        hidden_states["%s-%d" % (part, layer)].put((tuple(instruments[part][layer]), annotation))
+                for part, layer in view.part_layers():
+                    # TODO
+                    if view.is_embedding(part, layer):
+                        hidden_states[view.encode_key(part, layer)].put((word_pos[0], tuple(instruments[part]), annotation))
+                    else:
+                        hidden_states[view.encode_key(part, layer)].put((word_pos[0], tuple(instruments[part][layer]), annotation))
 
     # Mark the queue as finished.
     for value in hidden_states.values():

@@ -37,8 +37,8 @@ def get_points(states_dir, key):
     width = view.part_width(key)
 
     def _as_point(data):
-        # data is a tuple: ((padded array), annotation)
-        return data[0][:width]
+        # data is a tuple: (word, (padded array), annotation)
+        return data[1][:width]
 
     train = pickler.load(os.path.join(states_dir, STATES_TRAIN + "." + key), converter=_as_point)
     test = pickler.load(os.path.join(states_dir, STATES_TEST + "." + key), converter=_as_point)

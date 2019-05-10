@@ -340,7 +340,7 @@ class NeuralNetwork:
 
         for part, layer in view.part_layers():
             # TODO
-            if part == "embedding":
+            if view.is_embedding(part, layer):
                 embedding_key = view.encode_key(part, layer)
                 points[self.encode_key(part, layer)] = instruments[part]
             else:
