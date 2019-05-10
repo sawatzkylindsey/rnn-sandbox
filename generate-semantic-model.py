@@ -104,7 +104,7 @@ def generate_sem(data_dir, layers, width, states_dir, epochs, encoding_dir, word
     train_xys = []
 
     for key in view.keys():
-        for xy in states.stream_train(states_dir, key, _data_converter(key, word_input)):
+        for xy in states.stream_hidden_train(states_dir, key, _data_converter(key, word_input)):
             train_xys += [xy]
 
     training_parameters = mlbase.TrainingParameters() \
@@ -134,9 +134,9 @@ def generate_baseline(data_dir, word_input):
 def test_model(model, states_dir, is_baseline):
     word_input = model.extra["word_input"]
     #user_log.info("Train data.")
-    #_, _ = score_parts(model, lambda key: states.stream_train(states_dir, key, _data_converter(key, word_input)), False, is_baseline)
+    #_, _ = score_parts(model, lambda key: states.stream_hidden_train(states_dir, key, _data_converter(key, word_input)), False, is_baseline)
     user_log.info("Test data.")
-    key_scores, total_scores = score_parts(model, lambda key: states.stream_test(states_dir, key, _data_converter(key, word_input)), True, is_baseline)
+    key_scores, total_scores = score_parts(model, lambda key: states.stream_hidden_test(states_dir, key, _data_converter(key, word_input)), True, is_baseline)
     return key_scores, total_scores
 
 

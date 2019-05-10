@@ -33,13 +33,10 @@ from nnwd import reduction
 from nnwd import rnn
 from nnwd import semantic
 from nnwd import sequential
+from nnwd import states
 from nnwd import view
 from pytils.log import setup_logging, user_log
 from pytils import adjutant, check
-
-
-ActivationPoint = collections.namedtuple("ActivationPoint", ["sequence", "expectation", "prediction", "part", "layer", "index", "point"])
-MatchPoint = collections.namedtuple("MatchPoint", ["distance", "word", "index", "prediction", "expectation"])
 
 
 def sa_colour_mapping():
@@ -167,7 +164,12 @@ class NeuralNetwork:
         hyper_parameters = model.HyperParameters() \
             .layers(parameters.SEM_LAYERS) \
             .width(parameters.SEM_WIDTH)
-        self.predictor = semantic.model_for(self.data_dir, lambda s, i, o: model.Ffnn(s, i, o, hyper_parameters))
+
+        # TODO
+        with open(os.path.join(os.path.join(self.encoding_dir, "sem"), model.EXTRA), "r") as fh:
+            self.word_input = json.load(fh)["word_input"]
+
+        self.predictor = semantic.model_for(self.data_dir, lambda s, i, o, e: model.Ffnn(s, i, o, hyper_parameters, e), self.word_input)
         semantic.load_model(self.predictor, self.encoding_dir)
 
     #@functools.lru_cache()
@@ -183,45 +185,6 @@ class NeuralNetwork:
         resolved_word = self.words.decode(self.words.encode(word, True))
         result, instruments = stepwise_lstm.query(word, view.INSTRUMENTS)
         return resolved_word, result, instruments
-
-    def _generate_activation_data(self):
-        if self.is_lm():
-            # This is a language modelling lm task.
-            prediction_fn = lambda y, i: y[i][0]
-        else:
-            # This is a sentiment analysis sa task.
-            prediction_fn = lambda y, i: y
-
-        activation_data_path = os.path.join(self.save_dir, "activation-data")
-
-        if os.path.exists(activation_data_path):
-            logging.debug("Activation data already generated.")
-        else:
-            logging.debug("Generating activation data.")
-            activation_data = []
-            data_quarter = max(1, int(len(self.train_xys) / 4.0))
-
-            for j, xy in enumerate(self.train_xys):
-                if j % data_quarter == 0 or j + 1 == len(self.train_xys):
-                    logging.debug("%d%% through.." % int((j + 1) * 100 / len(self.train_xys)))
-
-                stepwise_lstm = self.lstm.stepwise(handle_unknown=True)
-                sequence = tuple(xy.x)
-
-                for i, word_pos in enumerate(xy.x):
-                    result, instruments = stepwise_lstm.step(word_pos[0], view.INSTRUMENTS)
-                    #part = "embedding"
-                    #layer = 0
-                    #point = tuple(instruments[part])
-                    #activation_data += [ActivationPoint(sequence=sequence, expectation=prediction_fn(xy.y, i), prediction=result.prediction, part=part, layer=layer, index=i, point=point)]
-
-                    for part, layer in view.part_layers():
-                        point = tuple(instruments[part][layer])
-                        activation_data += [ActivationPoint(sequence=sequence, expectation=prediction_fn(xy.y, i), prediction=result.prediction, part=part, layer=layer, index=i, point=point)]
-
-            pickler.dump(activation_data, activation_data_path)
-            logging.debug("Generated activation data: %d." % len(activation_data))
-            del activation_data
 
     def _dummy(self):
         weights = []
@@ -283,22 +246,26 @@ class NeuralNetwork:
     def rgb(self, colour):
         return "rgb(%d, %d, %d)" % colour
 
-    def compute_point_abstractions(self, points):
+    def compute_point_abstractions(self, word, points):
         reductions = self.dimensionality_reduce(points)
-        predictions = self.predict_distributions(points)
+        predictions = self.predict_distributions(word, points)
         colours = self.fit_colours(points, predictions)
         return reductions, colours, predictions
 
     def dimensionality_reduce(self, points):
         return {key: reduction.reduce(self.bucket_mappings[key], point) for key, point in points.items()}
 
-    def predict_distributions(self, points):
-        xs = [semantic.as_input(key, point) for key, point in points.items()]
-        results = self.predictor.evaluate(xs)
+    def predict_distributions(self, word, points):
+        xys = [mlbase.Xy(semantic.as_input(key, word if self.word_input else None, point), None) for key, point in points.items()]
+        results, _ = self.predictor.evaluate(xys)
         distribution_predictions = {}
 
-        for i, x in enumerate(xs):
-            part, layer, _ = x
+        for i, xy in enumerate(xys):
+            if self.word_input:
+                word, part, layer, _ = xy.x
+            else:
+                part, layer, _ = xy.x
+
             ordered_predictions = [item[0] for item in sorted(results[i].distribution().items(), key=lambda item: item[1], reverse=True)]
             distribution_predictions[self.encode_key(part, layer)] = {prediction: results[i].distribution()[prediction] for prediction in ordered_predictions[:parameters.TOP_PREDICTIONS]}
 
@@ -346,7 +313,7 @@ class NeuralNetwork:
             else:
                 points[self.encode_key(part, layer)] = instruments[part][layer]
 
-        point_reductions, point_colours, point_predictions = self.compute_point_abstractions(points)
+        point_reductions, point_colours, point_predictions = self.compute_point_abstractions(last_word, points)
         embedding_name = self.latex_name(len(sequence) - 1, "embedding")
         embedding_name_no_t = self.latex_name_no_t("embedding")
         embedding = HiddenState(embedding_name, embedding_name_no_t, point_reductions[embedding_key], colour=point_colours[embedding_key], predictions=self.prediction_distribution(point_predictions[embedding_key]))
@@ -370,7 +337,7 @@ class NeuralNetwork:
         # This is the regular process by which a hidden_state is served out with its various reductions/abstractions.
         key = self.encode_key(part, layer)
         keyed_point = {key: point}
-        reduction, colour, prediction = self.compute_point_abstractions(keyed_point)
+        reduction, colour, prediction = self.compute_point_abstractions(last_word, keyed_point)
         name = self.latex_name(len(sequence) - 1, part, layer)
         name_no_t = self.latex_name_no_t(part, layer)
         hidden_state = HiddenState(name, name_no_t, reduction[key], min_max, colour[key], self.prediction_distribution(prediction[key]))
@@ -590,49 +557,40 @@ class NeuralNetwork:
 class QueryEngine:
     TOP = 25
 
-    def __init__(self):
+    def __init__(self, activation_dir):
         self.thresholds = {}
-        self.save_dir = "moot"
-        #self._background_setup = threading.Thread(target=self._setup)
-        #self._background_setup.daemon = True
-        #self._background_setup.start()
-
-    def _setup(self):
-        activation_data_path = os.path.join(self.save_dir, "activation-data")
-        logging.debug("Waiting on activation data.")
-
-        while not os.path.exists(activation_data_path):
-            time.sleep(1)
-
+        self.activation_dir = activation_dir
         logging.debug("Processing activation data for query engine.")
-        self.units = {}
-        self.sequence_units = {}
+        self.keyed = {}
+        self.sequence_keyed = {}
 
-        for i, activation_point in enumerate(pickler.load(activation_data_path)):
-            if i % 1000000 == 0:
-                logging.debug("At the %dMth instance." % int(i / 1000000))
+        for key in view.keys():
+            for i, sequence_index_point in enumerate(states.stream_activations(self.activation_dir, key)):
+                if i % 100000 == 0:
+                    logging.debug("At the %d-hundred-Kth instance of %s." % (int(i / 100000), key))
 
-            sequence = tuple(activation_point.sequence)
-            unit = (activation_point.part, activation_point.layer)
-            sequence_unit = (sequence,) + unit
+                sequence = tuple([word_pos[0] for word_pos in sequence_index_point[0]])
+                index = sequence_index_point[1]
+                point = sequence_index_point[2]
+                sequence_key = (sequence, key)
 
-            if sequence_unit not in self.sequence_units:
-                self.sequence_units[sequence_unit] = []
+                if sequence_key not in self.sequence_keyed:
+                    self.sequence_keyed[sequence_key] = []
 
-            if unit not in self.units:
-                self.units[unit] = {}
+                if key not in self.keyed:
+                    self.keyed[key] = {}
 
-            self.sequence_units[sequence_unit] += [activation_point]
+                self.sequence_keyed[sequence_key] += [(sequence, index, point)]
 
-            for axis, value in enumerate(activation_point.point):
-                if axis not in self.units[unit]:
-                    self.units[unit][axis] = []
+                for axis, value in enumerate(point):
+                    if axis not in self.keyed[key]:
+                        self.keyed[key][axis] = []
 
-                self.units[unit][axis] += [activation_point]
+                    self.keyed[key][axis] += [(sequence, index, point)]
 
-        for unit, subd in self.units.items():
+        for key, subd in self.keyed.items():
             for axis, points in subd.items():
-                self.units[unit][axis] = sorted(points, key=lambda ap: ap.point[axis])
+                self.keyed[key][axis] = sorted(points, key=lambda sequence_index_point: sequence_index_point[2][axis])
 
         user_log.info("Setup QueryEngine.")
 
@@ -645,22 +603,22 @@ class QueryEngine:
         matches = self.find_matches(tolerance, False, predicates)
         rollups = {}
 
-        for sequence, result in matches:
+        for sequence, results in matches:
             matched_words = []
             elides = []
             last_index = None
 
-            for match_point in result:
-                matched_words += [sequence[match_point.index]]
+            for index, word, distance in results:
+                matched_words += [word]
 
                 if last_index is None:
-                    elides += [match_point.index != 0]
-                elif last_index + 1 == match_point.index:
+                    elides += [index != 0]
+                elif last_index + 1 == index:
                     elides += [False]
                 else:
                     elides += [True]
 
-                last_index = match_point.index
+                last_index = index
 
             elides += [last_index + 1 != len(sequence)]
             matched_words = tuple(matched_words)
@@ -674,32 +632,32 @@ class QueryEngine:
         return SequenceRollup([SequenceMatch(key[0], key[1], value) for key, value in sorted(rollups.items(), key=lambda item: item[1], reverse=True)[:QueryEngine.TOP]])
 
     def find_matches(self, tolerance, first_only, predicates):
-        required_level_units = []
+        required_level_keys = []
         matched_activations = {}
         matched_sequences = None
 
         for level, predicate in enumerate(predicates):
-            for unit, features in predicate.items():
-                level_unit = (level,) + unit
-                required_level_units += [level_unit]
+            for part_layer, features in predicate.items():
+                key = view.encode_key(*part_layer)
+                level_keys = (level, key)
+                required_level_keys += [level_keys]
                 found = set()
 
-                for activation_point in self._candidates(unit, next(iter(features)), tolerance, matched_sequences):
-                    candidate_point = [activation_point.point[axis] for axis, target in features]
+                for sequence, index, point in self._candidates(key, next(iter(features)), tolerance, matched_sequences):
+                    candidate_point = [point[axis] for axis, target in features]
                     target_point = [target for axis, target in features]
                     within, distance = self._measure(candidate_point, target_point, tolerance)
 
                     if within:
-                        sequence = tuple(activation_point.sequence)
                         found.add(sequence)
 
                         if sequence not in matched_activations:
                             matched_activations[sequence] = {}
 
-                        if level_unit not in matched_activations[sequence]:
-                            matched_activations[sequence][level_unit] = []
+                        if level_keys not in matched_activations[sequence]:
+                            matched_activations[sequence][level_keys] = []
 
-                        matched_activations[sequence][level_unit] += [(distance, activation_point)]
+                        matched_activations[sequence][level_keys] += [(sequence, index, point, distance)]
 
                 if matched_sequences is None:
                     matched_sequences = found
@@ -708,12 +666,12 @@ class QueryEngine:
                     matched_sequences.intersection_update(found)
                     logging.debug("matched_sequences: %d" % len(matched_sequences))
 
-        logging.debug("matched_activation keys: %s" % str([key for key in matched_activations.keys()]))
-        logging.debug("matched_activation units: %s" % str([subd.keys() for subd in matched_activations.values()]))
+        logging.debug("matched_activation sequences: %s" % str([key for key in matched_activations.keys()]))
+        logging.debug("matched_activation level_keys: %s" % str([subd.keys() for subd in matched_activations.values()]))
         matches = []
 
-        for sequence, level_unit_instances in matched_activations.items():
-            results = self.find_match_points(required_level_units, level_unit_instances, 0, None, first_only)
+        for sequence, level_key_instances in matched_activations.items():
+            results = self.find_match_points(required_level_keys, level_key_instances, 0, None, first_only)
 
             if len(results) > 0:
                 logging.debug("matched sequence %d times: %s" % (len(results), " ".join(sequence)))
@@ -723,80 +681,80 @@ class QueryEngine:
 
         return matches
 
-    def find_match_points(self, required_level_units, level_unit_instances, requirement_index, match_index, first_only):
-        current_level_unit = required_level_units[requirement_index]
+    def find_match_points(self, required_level_keys, level_key_instances, requirement_index, match_index, first_only):
+        current_level_key = required_level_keys[requirement_index]
 
-        # This case doesn't even have instances across all the constraining level_units (level, part, layer) - definitely can't be satisified.
-        if len(level_unit_instances) < len(required_level_units):
+        # This case doesn't even have instances across all the constraining level_keys (level, key) - definitely can't be satisified.
+        if len(level_key_instances) < len(required_level_keys):
             return []
 
         if requirement_index > 0:
-            previous_level = required_level_units[requirement_index - 1][0]
-            assert previous_level <= current_level_unit[0]
+            previous_level = required_level_keys[requirement_index - 1][0]
+            assert previous_level <= current_level_key[0]
 
-            if previous_level == current_level_unit[0]:
-                monotonically_increasing = lambda ap: ap.index == match_index
+            if previous_level == current_level_key[0]:
+                monotonically_increasing = lambda index: index == match_index
             else:
-                monotonically_increasing = lambda ap: ap.index > match_index
+                monotonically_increasing = lambda index: index > match_index
         else:
-            monotonically_increasing = lambda ap: True
+            monotonically_increasing = lambda index: True
 
         results = []
 
-        for instance in level_unit_instances[current_level_unit]:
-            distance, activation_point = instance
+        for instance in level_key_instances[current_level_key]:
+            sequence, index, point, distance = instance
 
-            if match_index is None or monotonically_increasing(activation_point):
-                word = activation_point.sequence[activation_point.index]
+            if match_index is None or monotonically_increasing(index):
+                word = sequence[index]
 
                 # If we're at the final constraint.
-                if requirement_index + 1 == len(required_level_units):
+                if requirement_index + 1 == len(required_level_keys):
                     # Found
-                    results += [[MatchPoint(distance=distance, word=word, index=activation_point.index, prediction=activation_point.prediction, expectation=activation_point.expectation)]]
+                    results += [[(index, word, distance)]]
 
                     if first_only:
                         break
                 else:
-                    sub_results = self.find_match_points(required_level_units, level_unit_instances, requirement_index + 1, activation_point.index, first_only)
+                    sub_results = self.find_match_points(required_level_keys, level_key_instances, requirement_index + 1, index, first_only)
 
                     for r in sub_results:
                         # Note, we don't need to worry about only adding to results once if first_only, because by definition len(sub_results) must only be 0 or 1.
-                        results += [[MatchPoint(distance=distance, word=word, index=activation_point.index, prediction=None, expectation=None)] + r]
+                        results += [[(index, word, distance)] + r]
 
                     if first_only and len(sub_results) > 0:
                         break
 
         return results
 
-    def _candidates(self, unit, axis_target, tolerance, matched_sequences):
+    def _candidates(self, key, axis_target, tolerance, matched_sequences):
         if matched_sequences is None:
             axis, target = axis_target
-            sorted_activation_points = self.units[unit][axis]
-            bottom_index = self._binary_search(axis, target - tolerance, sorted_activation_points, True)
-            top_index = self._binary_search(axis, target + tolerance, sorted_activation_points, False)
-            return self.units[unit][axis][bottom_index:top_index + 1]
+            sorted_sequence_index_points = self.keyed[key][axis]
+            bottom_index = self._binary_search(axis, target - tolerance, sorted_sequence_index_points, True)
+            top_index = self._binary_search(axis, target + tolerance, sorted_sequence_index_points, False)
+            return self.keyed[key][axis][bottom_index:top_index + 1]
         else:
-            return adjutant.flat_map([self.sequence_units[(sequence,) + unit] for sequence in matched_sequences])
+            return adjutant.flat_map([self.sequence_keyed[(sequence, key)] for sequence in matched_sequences])
 
-    def _binary_search(self, axis, target, activation_points, find_lower):
+    def _binary_search(self, axis, target, sequence_index_points, find_lower):
         lower = 0
-        upper = len(activation_points) - 1
-        found = upper if activation_points[upper].point[axis] == target else None
+        upper = len(sequence_index_points) - 1
+        found = upper if sequence_index_points[upper][2][axis] == target else None
 
         while found is None:
-            if activation_points[lower].point[axis] > target:
+            if sequence_index_points[lower][2][axis] > target:
                 found = lower
-            elif activation_points[upper].point[axis] < target:
+            elif sequence_index_points[upper][2][axis] < target:
                 found = upper
             else:
                 current = int((upper + lower) / 2.0)
-                observation = activation_points[current].point[axis]
+                observation = sequence_index_points[current][2][axis]
 
                 if observation == target:
                     found = current
                 elif observation < target:
                     if lower == current:
-                        if activation_points[upper].point[axis] <= target:
+                        if sequence_index_points[upper][2][axis] <= target:
                             found = upper
                         else:
                             found = lower if find_lower else upper
@@ -807,7 +765,7 @@ class QueryEngine:
 
         direction = -1 if find_lower else 1
 
-        while found + direction < len(activation_points) and activation_points[found + direction].point[axis] == target:
+        while found + direction < len(sequence_index_points) and sequence_index_points[found + direction][2][axis] == target:
             found += direction
 
         return found

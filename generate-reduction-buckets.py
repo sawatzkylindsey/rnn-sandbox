@@ -58,7 +58,7 @@ def main(argv):
 
 def generate_buckets(states_dir, key, buckets_dir, target):
     logging.debug("Calculating for '%s'." % key)
-    train_points, test_points = states.get_points(states_dir, key)
+    train_points, test_points = states.get_hidden_points(states_dir, key)
     width = view.part_width(key)
     learned_buckets, fixed_buckets = calculate_buckets(width, target, train_points)
     reduction.set_buckets(buckets_dir, key, learned_buckets, fixed_buckets)

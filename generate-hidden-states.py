@@ -126,7 +126,7 @@ def dry_run(xys, sample_rate, is_train):
 def start_queue(hidden_states, states_dir, is_train, key):
     states_queue = queue.Queue()
     hidden_states[key] = states_queue
-    return states.set_states(states_dir, is_train, key, states_queue)
+    return states.set_hidden_states(states_dir, is_train, key, states_queue)
 
 
 if __name__ == "__main__":

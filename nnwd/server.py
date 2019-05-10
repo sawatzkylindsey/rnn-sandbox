@@ -122,6 +122,7 @@ def main(argv):
                     action="store_true",
                     help="Turn on verbose logging.")
     ap.add_argument("-p", "--port", default=8888, type=int)
+    ap.add_argument("--activation-dir", default=None)
     ap.add_argument("data_dir")
     ap.add_argument("sequential_dir")
     ap.add_argument("buckets_dir")
@@ -133,7 +134,11 @@ def main(argv):
 
     words = data.get_words(aargs.data_dir)
     neural_network = domain.NeuralNetwork(aargs.data_dir, aargs.sequential_dir, aargs.buckets_dir, aargs.encoding_dir)
-    query_engine = domain.QueryEngine()
+    query_engine = None
+
+    if aargs.activation_dir is not None:
+        query_engine = domain.QueryEngine(aargs.activation_dir)
+
     run_server(aargs.port, words, neural_network, query_engine)
 
     try:
