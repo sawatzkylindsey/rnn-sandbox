@@ -26,7 +26,7 @@ from ml import nlp
 from nnwd import data
 from nnwd import geometry
 from nnwd import latex
-from nnwd.models import Timestep, WeightExplain, WeightDetail, HiddenState, LabelDistribution, SequenceRollup, SequenceMatch, Estimate
+from nnwd.models import Timestep, WeightExplain, WeightDetail, HiddenState, LabelDistribution, SequenceRollup, SequenceMatch, Estimate, SoftFilters
 from nnwd import parameters
 from nnwd import pickler
 from nnwd import reduction
@@ -135,7 +135,7 @@ def pos_colour_mapping():
 
 
 class NeuralNetwork:
-    def __init__(self, data_dir, sequential_dir, buckets_dir, encoding_dir):
+    def __init__(self, data_dir, sequential_dir, buckets_dir, encoding_dir, use_fixed_buckets):
         self.data_dir = data_dir
         self.sequential_dir = sequential_dir
         self.buckets_dir = buckets_dir
@@ -156,7 +156,10 @@ class NeuralNetwork:
             self.colour_mapping = sa_colour_mapping()
             self.sort_key = lambda key_value: sa.sentiment_sort_key(key_value[1])
 
-        self.bucket_mappings = reduction.get_learned_buckets(self.buckets_dir)
+        if use_fixed_buckets:
+            self.bucket_mappings = reduction.get_fixed_buckets(self.buckets_dir)
+        else:
+            self.bucket_mappings = reduction.get_learned_buckets(self.buckets_dir)
 
         self.lstm = sequential.model_for(self.data_dir)
         sequential.load_model(self.lstm, self.sequential_dir)
@@ -179,11 +182,10 @@ class NeuralNetwork:
         else:
             return self.stepwise(sequence[:-1]).next_stepwise(sequence[-1])
 
-    def query_lstm(self, sequence):
-        stepwise_lstm = self.stepwise(tuple(sequence[:-1]))
+    def query_lstm(self, sequence, instruments):
         word = sequence[-1]
         resolved_word = self.words.decode(self.words.encode(word, True))
-        result, instruments = stepwise_lstm.query(word, view.INSTRUMENTS)
+        result, instruments = self.lstm.evaluate_sequence(sequence, handle_unknown=True, instrument_names=instruments)
         return resolved_word, result, instruments
 
     def _dummy(self):
@@ -267,7 +269,7 @@ class NeuralNetwork:
                 part, layer, _ = xy.x
 
             ordered_predictions = [item[0] for item in sorted(results[i].distribution().items(), key=lambda item: item[1], reverse=True)]
-            distribution_predictions[self.encode_key(part, layer)] = {prediction: results[i].distribution()[prediction] for prediction in ordered_predictions[:parameters.TOP_PREDICTIONS]}
+            distribution_predictions[view.encode_key(part, layer)] = {prediction: results[i].distribution()[prediction] for prediction in ordered_predictions[:parameters.TOP_PREDICTIONS]}
 
         return distribution_predictions
 
@@ -302,16 +304,14 @@ class NeuralNetwork:
         return colours
 
     def weights(self, sequence):
-        last_word, result, instruments = self.query_lstm(sequence)
+        last_word, result, instruments = self.query_lstm(sequence, view.INSTRUMENTS)
         points = {}
 
         for part, layer in view.part_layers():
-            # TODO
+            points[view.encode_key(part, layer)] = instruments[part][layer]
+
             if view.is_embedding(part, layer):
                 embedding_key = view.encode_key(part, layer)
-                points[self.encode_key(part, layer)] = instruments[part]
-            else:
-                points[self.encode_key(part, layer)] = instruments[part][layer]
 
         point_reductions, point_colours, point_predictions = self.compute_point_abstractions(last_word, points)
         embedding_name = self.latex_name(len(sequence) - 1, "embedding")
@@ -323,7 +323,7 @@ class NeuralNetwork:
         return Timestep(embedding, units, softmax, len(sequence) - 1, last_word, result.prediction)
 
     def weight_detail(self, sequence, part, layer):
-        last_word, result, instruments = self.query_lstm(sequence)
+        last_word, result, instruments = self.query_lstm(sequence, view.INSTRUMENTS)
         point = instruments[part]
 
         if layer is not None:
@@ -335,7 +335,7 @@ class NeuralNetwork:
             min_max = (None, None)
 
         # This is the regular process by which a hidden_state is served out with its various reductions/abstractions.
-        key = self.encode_key(part, layer)
+        key = view.encode_key(part, layer)
         keyed_point = {key: point}
         reduction, colour, prediction = self.compute_point_abstractions(last_word, keyed_point)
         name = self.latex_name(len(sequence) - 1, part, layer)
@@ -357,16 +357,30 @@ class NeuralNetwork:
 
         return WeightDetail(hidden_state, full_hidden_state, back_links)
 
-    def encode_key(self, part, layer=None):
-        return "%s-%d" % (part, 0 if layer is None else layer)
+    def soft_filter(self, sequence):
+        last_word, result, instruments = self.query_lstm(sequence, ["ws"])
+        part = "w"
+        ws = []
 
-    def decode_key(self, key):
-        result = key.split("-")
+        for timestep in range(len(instruments["ws"])):
+            units = []
 
-        if len(result) == 2:
-            return (result[0], int(result[1]))
-        else:
-            raise ValueError("invalid decode of '%s': %s" % (key, result))
+            for layer in range(len(instruments["ws"][timestep])):
+                point = instruments["ws"][timestep][layer]
+                # TODO
+                point_reduction = reduction.reduce(self.bucket_mappings["cells-0"], point)
+                name = self.latex_name(timestep, part, layer)
+                name_no_t = self.latex_name_no_t(part, layer)
+                hidden_state = HiddenState(name, name_no_t, point_reduction, (0, 1))
+                units += [hidden_state]
+
+            ws += [units]
+
+        return last_word, ws
+
+    def soft_filters(self, sequence):
+        word_timesteps = [self.soft_filter(sequence[:i + 1]) for i in range(len(sequence))]
+        return SoftFilters([item[0] for item in word_timesteps], [item[1] for item in word_timesteps])
 
     def prediction_distribution(self, prediction):
         if prediction is None:
@@ -386,7 +400,7 @@ class NeuralNetwork:
                 else:
                     min_max = (None, None)
 
-                key = self.encode_key(part, layer)
+                key = view.encode_key(part, layer)
                 name = self.latex_name(timestep, part, layer)
                 name_no_t = self.latex_name_no_t(part, layer)
                 hidden_state = HiddenState(name, name_no_t, point_reductions[key], min_max, point_colours[key], self.prediction_distribution(point_predictions[key]))
@@ -523,6 +537,8 @@ class NeuralNetwork:
             return "h_%d^%d" % (t, u)
         elif part == "softmax":
             return "y_%d" % t
+        elif part == "w":
+            return "w_%d^%d" % (t, u)
 
     @latex.generate_png
     def latex_name_no_t(self, part, layer=None):
@@ -552,6 +568,8 @@ class NeuralNetwork:
             return "h^%d" % u
         elif part == "softmax":
             return "y"
+        elif part == "w":
+            return "w^%d" % u
 
 
 class QueryEngine:

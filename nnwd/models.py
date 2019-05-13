@@ -163,6 +163,27 @@ class Estimate:
         }
 
 
+class SoftFilters:
+    def __init__(self, words, timestep_units):
+        self.words = words
+        timesteps = len(timestep_units)
+        layers = len(timestep_units[0][0])
+        self.matrix_units = [[[None] * layers for column in range(timesteps)] for row in range(timesteps)]
+
+        # Square out the data into a matrix.
+        for row in range(timesteps):
+            for column in range(timesteps):
+                if column < len(timestep_units[row]):
+                    for layer in range(layers):
+                        self.matrix_units[row][column][layer] = timestep_units[row][column][layer]
+
+    def as_json(self):
+        return {
+            "words": self.words,
+            "matrix_units": [[[None if layer is None else layer.as_json() for layer in column]for column in row] for row in self.matrix_units],
+        }
+
+
 def canonicalize_bounds(min_max, vector):
     if min_max[0] is None:
         minimum = min(vector)

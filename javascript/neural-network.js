@@ -55,6 +55,7 @@ var active_components = {
     "softmax": true,
 };
 var notationOff = 0.5;
+var main_view = "component";
 
 $(document).ready(function () {
     total_width = TOTAL_WIDTH - LEFT_WIDTH;
@@ -88,13 +89,18 @@ $(document).ready(function () {
         var tail = main_sequence.length;
         main_sequence = sequence;
         trimSequenceTail(tail, main_sequence.length);
-        drawWeightsFromSequence(0);
-        for (var timestep = 0; timestep < main_sequence.length; timestep++) {
+
+        if (main_view == "component") {
+            drawWeightsFromSequence(0);
+            for (var timestep = 0; timestep < main_sequence.length; timestep++) {
+                drawAutocomplete(timestep);
+                var autocomplete = $("#autocomplete-" + timestep);
+                autocomplete.find("input").val(main_sequence[timestep]);
+            }
             drawAutocomplete(timestep);
-            var autocomplete = $("#autocomplete-" + timestep);
-            autocomplete.find("input").val(main_sequence[timestep]);
+        } else if (main_view == "filters") {
+            drawSoftFilters();
         }
-        drawAutocomplete(timestep);
     }
     $("#header").css("width", TOTAL_WIDTH);
     var main_input = $("#main_input");
@@ -106,6 +112,24 @@ $(document).ready(function () {
                 .split(/\s+/);
             $(".modal").remove();
             acceptMainInput(sequence);
+        }
+    });
+    var main_switch = $("#main_switch");
+    main_switch.on("click", function(d) {
+        if (main_view == "component") {
+            main_view = "filters";
+            $(".component").remove();
+            drawSoftFilters();
+        } else {
+            main_view = "component";
+            $(".alignment").remove();
+            drawWeightsFromSequence(0);
+            for (var timestep = 0; timestep < main_sequence.length; timestep++) {
+                drawAutocomplete(timestep);
+                var autocomplete = $("#autocomplete-" + timestep);
+                autocomplete.find("input").val(main_sequence[timestep]);
+            }
+            drawAutocomplete(timestep);
         }
     });
     $("#query").css("cursor", "pointer")
@@ -952,6 +976,138 @@ function drawStateWidget(timestep, geometry, name, min, max, vector, colour, pre
                     return y(d.position) + (macro_y.bandwidth() / 2);
                 }
             })
+            .attr("stroke", function (d) {
+                if (d.value == 0) {
+                    return "none";
+                }
+
+                return black;
+            })
+            .attr("stroke-width", stroke_width);
+}
+
+function drawStateCell(geometry, min, max, vector, classes, chip_width, chip_height) {
+    if (min >= max) {
+        throw "min " + min + " cannot exceed max " + max;
+    }
+
+    if (min > 0) {
+        throw "min " + min + " cannot be greater than 0";
+    }
+
+    if (max < 0) {
+        throw "max " + max + " cannot be less than 0";
+    }
+
+    var found_min = d3.min(vector, function(d) { return d.value; });
+    if (found_min < min) {
+        throw "found value " + found_min + " exceeding min " + min;
+    }
+
+    var found_max = d3.max(vector, function(d) { return d.value; });
+    if (found_max > max) {
+        throw "found value " + found_max + " exceeding max " + max;
+    }
+
+    var stroke_width = 1;
+
+    var macro_y = d3.scaleBand()
+        .padding(0.2)
+        .domain(Array.from(Array(chip_height).keys()))
+        .range([geometry.y + (stroke_width / 2.0), geometry.y + geometry.height - (stroke_width / 2.0)]);
+    function y(position) {
+        return macro_y(position % chip_height);
+    }
+
+    var macro_x = d3.scaleBand()
+        .padding(0.2)
+        .domain(Array.from(Array(chip_width).keys()))
+        .range([geometry.x + (stroke_width / 2.0), geometry.x + geometry.width - (stroke_width / 2.0)]);
+    function x(position) {
+        return macro_x(Math.floor(position / chip_height));
+    }
+
+    var magnitude = d3.scaleLinear()
+        .domain([1, 1 + Math.max(Math.abs(min), Math.abs(max))])
+    //var magnitude = d3.scaleLog()
+    //    // In d3 v3 we can't set 0 in the domain, so push everything up by 1.
+    //    // Make sure to do this when applying the scale as well!
+    //    .domain([1, 1 + Math.max(Math.abs(min), Math.abs(max))])
+        .range([0, macro_x.bandwidth()]);
+
+    var margin = (geometry.width / 6);
+
+    // Boundary box
+    svg.append("rect")
+        .attr("class", classes)
+        .attr("x", geometry.x + (stroke_width / 2.0))
+        .attr("y", geometry.y + (stroke_width / 2.0))
+        .attr("width", geometry.width - stroke_width)
+        .attr("height", geometry.height - stroke_width)
+        .attr("stroke", light_grey)
+        .attr("stroke-width", stroke_width)
+        .attr("fill", "none");
+    // Chip's colour & magnitude.
+    svg.selectAll(".chip")
+        .data(vector)
+        .enter()
+            .append("rect")
+            .attr("class", function(d) { return classes + " activation-" + d.position; })
+            .attr("data-activation", function(d) { return d.value; })
+            .attr("x", function (d) {
+                var base_x = x(d.position);
+
+                if (d.value >= 0) {
+                    return base_x;
+                } else {
+                    return base_x + (macro_x.bandwidth() - magnitude(1 + Math.abs(d.value)));
+                }
+            })
+            .attr("y", function (d) { return y(d.position); })
+            .attr("width", function (d) { return magnitude(1 + Math.abs(d.value)); })
+            .attr("height", function (d) { return macro_y.bandwidth(); })
+            .attr("stroke", "none")
+            .attr("fill", dark_grey);
+    // Chip's scaling box.
+    svg.selectAll(".chip")
+        .data(vector)
+        .enter()
+            .append("rect")
+            .attr("class", classes)
+            .attr("x", function (d) { return x(d.position); })
+            .attr("y", function (d) { return y(d.position); })
+            .attr("width", macro_x.bandwidth())
+            .attr("height", function (d) { return macro_y.bandwidth(); })
+            .attr("stroke", light_grey)
+            .attr("stroke-width", stroke_width)
+            .attr("fill", "transparent")
+            .style("pointer-events", "bounding-box");
+    // Chip's direction line.
+    svg.selectAll(".chip")
+        .data(vector)
+        .enter()
+            .append("line")
+            .attr("class", classes)
+            .attr("x1", function(d) {
+                var base_x = x(d.position);
+
+                if (d.value >= 0) {
+                    return base_x;
+                } else {
+                    return base_x + macro_x.bandwidth();
+                }
+            })
+            .attr("y1", function (d) { return y(d.position) - 1; })
+            .attr("x2", function(d) {
+                var base_x = x(d.position);
+
+                if (d.value >= 0) {
+                    return base_x;
+                } else {
+                    return base_x + macro_x.bandwidth();
+                }
+            })
+            .attr("y2", function (d) { return y(d.position) + macro_y.bandwidth() + 1; })
             .attr("stroke", function (d) {
                 if (d.value == 0) {
                     return "none";
@@ -2389,7 +2545,7 @@ function drawAutocomplete(timestep) {
 
     $("#autocomplete-" + timestep).parent().remove();
     svg.append("foreignObject")
-        .attr("class", "autocomplete")
+        .attr("class", "autocomplete component")
         .attr("transform", "translate(" + x_offset + "," + (y_offset + state_height + (state_height / 4) - (HEIGHT / 2) - 1) + ")")
         .attr("width", input_width)
         .attr("height", HEIGHT)
@@ -2493,6 +2649,12 @@ function trimSequenceTail(old_sequence_length, new_sequence_length) {
 
         $(".timestep-" + s).remove();
     }
+}
+
+function drawSoftFilters() {
+    $(".alignment").remove();
+    d3.json("soft-filters?" + main_sequence.map(s => "sequence=" + encodeURI(s)).join("&"))
+        .get(function (error, data) { drawAlignment(data); });
 }
 
 function drawWeightsFromSequence(timestep) {
@@ -2710,6 +2872,54 @@ function drawSequence(sequence_match, x_offset, y_offset, width, height) {
             .style("font-size", "14px")
             .style("fill", black)
             .text(word);
+    }
+}
+
+var datum = null;
+
+function drawAlignment(data) {
+    var x_offset = 20;
+    var y_offset = 20;
+    var max_x = 0;
+
+    for (row in data.matrix_units) {
+        for (column in data.matrix_units[row]) {
+            var geometry = {
+                x: x_offset + (state_width * row) + (10 * row),
+                y: y_offset + (state_height * column) + (10 * column),
+                width: state_width,
+                height: state_height,
+            };
+            // The 0th unit:                                 vvv
+            var hidden_state = data.matrix_units[row][column][0];
+
+            if (hidden_state != null) {
+                drawStateCell(geometry, hidden_state.minimum, hidden_state.maximum, hidden_state.vector, "alignment", MEMORY_CHIP_WIDTH, MEMORY_CHIP_HEIGHT);
+            }
+
+            if (geometry.x > max_x) {
+                max_x = geometry.x;
+            }
+        }
+    }
+
+    x_offset = (x_offset * 2) + max_x + state_width;
+
+    for (row in data.matrix_units) {
+        for (column in data.matrix_units[row]) {
+            var geometry = {
+                x: x_offset + (state_width * row) + (10 * row),
+                y: y_offset + (state_height * column) + (10 * column),
+                width: state_width,
+                height: state_height,
+            };
+            // The 1th unit:                                 vvv
+            var hidden_state = data.matrix_units[row][column][1];
+
+            if (hidden_state != null) {
+                drawStateCell(geometry, hidden_state.minimum, hidden_state.maximum, hidden_state.vector, "alignment", MEMORY_CHIP_WIDTH, MEMORY_CHIP_HEIGHT);
+            }
+        }
     }
 }
 

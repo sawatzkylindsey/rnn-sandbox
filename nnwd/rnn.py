@@ -25,13 +25,14 @@ class Rnn:
     # we track all the other intermediate gates/states for the weight instrumentation.
     SCAN_STATES = 10
 
-    def __init__(self, layers, width, embedding_width, word_labels, output_labels, scope="rnn"):
+    def __init__(self, layers, width, embedding_width, word_labels, output_labels, scope="rnn", ablations=Ablations()):
         self.layers = layers
         self.width = width
         self.embedding_width = embedding_width
         self.word_labels = word_labels
         self.output_labels = output_labels
         self.scope = scope
+        self.ablations = ablations
         self._initials = {}
         self._instruments = {}
         self._training_id = None
@@ -48,6 +49,8 @@ class Rnn:
         self.clip_norm_p = self.placeholder("clip_norm_p", [1], tf.float32)
         self.dropout_keep_p = self.placeholder("dropout_keep_p", [1], tf.float32)
 
+        self.max_time, self.batch_size = tf.unstack(tf.shape(self.unrolled_inputs_p))
+
         self.E = self.variable("E", [len(self.word_labels), self.embedding_width])
 
         self.R = self.variable("R", [self.layers, self.width * 2, self.width])
@@ -60,9 +63,16 @@ class Rnn:
         self.O_bias = self.variable("O_bias", [self.layers, self.width], initial=0.0)
         tf.identity(tf.reshape(self.O_bias, [-1, self.width]), name="O_bias")
 
-        self.H = self.variable("H", [self.layers, self.width * 2, self.width])
-        self.H_bias = self.variable("H_bias", [self.layers, self.width], initial=0.0)
-        tf.identity(tf.reshape(self.H_bias, [-1, self.width]), name="H_bias")
+        #self.dummy = tf.constant([0.0] * self.width, dtype="float32")
+        #assert_shape(self.dummy, [self.width])
+        #self.batched_dummy = tf.transpose(tf.reshape(tf.tile(self.dummy, [self.batch_size]), [self.width, self.batch_size]))
+
+        if self.ablations.srnn:
+            self.H = self.variable("H", [self.layers, self.width, self.width])
+        else:
+            self.H = self.variable("H", [self.layers, self.width * 2, self.width])
+            self.H_bias = self.variable("H_bias", [self.layers, self.width], initial=0.0)
+            tf.identity(tf.reshape(self.H_bias, [-1, self.width]), name="H_bias")
 
         self.Y = self.variable("Y", [self.width, len(self.output_labels)])
         self.Y_bias = self.variable("Y_bias", [1, len(self.output_labels)], initial=0.0)
@@ -70,7 +80,7 @@ class Rnn:
 
         self.unrolled_embedded_inputs = tf.nn.embedding_lookup(self.E, self.unrolled_inputs_p)
         assert_shape(self.unrolled_embedded_inputs, [self.time_dimension, self.batch_dimension, self.embedding_width])
-        tf.identity(tf.reshape(self.unrolled_embedded_inputs, [self.embedding_width]), name="embedding")
+        tf.identity(tf.reshape(self.unrolled_embedded_inputs, [-1, self.embedding_width]), name="embedding")
 
         if self.embedding_width != self.width:
             self.EP = self.variable("EP", [self.embedding_width, self.width])
@@ -107,7 +117,12 @@ class Rnn:
                 forget_gate_stack.append(forget_gate)
                 output_gate = tf.sigmoid(tf.matmul(tf.concat([output_previous[l], x], axis=-1), self.O[l]) + self.O_bias[l])
                 output_gate_stack.append(output_gate)
-                input_hat = tf.tanh(tf.matmul(tf.concat([output_previous[l], x], axis=-1), self.H[l]) + self.H_bias[l])
+
+                if self.ablations.srnn:
+                    input_hat = tf.matmul(x, self.H[l])
+                else:
+                    input_hat = tf.tanh(tf.matmul(tf.concat([output_previous[l], x], axis=-1), self.H[l]) + self.H_bias[l])
+
                 input_hat_stack.append(input_hat)
                 remember = input_hat * remember_gate
                 remember_stack.append(remember)
@@ -119,18 +134,41 @@ class Rnn:
                 cell_stack.append(cell)
                 cell_hat = tf.tanh(cell)
                 cell_hat_stack.append(cell_hat)
-                output = cell_hat * output_gate
+
+                if self.ablations.out:
+                    output = cell_hat
+                else:
+                    output = cell_hat * output_gate
+
                 assert_shape(output, [self.batch_dimension, self.width])
                 output_stack.append(output)
                 x = self.dropout(output)
 
             return tf.stack([output_stack, cell_stack, remember_gate_stack, forget_gate_stack, output_gate_stack, input_hat_stack, remember_stack, cell_previous_stack, forget_stack, cell_hat_stack])
 
-        self.max_time, self.batch_size = tf.unstack(tf.shape(self.unrolled_inputs_p))
         scan_inputs = tf.reshape(self.unrolled_embedded_projected_inputs, [self.max_time, self.batch_size, self.width])
         assert_shape(scan_inputs, [self.time_dimension, self.batch_dimension, self.width])
         self.unrolled_states = tf.scan(step_lstm, scan_inputs, self.initial_state_p)
         assert_shape(self.unrolled_states, [self.time_dimension, Rnn.SCAN_STATES, self.layers, self.batch_dimension, self.width])
+
+        # We can produce the 'w' term irrespective of the ablations (or lack thereof).
+        # However notice, this will only have the intended sum of soft filters interpretation under the srnn + out conditions.
+        REMEMBER_POSITION = 2
+        FORGET_POSITION = 3
+        def step_w(index):
+            left = self.unrolled_states[index][REMEMBER_POSITION]
+            assert_shape(left, [self.layers, self.batch_dimension, self.width])
+
+            right = tf.reduce_prod(self.unrolled_states[index + 1:, FORGET_POSITION, :], 0)
+            assert_shape(right, [self.layers, self.batch_dimension, self.width])
+
+            result = left * right
+            assert_shape(result, [self.layers, self.batch_dimension, self.width])
+            return result
+
+        self.ws = tf.map_fn(step_w, tf.range(0, self.max_time), dtype=tf.float32)
+        assert_shape(self.ws, [self.time_dimension, self.layers, self.batch_dimension, self.width])
+        tf.identity(tf.reshape(self.ws, [self.max_time, self.layers, self.width]), name="ws")
 
         # Grab the last timesteps' state layers out of the unrolled state layers ([x y z] in diagram).
         # Notice, each cell in the diagram represents 2 (+all the extra instrumentation) states (hidden, cell, ..instrumentation..).
@@ -180,7 +218,7 @@ class Rnn:
 
         optimizer = tf.train.GradientDescentOptimizer(self.learning_rate_p[0])
         gradients = optimizer.compute_gradients(self.cost)
-        gradients_clipped = [(tf.clip_by_norm(g, self.clip_norm_p[0]), var) for g, var in gradients]
+        gradients_clipped = [(tf.clip_by_norm(g, self.clip_norm_p[0]), var) for g, var in gradients if g is not None]
         self.updates = optimizer.apply_gradients(gradients_clipped)
 
         #trainable_variables = tf.trainable_variables()
@@ -312,6 +350,16 @@ class Rnn:
 
         return -math.exp(total_loss / len(xy_sequences))
 
+    def evaluate_sequence(self, xs, handle_unknown=False, instrument_names=[]):
+        feed = self.get_testing_feed([mlbase.Xy([(x, None) for x in xs], [])])
+        instruments = self.get_instruments(instrument_names)
+        distributions, *instrument_values = self.session.run([self.output_distributions] + instruments, feed_dict=feed)
+        assert len(distributions) == len(xs), "%d != %d" % (len(distributions), len(xs))
+        assert len(distributions[-1]) == 1, "%d != 1" % (len(distributions[-1]))
+        distribution = distributions[-1][0]
+        result = Result(self.output_labels.vector_decode(distribution), self.output_labels.vector_decode_distribution(distribution), self.output_labels.encoding())
+        return result, {name: instrument_values[i] for i, name in enumerate(instrument_names)}
+
     def evaluate(self, x, handle_unknown=False, state=None, instrument_names=[]):
         feed = {
             self.unrolled_inputs_p: [[self.word_labels.encode(x, handle_unknown)]],
@@ -321,8 +369,8 @@ class Rnn:
         instruments = self.get_instruments(instrument_names)
         distributions, next_state, *instrument_values = self.session.run([self.output_distributions, self.state] + instruments, feed_dict=feed)
         assert len(distributions) == 1
-        assert len(distributions[0]) == 1
-        distribution = distributions[0][0]
+        assert len(distributions[-1]) == 1
+        distribution = distributions[-1][0]
         result = Result(self.output_labels.vector_decode(distribution), self.output_labels.vector_decode_distribution(distribution), self.output_labels.encoding())
         return result, next_state, {name: instrument_values[i] for i, name in enumerate(instrument_names)}
 
@@ -699,6 +747,13 @@ class Result:
 
     def __repr__(self):
         return "(prediction=%s, distribution=%s)" % (self.prediction, sorted(self.distribution.items()))
+
+
+# Based off: LONG SHORT-TERM MEMORY AS A DYNAMICALLY COMPUTED ELEMENT-WISE WEIGHTED SUM (Levy*, Lee*, FitzGerald, Zettlemoyer 2018)
+class Ablations:
+    def __init__(self, srnn, out):
+        self.srnn = srnn
+        self.out = out
 
 
 def assert_shape(tensor, expected):

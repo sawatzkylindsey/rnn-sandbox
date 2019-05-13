@@ -115,3 +115,13 @@ class SequenceMatches(SequenceQuery):
         tolerance, predicates = self.parse(data)
         return self.query_engine.find(tolerance, predicates)
 
+
+class SoftFilters:
+    def __init__(self, neural_network):
+        self.neural_network = neural_network
+
+    def get(self, data):
+        sequence = data["sequence"]
+        #distance = check.check_gte(int(data["distance"][0]), 0)
+        return self.neural_network.soft_filters(sequence)
+

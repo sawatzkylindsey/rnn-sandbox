@@ -92,11 +92,7 @@ def elicit_hidden_states(rnn, xys, annotation_fn, sample_rate, states_dir, is_tr
                 result, instruments = stepwise_rnn.step(word_pos[0], view.INSTRUMENTS)
 
                 for part, layer in view.part_layers():
-                    # TODO
-                    if view.is_embedding(part, layer):
-                        hidden_states[view.encode_key(part, layer)].put((word_pos[0], tuple(instruments[part]), annotation))
-                    else:
-                        hidden_states[view.encode_key(part, layer)].put((word_pos[0], tuple(instruments[part][layer]), annotation))
+                    hidden_states[view.encode_key(part, layer)].put((word_pos[0], tuple(instruments[part][layer]), annotation))
 
     # Mark the queue as finished.
     for value in hidden_states.values():

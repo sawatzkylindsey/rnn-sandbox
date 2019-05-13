@@ -65,11 +65,7 @@ def elicit_activation_states(rnn, xys, activations_dir):
             result, instruments = stepwise_rnn.step(word_pos[0], view.INSTRUMENTS)
 
             for part, layer in view.part_layers():
-                # TODO
-                if view.is_embedding(part, layer):
-                    activation_states[view.encode_key(part, layer)].put((sequence, i, tuple(instruments[part])))
-                else:
-                    activation_states[view.encode_key(part, layer)].put((sequence, i, tuple(instruments[part][layer])))
+                activation_states[view.encode_key(part, layer)].put((sequence, i, tuple(instruments[part][layer])))
 
     # Mark the queue as finished.
     for value in activation_states.values():

@@ -1,4 +1,4 @@
-#!/usr/bin/python
+
 # -*- coding: utf-8 -*-
 
 from argparse import ArgumentParser
@@ -110,6 +110,7 @@ def run_server(port, words, neural_network, query_engine):
         "words": handlers.Words(words.labels()),
         "sequence-matches": handlers.SequenceMatches(query_engine),
         "sequence-matches-estimate": handlers.SequenceMatchesEstimate(query_engine),
+        "soft-filters": handlers.SoftFilters(neural_network),
     }
     user_log.info('Starting httpd %d...' % port)
     httpd.serve_forever()
@@ -123,6 +124,7 @@ def main(argv):
                     help="Turn on verbose logging.")
     ap.add_argument("-p", "--port", default=8888, type=int)
     ap.add_argument("--activation-dir", default=None)
+    ap.add_argument("--use-fixed-buckets", default=False, action="store_true")
     ap.add_argument("data_dir")
     ap.add_argument("sequential_dir")
     ap.add_argument("buckets_dir")
@@ -133,7 +135,7 @@ def main(argv):
     logging.debug(aargs)
 
     words = data.get_words(aargs.data_dir)
-    neural_network = domain.NeuralNetwork(aargs.data_dir, aargs.sequential_dir, aargs.buckets_dir, aargs.encoding_dir)
+    neural_network = domain.NeuralNetwork(aargs.data_dir, aargs.sequential_dir, aargs.buckets_dir, aargs.encoding_dir, aargs.use_fixed_buckets)
     query_engine = None
 
     if aargs.activation_dir is not None:
