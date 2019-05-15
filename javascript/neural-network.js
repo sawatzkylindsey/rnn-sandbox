@@ -1,6 +1,6 @@
 
-var MEMORY_CHIP_HEIGHT = 5;
-var MEMORY_CHIP_WIDTH = 3;
+var MEMORY_CHIP_HEIGHT = 4;
+var MEMORY_CHIP_WIDTH = 2;
 var DETAIL_CHIP_WIDTH = 5;
 var total_width = null;
 var total_height = null;
@@ -13,7 +13,7 @@ var HEIGHT = 20;
 var circle_radius = 8;
 var state_width = 30;
 var state_height = layer_height / 3.0;
-state_height = 50;
+state_height = 60;
 if ((state_height / MEMORY_CHIP_HEIGHT) != (state_width / MEMORY_CHIP_WIDTH)) {
     throw "chips aren't square (" + (state_width / MEMORY_CHIP_WIDTH) + ", " + (state_height / MEMORY_CHIP_HEIGHT) + ")";
 }
@@ -100,6 +100,12 @@ $(document).ready(function () {
             drawAutocomplete(timestep);
         } else if (main_view == "filters") {
             drawSoftFilters();
+            for (var timestep = 0; timestep < main_sequence.length; timestep++) {
+                drawAutocomplete(timestep);
+                var autocomplete = $("#autocomplete-" + timestep);
+                autocomplete.find("input").val(main_sequence[timestep]);
+            }
+            drawAutocomplete(timestep);
         }
     }
     $("#header").css("width", TOTAL_WIDTH);
@@ -120,6 +126,12 @@ $(document).ready(function () {
             main_view = "filters";
             $(".component").remove();
             drawSoftFilters();
+            for (var timestep = 0; timestep < main_sequence.length; timestep++) {
+                drawAutocomplete(timestep);
+                var autocomplete = $("#autocomplete-" + timestep);
+                autocomplete.find("input").val(main_sequence[timestep]);
+            }
+            drawAutocomplete(timestep);
         } else {
             main_view = "component";
             $(".alignment").remove();
@@ -2539,8 +2551,9 @@ function drawClose(x_offset, y_offset, radius, items_class, callback) {
 }
 
 function drawAutocomplete(timestep) {
+    var section_height = main_view == "component" ? layer_height : state_height + detail_margin;
     var x_offset = x_margin;
-    var y_offset = y_margin + (timestep * layer_height)
+    var y_offset = y_margin + (timestep * section_height)
     var focus = null;
 
     $("#autocomplete-" + timestep).parent().remove();
@@ -2628,7 +2641,11 @@ function drawAutocomplete(timestep) {
                     }
                 }
 
-                drawWeightsFromSequence(timestep);
+                if (main_view == "component") {
+                    drawWeightsFromSequence(timestep);
+                } else {
+                    drawSoftFilters();
+                }
                 $("#main_input").val(main_sequence.join(" "));
             }
         }
@@ -2875,18 +2892,26 @@ function drawSequence(sequence_match, x_offset, y_offset, width, height) {
     }
 }
 
-var datum = null;
-
 function drawAlignment(data) {
-    var x_offset = 20;
-    var y_offset = 20;
+    var x_offset = (x_margin * 2) + input_width + (state_width / 2);
+    var y_offset = y_margin + (state_height * 3 / 4);
     var max_x = 0;
 
     for (row in data.matrix_units) {
+        if (data.words[row] != main_sequence[row]) {
+            svg.append("text")
+                .attr("class", "timestep-" + row + " alignment")
+                .attr("x", x_margin + (input_width * 1 / 3))
+                .attr("y", y_margin + (row * (state_height + detail_margin)) + state_height + (state_height / 5) + HEIGHT + 5)
+                .style("font-size", "14px")
+                .style("fill", black)
+                .text(data.words[row]);
+        }
+
         for (column in data.matrix_units[row]) {
             var geometry = {
-                x: x_offset + (state_width * row) + (10 * row),
-                y: y_offset + (state_height * column) + (10 * column),
+                x: x_offset + (column * (state_width + detail_margin)),
+                y: y_offset + (row * (state_height + detail_margin)),
                 width: state_width,
                 height: state_height,
             };
@@ -2903,13 +2928,13 @@ function drawAlignment(data) {
         }
     }
 
-    x_offset = (x_offset * 2) + max_x + state_width;
+    x_offset = max_x + (state_width * 3);
 
     for (row in data.matrix_units) {
         for (column in data.matrix_units[row]) {
             var geometry = {
-                x: x_offset + (state_width * row) + (10 * row),
-                y: y_offset + (state_height * column) + (10 * column),
+                x: x_offset + (state_width * column) + (detail_margin * column),
+                y: y_offset + (state_height * row) + (detail_margin * row),
                 width: state_width,
                 height: state_height,
             };
