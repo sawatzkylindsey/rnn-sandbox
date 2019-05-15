@@ -23,8 +23,8 @@ from nnwd import pickler
 from nnwd import reduction
 from nnwd import rnn
 from nnwd import semantic
+from nnwd import sequential
 from nnwd import states
-from nnwd import view
 
 from pytils import adjutant
 from pytils.log import setup_logging, user_log
@@ -56,20 +56,24 @@ def main(argv):
     ap.add_argument("--word-input", default=False, action="store_true")
     ap.add_argument("-s", "--score", default=False, action="store_true")
     ap.add_argument("data_dir")
+    ap.add_argument("sequential_dir")
     ap.add_argument("states_dir")
     ap.add_argument("encoding_dir")
     aargs = ap.parse_args(argv)
     setup_logging(".%s.log" % os.path.splitext(os.path.basename(__file__))[0], aargs.verbose, False, True, True)
     logging.debug(aargs)
 
+    lstm = sequential.model_for(aargs.data_dir, aargs.sequential_dir)
+    hyper_parameters = model.HyperParameters(aargs.layers, aargs.width)
+    extra = {"word_input": aargs.word_input}
     user_log.info("Sem")
-    sem = generate_sem(aargs.data_dir, aargs.layers, aargs.width, aargs.states_dir, aargs.epochs, aargs.encoding_dir, aargs.word_input)
+    sem, sem_as_input = generate_sem(lstm, hyper_parameters, extra, aargs.states_dir, aargs.epochs, aargs.encoding_dir)
 
     if aargs.score:
-        scores_sem, totals_sem = test_model(sem, aargs.states_dir, False)
+        scores_sem, totals_sem = test_model(lstm, sem, sem_as_input, aargs.states_dir, False)
         user_log.info("Baseline")
-        baseline = generate_baseline(aargs.data_dir, aargs.word_input)
-        scores_baseline, totals_baseline = test_model(baseline, aargs.states_dir, True)
+        baseline, baseline_as_input = generate_baseline(aargs.data_dir, lstm, hyper_parameters, extra)
+        scores_baseline, totals_baseline = test_model(lstm, baseline, baseline_as_input, aargs.states_dir, True)
 
         with open(os.path.join(aargs.encoding_dir, "analysis-breakdown.csv"), "w") as fh:
             writer = csv_writer(fh)
@@ -96,57 +100,53 @@ def main(argv):
     return 0
 
 
-def generate_sem(data_dir, layers, width, states_dir, epochs, encoding_dir, word_input):
-    hyper_parameters = model.HyperParameters() \
-        .layers(layers) \
-        .width(width)
-    sem = semantic.model_for(data_dir, lambda s, i, o, e: model.Ffnn(s, i, o, hyper_parameters, e), word_input)
-    train_xys = []
-
-    for key in view.keys():
-        for xy in states.stream_hidden_train(states_dir, key, _data_converter(key, word_input)):
-            train_xys += [xy]
-
+def generate_sem(lstm, hyper_parameters, extra, states_dir, epochs, encoding_dir):
+    sem, as_input = semantic.model_for(lstm, hyper_parameters=hyper_parameters, extra=extra, model_fn=lambda hp, e, i, o, s: model.Ffnn(hp, e, i, o, s))
+    semantic.save_model(sem, encoding_dir)
+    train_xys = [mlbase.Xy(as_input(key, hidden_state), hidden_state.annotation) for key, hidden_state in states.stream_hidden_train(states_dir)]
     training_parameters = mlbase.TrainingParameters() \
         .epochs(epochs) \
         .batch(32)
     loss = sem.train(train_xys, training_parameters)
     del train_xys
     logging.info("Trained semantic encoding to a final loss of: %.6f" % loss)
-    semantic.save_model(sem, encoding_dir)
-    return sem
+    semantic.save_parameters(sem, encoding_dir)
+    return sem, as_input
 
 
-def generate_baseline(data_dir, word_input):
+def generate_baseline(data_dir, lstm, hyper_parameters, extra):
     output_distribution = data.get_output_distribution(data_dir)
 
-    def model_fn(s, i, o, e):
+    def custom_model(hp, e, i, o, s):
         custom_distribution = [0] * len(o)
 
         for key, value in output_distribution.items():
             custom_distribution[o.encode(key)] = value
 
-        return model.CustomOutput(s, i, o, np.array(custom_distribution), e)
+        return model.CustomOutput(hp, e, i, o, s, np.array(custom_distribution))
 
-    return semantic.model_for(data_dir, model_fn, word_input)
+    return semantic.model_for(lstm, hyper_parameters=hyper_parameters, extra=extra, model_fn=custom_model)
 
 
-def test_model(model, states_dir, is_baseline):
-    word_input = model.extra["word_input"]
+def test_model(lstm, model, as_input, states_dir, is_baseline):
+    def stream_fn(key):
+        for hidden_state in states.stream_hidden_test(states_dir, key):
+            yield mlbase.Xy(as_input(key, hidden_state), hidden_state.annotation)
+
     #user_log.info("Train data.")
-    #_, _ = score_parts(model, lambda key: states.stream_hidden_train(states_dir, key, _data_converter(key, word_input)), False, is_baseline)
+    #_, _ = score_parts(model, stream_fn, False, is_baseline)
     user_log.info("Test data.")
-    key_scores, total_scores = score_parts(model, lambda key: states.stream_hidden_test(states_dir, key, _data_converter(key, word_input)), True, is_baseline)
+    key_scores, total_scores = score_parts(lstm, model, stream_fn, True, is_baseline)
     return key_scores, total_scores
 
 
-def score_parts(model, stream_fn, debug, is_baseline):
+def score_parts(lstm, model, stream_fn, debug, is_baseline):
     key_scores = {}
     total_scores = {name: 0.0 for name in SCORES.keys()}
     total_scores["loss"] = 0.0
     count = 0
 
-    for key in view.keys():
+    for key in lstm.keys():
         if is_baseline and count == 1:
             # We don't need to run across all the keys for the baseline - they would all be the same.
             break
@@ -164,13 +164,6 @@ def score_parts(model, stream_fn, debug, is_baseline):
     total_scores = {name: score / float(count) for name, score in total_scores.items()}
     user_log.info("Total scores: %s" % (adjutant.dict_as_str(total_scores)))
     return key_scores, total_scores
-
-
-def _data_converter(key, word_input):
-    if word_input:
-        return lambda data: mlbase.Xy(semantic.as_input(key, data[0], data[1]), data[2])
-    else:
-        return lambda data: mlbase.Xy(semantic.as_input(key, None, data[1]), data[2])
 
 
 if __name__ == "__main__":

@@ -19,15 +19,15 @@ from pytils.log import user_log
 
 
 LOSS = "loss"
-EXTRA = "extra"
 
 
 class Model:
-    def __init__(self, scope, input_labels, output_labels, extra):
-        self.scope = scope
-        self.input_labels = input_labels
-        self.output_labels = output_labels
+    def __init__(self, hyper_parameters, extra, input_field, output_labels, scope="model"):
+        self.hyper_parameters = check.check_instance(hyper_parameters, HyperParameters)
         self.extra = extra
+        self.input_field = input_field
+        self.output_labels = output_labels
+        self.scope = scope
 
     def evaluate(self, x, handle_unknown=False):
         raise NotImplementedError()
@@ -92,10 +92,8 @@ class Model:
 
 
 class Ffnn(Model):
-    def __init__(self, scope, input_labels, output_labels, hyper_parameters, extra={}):
-        super(Ffnn, self).__init__(scope, input_labels, output_labels, extra)
-        self.hyper = check.check_instance(hyper_parameters, HyperParameters)
-        self.extra = extra
+    def __init__(self, hyper_parameters, extra, input_field, output_labels, scope):
+        super(Ffnn, self).__init__(hyper_parameters, extra, input_field, output_labels, scope)
 
         batch_size_dimension = None
 
@@ -104,29 +102,29 @@ class Ffnn(Model):
         #   _c      constant
 
         # Base variable setup
-        self.input_p = self.placeholder("input_p", [batch_size_dimension, len(self.input_labels)])
+        self.input_p = self.placeholder("input_p", [batch_size_dimension, len(self.input_field)])
         self.output_p = self.placeholder("output_p", [batch_size_dimension], tf.int32)
 
-        self.E = self.variable("E", [len(self.input_labels), self.hyper.width()])
-        self.E_bias = self.variable("E_bias", [1, self.hyper.width()], 0.)
+        self.E = self.variable("E", [len(self.input_field), self.hyper_parameters.width])
+        self.E_bias = self.variable("E_bias", [1, self.hyper_parameters.width], 0.)
 
         # The E layer is the first layer.
-        if self.hyper.layers() - 1 > 0:
-            self.H = self.variable("H", [self.hyper.layers() - 1, self.hyper.width(), self.hyper.width()])
-            self.H_bias = self.variable("H_bias", [self.hyper.layers() - 1, 1, self.hyper.width()], 0.)
+        if self.hyper_parameters.layers - 1 > 0:
+            self.H = self.variable("H", [self.hyper_parameters.layers - 1, self.hyper_parameters.width, self.hyper_parameters.width])
+            self.H_bias = self.variable("H_bias", [self.hyper_parameters.layers - 1, 1, self.hyper_parameters.width], 0.)
 
-        self.Y = self.variable("Y", [self.hyper.width(), len(self.output_labels)])
+        self.Y = self.variable("Y", [self.hyper_parameters.width, len(self.output_labels)])
         self.Y_bias = self.variable("Y_bias", [1, len(self.output_labels)], 0.)
 
         # Computational graph encoding
         self.embedded_input = tf.tanh(tf.matmul(self.input_p, self.E) + self.E_bias)
-        mlbase.assert_shape(self.embedded_input, [batch_size_dimension, self.hyper.width()])
+        mlbase.assert_shape(self.embedded_input, [batch_size_dimension, self.hyper_parameters.width])
         hidden = self.embedded_input
-        mlbase.assert_shape(hidden, [batch_size_dimension, self.hyper.width()])
+        mlbase.assert_shape(hidden, [batch_size_dimension, self.hyper_parameters.width])
 
-        for l in range(self.hyper.layers() - 1):
+        for l in range(self.hyper_parameters.layers - 1):
             hidden = tf.tanh(tf.matmul(hidden, self.H[l]) + self.H_bias[l])
-            mlbase.assert_shape(hidden, [batch_size_dimension, self.hyper.width()])
+            mlbase.assert_shape(hidden, [batch_size_dimension, self.hyper_parameters.width])
 
         self.output_logit = tf.matmul(hidden, self.Y) + self.Y_bias
         mlbase.assert_shape(self.output_logit, [batch_size_dimension, len(self.output_labels)])
@@ -187,7 +185,7 @@ class Ffnn(Model):
                 # To account for when offset is randomly assigned 0
                 if len(batch) > 0:
                     count += len(batch)
-                    xs = [self.input_labels.vector_encode(xy.x, True) for xy in batch]
+                    xs = [self.input_field.vector_encode(xy.x, True) for xy in batch]
                     ys = [self.output_labels.encode(xy.y, True) for xy in batch]
                     feed = {
                         self.input_p: xs,
@@ -213,7 +211,7 @@ class Ffnn(Model):
         return epoch_loss
 
     def evaluate(self, batch, handle_unknown=False):
-        xs = [self.input_labels.vector_encode(xy.x, handle_unknown) for xy in batch]
+        xs = [self.input_field.vector_encode(xy.x, handle_unknown) for xy in batch]
         ys = [self.output_labels.encode(xy.y, True) for xy in batch]
         feed = {
             self.input_p: xs,
@@ -227,16 +225,13 @@ class Ffnn(Model):
         else:
             return mlbase.Result(self.output_labels, distributions[0]), loss
 
-    def load(self, model_dir):
+    def load_parameters(self, model_dir):
         model = tf.train.get_checkpoint_state(model_dir)
         assert model is not None, "No saved model in '%s'." % model_dir
         saver = tf.train.Saver(tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=self.scope))
         saver.restore(self.session, model.model_checkpoint_path)
 
-        with open(os.path.join(model_dir, EXTRA), "r") as fh:
-            self.extra = json.load(fh)
-
-    def save(self, model_dir):
+    def save_parameters(self, model_dir):
         if os.path.isfile(model_dir) or (model_dir.endswith("/") and os.path.isfile(os.path.dirname(model_dir))):
             raise ValueError("model_dir '%s' must not be a file." % model_dir)
 
@@ -245,20 +240,17 @@ class Ffnn(Model):
         saver = tf.train.Saver(tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=self.scope))
         saver.save(self.session, model_file)
 
-        with open(os.path.join(model_dir, EXTRA), "w") as fh:
-            fh.write(json.dumps(self.extra, sort_keys=True, indent=4))
-
 
 class CustomOutput(Model):
-    def __init__(self, scope, input_labels, output_labels, output_distribution, extra={}):
-        super(CustomOutput, self).__init__(scope, input_labels, output_labels, extra)
+    def __init__(self, hyper_parameters, extra, input_field, output_labels, scope, output_distribution):
+        super(CustomOutput, self).__init__(hyper_parameters, extra, input_field, output_labels, scope)
         check.check_pdist(output_distribution)
         assert len(output_labels) == len(output_distribution), "%d != %d" % (len(output_labels), len(output_distribution))
         self.output_distribution = output_distribution
 
     def evaluate(self, batch, handle_unknown=False):
         # Don't need xs, but run through the transformation to check data anyways.
-        xs = [self.input_labels.vector_encode(xy.x, handle_unknown) for xy in batch]
+        xs = [self.input_field.vector_encode(xy.x, handle_unknown) for xy in batch]
 
         if isinstance(batch, list):
             return [mlbase.Result(self.output_labels, self.output_distribution) for i in range(len(batch))], None
@@ -267,27 +259,10 @@ class CustomOutput(Model):
 
 
 class HyperParameters:
-    DEFAULT_WIDTH = 10
-    DEFAULT_LAYERS = 1
-
-    def __init__(self):
-        self._width = HyperParameters.DEFAULT_WIDTH
-        self._layers = HyperParameters.DEFAULT_LAYERS
-
-    def width(self, w=None):
-        if w is None:
-            return self._width
-
-        self._width = check.check_gte(w, 1)
-        return self
-
-    def layers(self, l=None):
-        if l is None:
-            return self._layers
-
-        self._layers = check.check_gte(l, 1)
-        return self
+    def __init__(self, layers, width):
+        self.width = layers
+        self.layers = width
 
     def __repr__(self):
-        return "HyperParameters{w=%d, l=%d}" % (self._width, self._layers)
+        return "HyperParameters{l=%d, w=%d}" % (self.layers, self.width)
 

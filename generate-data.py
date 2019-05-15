@@ -28,7 +28,6 @@ from nnwd import rnn
 from nnwd import sa
 from nnwd import semantic
 from nnwd import states
-from nnwd import view
 
 from pytils import adjutant
 from pytils.log import setup_logging, user_log

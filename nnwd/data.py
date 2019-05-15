@@ -32,6 +32,8 @@ def get_description(data_dir):
 
 
 def set_description(data_dir, description):
+    os.makedirs(data_dir, exist_ok=True)
+
     with open(os.path.join(data_dir, DESCRIPTION), "w") as fh:
         key_values = {key: value for key, value in description.__dict__.items()}
         fh.write(json.dumps(key_values, sort_keys=True, indent=4))

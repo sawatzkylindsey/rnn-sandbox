@@ -18,21 +18,21 @@ STREAM_TARGET_FILE_SIZE = 10 * 1024 * 1024
 STREAM_MAX_BATCH = 2000
 
 
-def dump(data, dir_path):
+def dump(data, dir_path, converter=None):
     os.makedirs(dir_path, exist_ok=True)
 
     if isinstance(data, queue.Queue):
-        thread = threading.Thread(target=_dump_stream, args=[data, dir_path])
+        thread = threading.Thread(target=_dump_stream, args=[data, dir_path, converter])
         # Non-daemon threads will keep the program running until they finish (as per documentation).
         thread.daemon = False
         thread.start()
         return thread
     else:
-        _dump(data, dir_path)
+        _dump(data, dir_path, converter)
         return None
 
 
-def _dump_stream(data, dir_path):
+def _dump_stream(data, dir_path, converter):
     check.check_instance(data, queue.Queue)
     batch = []
     batch_size = None
@@ -49,7 +49,7 @@ def _dump_stream(data, dir_path):
             if batch_size is None:
                 # Only try to discover the batch_size every so often.
                 if len(batch) % try_size == 0:
-                    average = _average_size(batch)
+                    average = _average_size(batch, converter)
                     sample_size = average * len(batch)
 
                     if sample_size > STREAM_TARGET_FILE_SIZE:
@@ -65,21 +65,21 @@ def _dump_stream(data, dir_path):
             else:
                 # The batch_size has been determined.
                 while len(batch) > batch_size:
-                    bytes_out = pickle.dumps(batch[:batch_size])
+                    bytes_out = pickle.dumps(_convert(converter, batch[:batch_size]))
                     _write_bytes(bytes_out, dir_path, i)
                     i += 1
                     batch = batch[batch_size:]
         else:
             # The data stream is complete - flush the remaining data.
             if len(batch) > 0:
-                bytes_out = pickle.dumps(batch)
+                bytes_out = pickle.dumps(_convert(converter, batch))
                 _write_bytes(bytes_out, dir_path, i)
 
             logging.debug("Completed pickling stream for '%s'." % dir_path)
             break
 
 
-def _dump(data, dir_path):
+def _dump(data, dir_path, converter):
     check.check_list(data)
 
     if len(data) > 0:
@@ -90,11 +90,11 @@ def _dump(data, dir_path):
             sample_indices.add(random.randint(0, len(data) - 1))
 
         sample = [data[index] for index in sample_indices]
-        average = _average_size(sample)
+        average = _average_size(sample, converter)
         batch_size = max(1, int(TARGET_FILE_SIZE / average))
 
         for i, offset in enumerate(range(0, len(data), batch_size)):
-            bytes_out = pickle.dumps(data[offset:offset + batch_size])
+            bytes_out = pickle.dumps(_convert(converter, data[offset:offset + batch_size]))
             _write_bytes(bytes_out, dir_path, i)
     else:
         _write_bytes(pickle.dumps([]), dir_path, 0)
@@ -102,18 +102,23 @@ def _dump(data, dir_path):
     logging.debug("Completed pickling for '%s'." % dir_path)
 
 
-def _average_size(sample):
+def _average_size(sample, converter):
     batch = [i for i in sample]
     average = None
 
     while average is None:
         try:
-            batch_size = len(pickle.dumps(batch))
+            batch_size = len(pickle.dumps(_convert(converter, batch)))
             average = batch_size / float(len(batch))
         except MemoryError as e:
             batch = batch[:int(len(batch) / 2.0)]
 
     return average
+
+
+def _convert(converter, batch):
+    return batch if converter is None else [converter(b) for b in batch]
+
 
 def _write_bytes(bytes_out, dir_path, index):
     write_path = os.path.join(dir_path, str(index) + EXTENSION)

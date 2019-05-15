@@ -632,7 +632,7 @@ function drawTimestep(fake_timestep, data) {
     }
 
     // Draw embedding
-    drawHiddenState(data, "embedding");
+    drawHiddenState(data, "embedding", 0);
 
     // Draw units
     for (var part in data.units) {
@@ -844,7 +844,7 @@ function drawStateWidget(timestep, geometry, name, min, max, vector, colour, pre
             })
             .attr("stroke", "none")
             .attr("fill", dark_grey);
-    var active_unit = input_part + "," + (input_layer == null ? 0 : input_layer);
+    var active_unit = input_part + "," + input_layer;
     // Chip's scaling box.
     svg.selectAll(".chip")
         .data(vector)
@@ -1794,7 +1794,7 @@ function drawInset(data, placement) {
     var y_middle = inset_y_offset + (inset_height / 2) - (inset_unit_height / 2);
     var y_top = inset_y_offset + 18;
     var y_bottom = inset_y_offset + inset_height - 18 - inset_unit_height;
-    drawInsetPart(x, y_middle, inset_unit_width, inset_unit_height, "embedding", null, data.embedding, placement, classes, "embedding_hidden");
+    drawInsetPart(x, y_middle, inset_unit_width, inset_unit_height, "embedding", 0, data.embedding, placement, classes, "embedding_hidden");
     x += inset_separator + inset_unit_width;
     drawInsetPart(x, y_top, inset_unit_width, inset_unit_height, "cell_previouses", 0, data.units["cell_previouses"][0], placement, classes, "cell");
     drawInsetPart(x, y_bottom, inset_unit_width, inset_unit_height, "input_hats", 0, data.units["input_hats"][0], placement, classes, "input_hat");
@@ -2150,7 +2150,7 @@ function loadDetail(main) {
     var slice = sequence.slice(0, timestep + 1);
     var distance = sequence.length - timestep - 1;
     console.log("Drawing detail for " + (slice.length - 1) + " @" + distance + ": " + slice);
-    var layerParameter = input_layer == null ? "" : "&layer=" + input_layer;
+    var layerParameter = "&layer=" + input_layer;
     var placement = main ? (compare_sequence.length == 0 ? null : "top") : "bottom";
     d3.json("weight-detail?distance=" + distance + "&part=" + input_part + layerParameter + "&" + slice.map(s => "sequence=" + encodeURI(s)).join("&"))
         .get(function (error, data) { drawWeightDetail(data, placement); });

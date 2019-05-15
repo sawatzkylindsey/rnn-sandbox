@@ -139,7 +139,7 @@ def main(argv):
     query_engine = None
 
     if aargs.activation_dir is not None:
-        query_engine = domain.QueryEngine(aargs.activation_dir)
+        query_engine = domain.QueryEngine(neural_network, aargs.activation_dir)
 
     run_server(aargs.port, words, neural_network, query_engine)
 

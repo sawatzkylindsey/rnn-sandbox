@@ -16,7 +16,6 @@ from nnwd import states
 from nnwd import parameters
 from nnwd import pickler
 from nnwd import rnn
-from nnwd import view
 
 from pytils.log import setup_logging, user_log
 
@@ -32,10 +31,9 @@ def main(argv):
     setup_logging(".%s.log" % os.path.splitext(os.path.basename(__file__))[0], aargs.verbose, False, True, True)
     logging.debug(aargs)
 
-    rnn = sequential.model_for(aargs.data_dir)
-    sequential.load_model(rnn, aargs.sequential_dir)
+    lstm = sequential.load_model(aargs.data_dir, aargs.sequential_dir)
     description = data.get_description(aargs.data_dir)
-    threads = elicit_activation_states(rnn, data.stream_train(aargs.data_dir), aargs.activations_dir)
+    threads = elicit_activation_states(lstm, data.stream_train(aargs.data_dir), aargs.activations_dir)
 
     # Technically, we don't need to wait on these threads (they will keep the program alive until complete).
     # But this way it is more clear what is going on.
@@ -45,11 +43,11 @@ def main(argv):
     return 0
 
 
-def elicit_activation_states(rnn, xys, activations_dir):
+def elicit_activation_states(lstm, xys, activations_dir):
     activation_states = {}
     threads = []
 
-    for key in view.keys():
+    for key in lstm.keys():
         threads.append(start_queue(activation_states, activations_dir, key))
 
     total = 0
@@ -58,14 +56,14 @@ def elicit_activation_states(rnn, xys, activations_dir):
     for j, xy in enumerate(xys):
         total += 1
         instances += len(xy.x)
-        stepwise_rnn = rnn.stepwise(handle_unknown=True)
+        stepwise_rnn = lstm.stepwise(handle_unknown=True)
         sequence = tuple(xy.x) + (xy.y[-1],)
 
         for i, word_pos in enumerate(xy.x):
-            result, instruments = stepwise_rnn.step(word_pos[0], view.INSTRUMENTS)
+            result, instruments = stepwise_rnn.step(word_pos[0], rnn.LSTM_INSTRUMENTS)
 
-            for part, layer in view.part_layers():
-                activation_states[view.encode_key(part, layer)].put((sequence, i, tuple(instruments[part][layer])))
+            for part, layer in lstm.part_layers():
+                activation_states[lstm.encode_key(part, layer)].put(states.ActivationState(sequence, i, tuple(instruments[part][layer])))
 
     # Mark the queue as finished.
     for value in activation_states.values():

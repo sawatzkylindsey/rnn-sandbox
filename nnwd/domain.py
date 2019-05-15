@@ -34,7 +34,6 @@ from nnwd import rnn
 from nnwd import semantic
 from nnwd import sequential
 from nnwd import states
-from nnwd import view
 from pytils.log import setup_logging, user_log
 from pytils import adjutant, check
 
@@ -161,19 +160,9 @@ class NeuralNetwork:
         else:
             self.bucket_mappings = reduction.get_learned_buckets(self.buckets_dir)
 
-        self.lstm = sequential.model_for(self.data_dir)
-        sequential.load_model(self.lstm, self.sequential_dir)
-
-        hyper_parameters = model.HyperParameters() \
-            .layers(parameters.SEM_LAYERS) \
-            .width(parameters.SEM_WIDTH)
-
+        self.lstm = sequential.load_model(self.data_dir, self.sequential_dir)
         # TODO
-        with open(os.path.join(os.path.join(self.encoding_dir, "sem"), model.EXTRA), "r") as fh:
-            self.word_input = json.load(fh)["word_input"]
-
-        self.predictor = semantic.model_for(self.data_dir, lambda s, i, o, e: model.Ffnn(s, i, o, hyper_parameters, e), self.word_input)
-        semantic.load_model(self.predictor, self.encoding_dir)
+        self.sem, self.sem_as_input = semantic.load_model(self.lstm, self.encoding_dir, model_fn=lambda hp, e, i, o, s: model.Ffnn(hp, e, i, o, s))
 
     #@functools.lru_cache()
     def stepwise(self, sequence):
@@ -258,18 +247,20 @@ class NeuralNetwork:
         return {key: reduction.reduce(self.bucket_mappings[key], point) for key, point in points.items()}
 
     def predict_distributions(self, word, points):
-        xys = [mlbase.Xy(semantic.as_input(key, word if self.word_input else None, point), None) for key, point in points.items()]
-        results, _ = self.predictor.evaluate(xys)
+        annotation = None
+        xys = []
+        keys = []
+
+        for key, point in points.items():
+            xys += [mlbase.Xy(self.sem_as_input(key, states.HiddenState(word, point, annotation)), annotation)]
+            keys += [key]
+
+        results, _ = self.sem.evaluate(xys)
         distribution_predictions = {}
 
-        for i, xy in enumerate(xys):
-            if self.word_input:
-                word, part, layer, _ = xy.x
-            else:
-                part, layer, _ = xy.x
-
+        for i, key in enumerate(keys):
             ordered_predictions = [item[0] for item in sorted(results[i].distribution().items(), key=lambda item: item[1], reverse=True)]
-            distribution_predictions[view.encode_key(part, layer)] = {prediction: results[i].distribution()[prediction] for prediction in ordered_predictions[:parameters.TOP_PREDICTIONS]}
+            distribution_predictions[key] = {prediction: results[i].distribution()[prediction] for prediction in ordered_predictions[:parameters.TOP_PREDICTIONS]}
 
         return distribution_predictions
 
@@ -304,14 +295,14 @@ class NeuralNetwork:
         return colours
 
     def weights(self, sequence):
-        last_word, result, instruments = self.query_lstm(sequence, view.INSTRUMENTS)
+        last_word, result, instruments = self.query_lstm(sequence, rnn.LSTM_INSTRUMENTS)
         points = {}
 
-        for part, layer in view.part_layers():
-            points[view.encode_key(part, layer)] = instruments[part][layer]
+        for part, layer in self.lstm.part_layers():
+            points[self.lstm.encode_key(part, layer)] = instruments[part][layer]
 
-            if view.is_embedding(part, layer):
-                embedding_key = view.encode_key(part, layer)
+            if self.lstm.is_embedding(part, layer):
+                embedding_key = self.lstm.encode_key(part, layer)
 
         point_reductions, point_colours, point_predictions = self.compute_point_abstractions(last_word, points)
         embedding_name = self.latex_name(len(sequence) - 1, "embedding")
@@ -323,11 +314,8 @@ class NeuralNetwork:
         return Timestep(embedding, units, softmax, len(sequence) - 1, last_word, result.prediction)
 
     def weight_detail(self, sequence, part, layer):
-        last_word, result, instruments = self.query_lstm(sequence, view.INSTRUMENTS)
-        point = instruments[part]
-
-        if layer is not None:
-            point = point[layer]
+        last_word, result, instruments = self.query_lstm(sequence, rnn.LSTM_INSTRUMENTS)
+        point = instruments[part][layer]
 
         if part.endswith("_gates"):
             min_max = (0, 1)
@@ -335,7 +323,7 @@ class NeuralNetwork:
             min_max = (None, None)
 
         # This is the regular process by which a hidden_state is served out with its various reductions/abstractions.
-        key = view.encode_key(part, layer)
+        key = self.lstm.encode_key(part, layer)
         keyed_point = {key: point}
         reduction, colour, prediction = self.compute_point_abstractions(last_word, keyed_point)
         name = self.latex_name(len(sequence) - 1, part, layer)
@@ -391,16 +379,17 @@ class NeuralNetwork:
     def make_lstm_units(self, timestep, point_reductions, point_colours, point_predictions):
         units = {}
 
-        for part in view.LSTM_PARTS:
+        # TODO
+        for part in rnn.LSTM_PARTS:
             units[part] = {}
 
-            for layer in range(parameters.LAYERS):
+            for layer in range(self.lstm.hyper_parameters.layers):
                 if part.endswith("_gates"):
                     min_max = (0, 1)
                 else:
                     min_max = (None, None)
 
-                key = view.encode_key(part, layer)
+                key = self.lstm.encode_key(part, layer)
                 name = self.latex_name(timestep, part, layer)
                 name_no_t = self.latex_name_no_t(part, layer)
                 hidden_state = HiddenState(name, name_no_t, point_reductions[key], min_max, point_colours[key], self.prediction_distribution(point_predictions[key]))
@@ -575,14 +564,20 @@ class NeuralNetwork:
 class QueryEngine:
     TOP = 25
 
-    def __init__(self, activation_dir):
-        self.thresholds = {}
+    def __init__(self, neural_network, activation_dir):
+        self.neural_network = neural_network
         self.activation_dir = activation_dir
+        self._background_setup = threading.Thread(target=self._setup)
+        self._background_setup.daemon = True
+        self._background_setup.start()
+
+    def _setup(self):
         logging.debug("Processing activation data for query engine.")
+        self.thresholds = {}
         self.keyed = {}
         self.sequence_keyed = {}
 
-        for key in view.keys():
+        for key in self.neural_network.lstm.keys():
             for i, sequence_index_point in enumerate(states.stream_activations(self.activation_dir, key)):
                 if i % 100000 == 0:
                     logging.debug("At the %d-hundred-Kth instance of %s." % (int(i / 100000), key))
@@ -656,7 +651,7 @@ class QueryEngine:
 
         for level, predicate in enumerate(predicates):
             for part_layer, features in predicate.items():
-                key = view.encode_key(*part_layer)
+                key = self.neural_network.lstm.encode_key(*part_layer)
                 level_keys = (level, key)
                 required_level_keys += [level_keys]
                 found = set()

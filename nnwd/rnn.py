@@ -20,19 +20,63 @@ from pytils import adjutant, base, check
 from pytils.log import user_log
 
 
-class Rnn:
+LSTM_INSTRUMENTS = [
+    "embedding",
+    "remember_gates",
+    "forget_gates",
+    "output_gates",
+    "input_hats",
+    "remembers",
+    "cell_previouses",
+    "forgets",
+    "cells",
+    "cell_hats",
+    "outputs",
+]
+LSTM_MATRICES = {
+    "remember_gate": "R",
+    "forget_gate": "F",
+    "output_gate": "O",
+    "input_hat": "H",
+    "softmax": "Y",
+}
+LSTM_PARTS = [
+    "remember_gates",
+    "forget_gates",
+    "output_gates",
+    "input_hats",
+    "remembers",
+    "cell_previouses",
+    "forgets",
+    "cells",
+    "cell_hats",
+    "outputs",
+]
+LSTM_SINGULARS = {
+    "remember_gates": "remember_gate",
+    "forget_gates": "forget_gate",
+    "output_gates": "output_gate",
+    "input_hats": "input_hat",
+    "remembers": "remember",
+    "cell_previouses": "cell_previous",
+    "forgets": "forget",
+    "cells": "cell",
+    "cell_hats": "cell_hat",
+    "outputs": "output",
+}
+
+
+class Lstm:
     # There are really only 2 states we care about capturing from the scan for the computation graph, however
     # we track all the other intermediate gates/states for the weight instrumentation.
     SCAN_STATES = 10
 
-    def __init__(self, layers, width, embedding_width, word_labels, output_labels, scope="rnn", ablations=Ablations()):
-        self.layers = layers
-        self.width = width
-        self.embedding_width = embedding_width
+    def __init__(self, hyper_parameters, ablations, word_labels, output_labels, scope="rnn"):
+        self.hyper_parameters = hyper_parameters
+        self.ablations = ablations
         self.word_labels = word_labels
         self.output_labels = output_labels
         self.scope = scope
-        self.ablations = ablations
         self._initials = {}
         self._instruments = {}
         self._training_id = None
@@ -44,51 +88,51 @@ class Rnn:
         #   _p      placeholder
         #   _c      constant
         self.unrolled_inputs_p = self.placeholder("unrolled_inputs_p", [self.time_dimension, self.batch_dimension], tf.int32)
-        self.initial_state_p = self.placeholder("initial_state_p", [Rnn.SCAN_STATES, self.layers, self.batch_dimension, self.width])
+        self.initial_state_p = self.placeholder("initial_state_p", [Lstm.SCAN_STATES, self.hyper_parameters.layers, self.batch_dimension, self.hyper_parameters.width])
         self.learning_rate_p = self.placeholder("learning_rate_p", [1], tf.float32)
         self.clip_norm_p = self.placeholder("clip_norm_p", [1], tf.float32)
         self.dropout_keep_p = self.placeholder("dropout_keep_p", [1], tf.float32)
 
         self.max_time, self.batch_size = tf.unstack(tf.shape(self.unrolled_inputs_p))
 
-        self.E = self.variable("E", [len(self.word_labels), self.embedding_width])
+        self.E = self.variable("E", [len(self.word_labels), self.hyper_parameters.embedding_width])
 
-        self.R = self.variable("R", [self.layers, self.width * 2, self.width])
-        self.R_bias = self.variable("R_bias", [self.layers, self.width], initial=0.0)
-        tf.identity(tf.reshape(self.R_bias, [-1, self.width]), name="R_bias")
-        self.F = self.variable("F", [self.layers, self.width * 2, self.width])
-        self.F_bias = self.variable("F_bias", [self.layers, self.width], initial=1.0)
-        tf.identity(tf.reshape(self.F_bias, [-1, self.width]), name="F_bias")
-        self.O = self.variable("O", [self.layers, self.width * 2, self.width])
-        self.O_bias = self.variable("O_bias", [self.layers, self.width], initial=0.0)
-        tf.identity(tf.reshape(self.O_bias, [-1, self.width]), name="O_bias")
+        self.R = self.variable("R", [self.hyper_parameters.layers, self.hyper_parameters.width * 2, self.hyper_parameters.width])
+        self.R_bias = self.variable("R_bias", [self.hyper_parameters.layers, self.hyper_parameters.width], initial=0.0)
+        tf.identity(tf.reshape(self.R_bias, [-1, self.hyper_parameters.width]), name="R_bias")
+        self.F = self.variable("F", [self.hyper_parameters.layers, self.hyper_parameters.width * 2, self.hyper_parameters.width])
+        self.F_bias = self.variable("F_bias", [self.hyper_parameters.layers, self.hyper_parameters.width], initial=1.0)
+        tf.identity(tf.reshape(self.F_bias, [-1, self.hyper_parameters.width]), name="F_bias")
+        self.O = self.variable("O", [self.hyper_parameters.layers, self.hyper_parameters.width * 2, self.hyper_parameters.width])
+        self.O_bias = self.variable("O_bias", [self.hyper_parameters.layers, self.hyper_parameters.width], initial=0.0)
+        tf.identity(tf.reshape(self.O_bias, [-1, self.hyper_parameters.width]), name="O_bias")
 
-        #self.dummy = tf.constant([0.0] * self.width, dtype="float32")
-        #assert_shape(self.dummy, [self.width])
-        #self.batched_dummy = tf.transpose(tf.reshape(tf.tile(self.dummy, [self.batch_size]), [self.width, self.batch_size]))
+        #self.dummy = tf.constant([0.0] * self.hyper_parameters.width, dtype="float32")
+        #assert_shape(self.dummy, [self.hyper_parameters.width])
+        #self.batched_dummy = tf.transpose(tf.reshape(tf.tile(self.dummy, [self.batch_size]), [self.hyper_parameters.width, self.batch_size]))
 
         if self.ablations.srnn:
-            self.H = self.variable("H", [self.layers, self.width, self.width])
+            self.H = self.variable("H", [self.hyper_parameters.layers, self.hyper_parameters.width, self.hyper_parameters.width])
         else:
-            self.H = self.variable("H", [self.layers, self.width * 2, self.width])
-            self.H_bias = self.variable("H_bias", [self.layers, self.width], initial=0.0)
-            tf.identity(tf.reshape(self.H_bias, [-1, self.width]), name="H_bias")
+            self.H = self.variable("H", [self.hyper_parameters.layers, self.hyper_parameters.width * 2, self.hyper_parameters.width])
+            self.H_bias = self.variable("H_bias", [self.hyper_parameters.layers, self.hyper_parameters.width], initial=0.0)
+            tf.identity(tf.reshape(self.H_bias, [-1, self.hyper_parameters.width]), name="H_bias")
 
-        self.Y = self.variable("Y", [self.width, len(self.output_labels)])
+        self.Y = self.variable("Y", [self.hyper_parameters.width, len(self.output_labels)])
         self.Y_bias = self.variable("Y_bias", [1, len(self.output_labels)], initial=0.0)
         tf.identity(tf.reshape(self.Y_bias, [len(self.output_labels)]), name="Y_bias")
 
         self.unrolled_embedded_inputs = tf.nn.embedding_lookup(self.E, self.unrolled_inputs_p)
-        assert_shape(self.unrolled_embedded_inputs, [self.time_dimension, self.batch_dimension, self.embedding_width])
-        tf.identity(tf.reshape(self.unrolled_embedded_inputs, [-1, self.embedding_width]), name="embedding")
+        assert_shape(self.unrolled_embedded_inputs, [self.time_dimension, self.batch_dimension, self.hyper_parameters.embedding_width])
+        tf.identity(tf.reshape(self.unrolled_embedded_inputs, [-1, self.hyper_parameters.embedding_width]), name="embedding")
 
-        if self.embedding_width != self.width:
-            self.EP = self.variable("EP", [self.embedding_width, self.width])
-            self.unrolled_embedded_projected_inputs = tf.matmul(tf.reshape(self.unrolled_embedded_inputs, [-1, self.embedding_width]), self.EP)
+        if self.hyper_parameters.embedding_width != self.hyper_parameters.width:
+            self.EP = self.variable("EP", [self.hyper_parameters.embedding_width, self.hyper_parameters.width])
+            self.unrolled_embedded_projected_inputs = tf.matmul(tf.reshape(self.unrolled_embedded_inputs, [-1, self.hyper_parameters.embedding_width]), self.EP)
         else:
-            self.unrolled_embedded_projected_inputs = tf.reshape(self.unrolled_embedded_inputs, [-1, self.embedding_width])
+            self.unrolled_embedded_projected_inputs = tf.reshape(self.unrolled_embedded_inputs, [-1, self.hyper_parameters.embedding_width])
 
-        assert_shape(self.unrolled_embedded_projected_inputs, [self.combine_dimensions(), self.width])
+        assert_shape(self.unrolled_embedded_projected_inputs, [self.combine_dimensions(), self.hyper_parameters.width])
 
         # Dropout per: RECURRENT NEURAL NETWORK REGULARIZATION (Zaremba, Sutskever, Vinyals 2015)
         def step_lstm(previous_state, current_input):
@@ -107,10 +151,10 @@ class Rnn:
             cell_hat_stack = []
             output_stack = []
 
-            for l in range(self.layers):
-                assert_shape(output_previous[l], [self.batch_dimension, self.width])
-                assert_shape(cell_previous[l], [self.batch_dimension, self.width])
-                assert_shape(x, [self.batch_dimension, self.width])
+            for l in range(self.hyper_parameters.layers):
+                assert_shape(output_previous[l], [self.batch_dimension, self.hyper_parameters.width])
+                assert_shape(cell_previous[l], [self.batch_dimension, self.hyper_parameters.width])
+                assert_shape(x, [self.batch_dimension, self.hyper_parameters.width])
                 remember_gate = tf.sigmoid(tf.matmul(tf.concat([output_previous[l], x], axis=-1), self.R[l]) + self.R_bias[l])
                 remember_gate_stack.append(remember_gate)
                 forget_gate = tf.sigmoid(tf.matmul(tf.concat([output_previous[l], x], axis=-1), self.F[l]) + self.F_bias[l])
@@ -130,7 +174,7 @@ class Rnn:
                 forget = cell_previous[l] * forget_gate
                 forget_stack.append(forget)
                 cell = forget + remember
-                assert_shape(cell, [self.batch_dimension, self.width])
+                assert_shape(cell, [self.batch_dimension, self.hyper_parameters.width])
                 cell_stack.append(cell)
                 cell_hat = tf.tanh(cell)
                 cell_hat_stack.append(cell_hat)
@@ -140,16 +184,16 @@ class Rnn:
                 else:
                     output = cell_hat * output_gate
 
-                assert_shape(output, [self.batch_dimension, self.width])
+                assert_shape(output, [self.batch_dimension, self.hyper_parameters.width])
                 output_stack.append(output)
                 x = self.dropout(output)
 
             return tf.stack([output_stack, cell_stack, remember_gate_stack, forget_gate_stack, output_gate_stack, input_hat_stack, remember_stack, cell_previous_stack, forget_stack, cell_hat_stack])
 
-        scan_inputs = tf.reshape(self.unrolled_embedded_projected_inputs, [self.max_time, self.batch_size, self.width])
-        assert_shape(scan_inputs, [self.time_dimension, self.batch_dimension, self.width])
+        scan_inputs = tf.reshape(self.unrolled_embedded_projected_inputs, [self.max_time, self.batch_size, self.hyper_parameters.width])
+        assert_shape(scan_inputs, [self.time_dimension, self.batch_dimension, self.hyper_parameters.width])
         self.unrolled_states = tf.scan(step_lstm, scan_inputs, self.initial_state_p)
-        assert_shape(self.unrolled_states, [self.time_dimension, Rnn.SCAN_STATES, self.layers, self.batch_dimension, self.width])
+        assert_shape(self.unrolled_states, [self.time_dimension, Lstm.SCAN_STATES, self.hyper_parameters.layers, self.batch_dimension, self.hyper_parameters.width])
 
         # We can produce the 'w' term irrespective of the ablations (or lack thereof).
         # However notice, this will only have the intended sum of soft filters interpretation under the srnn + out conditions.
@@ -157,18 +201,18 @@ class Rnn:
         FORGET_POSITION = 3
         def step_w(index):
             left = self.unrolled_states[index][REMEMBER_POSITION]
-            assert_shape(left, [self.layers, self.batch_dimension, self.width])
+            assert_shape(left, [self.hyper_parameters.layers, self.batch_dimension, self.hyper_parameters.width])
 
             right = tf.reduce_prod(self.unrolled_states[index + 1:, FORGET_POSITION, :], 0)
-            assert_shape(right, [self.layers, self.batch_dimension, self.width])
+            assert_shape(right, [self.hyper_parameters.layers, self.batch_dimension, self.hyper_parameters.width])
 
             result = left * right
-            assert_shape(result, [self.layers, self.batch_dimension, self.width])
+            assert_shape(result, [self.hyper_parameters.layers, self.batch_dimension, self.hyper_parameters.width])
             return result
 
         self.ws = tf.map_fn(step_w, tf.range(0, self.max_time), dtype=tf.float32)
-        assert_shape(self.ws, [self.time_dimension, self.layers, self.batch_dimension, self.width])
-        tf.identity(tf.reshape(self.ws, [self.max_time, self.layers, self.width]), name="ws")
+        assert_shape(self.ws, [self.time_dimension, self.hyper_parameters.layers, self.batch_dimension, self.hyper_parameters.width])
+        tf.identity(tf.reshape(self.ws, [self.max_time, self.hyper_parameters.layers, self.hyper_parameters.width]), name="ws")
 
         # Grab the last timesteps' state layers out of the unrolled state layers ([x y z] in diagram).
         # Notice, each cell in the diagram represents 2 (+all the extra instrumentation) states (hidden, cell, ..instrumentation..).
@@ -178,18 +222,18 @@ class Rnn:
         # state layer 0     x x  x
         # time              0 .. T
         self.state = self.unrolled_states[-1]
-        assert_shape(self.state, [Rnn.SCAN_STATES, self.layers, self.batch_dimension, self.width])
+        assert_shape(self.state, [Lstm.SCAN_STATES, self.hyper_parameters.layers, self.batch_dimension, self.hyper_parameters.width])
         output_states, cell_states, remember_gates, forget_gates, output_gates, input_hats, remembers, cell_previouses, forgets, cell_hats = tf.unstack(self.state)
-        tf.identity(tf.reshape(output_states, [-1, self.width]), name="outputs")
-        tf.identity(tf.reshape(cell_states, [-1, self.width]), name="cells")
-        tf.identity(tf.reshape(remember_gates, [-1, self.width]), name="remember_gates")
-        tf.identity(tf.reshape(forget_gates, [-1, self.width]), name="forget_gates")
-        tf.identity(tf.reshape(output_gates, [-1, self.width]), name="output_gates")
-        tf.identity(tf.reshape(input_hats, [-1, self.width]), name="input_hats")
-        tf.identity(tf.reshape(remembers, [-1, self.width]), name="remembers")
-        tf.identity(tf.reshape(cell_previouses, [-1, self.width]), name="cell_previouses")
-        tf.identity(tf.reshape(forgets, [-1, self.width]), name="forgets")
-        tf.identity(tf.reshape(cell_hats, [-1, self.width]), name="cell_hats")
+        tf.identity(tf.reshape(output_states, [-1, self.hyper_parameters.width]), name="outputs")
+        tf.identity(tf.reshape(cell_states, [-1, self.hyper_parameters.width]), name="cells")
+        tf.identity(tf.reshape(remember_gates, [-1, self.hyper_parameters.width]), name="remember_gates")
+        tf.identity(tf.reshape(forget_gates, [-1, self.hyper_parameters.width]), name="forget_gates")
+        tf.identity(tf.reshape(output_gates, [-1, self.hyper_parameters.width]), name="output_gates")
+        tf.identity(tf.reshape(input_hats, [-1, self.hyper_parameters.width]), name="input_hats")
+        tf.identity(tf.reshape(remembers, [-1, self.hyper_parameters.width]), name="remembers")
+        tf.identity(tf.reshape(cell_previouses, [-1, self.hyper_parameters.width]), name="cell_previouses")
+        tf.identity(tf.reshape(forgets, [-1, self.hyper_parameters.width]), name="forgets")
+        tf.identity(tf.reshape(cell_hats, [-1, self.hyper_parameters.width]), name="cell_hats")
 
         # Grab the last state layer across all timesteps from the unrolled state layers ([z z z] in diagram).
         # Notice, each cell in the diagram represents 2 (+all the extra instrumentation) states (hidden, cell, ..instrumentation..).
@@ -199,10 +243,10 @@ class Rnn:
         # state layer 0     x x  x
         # time              0 .. T
         self.final_state = self.unrolled_states[:, 0, -1]
-        assert_shape(self.final_state, [self.time_dimension, self.batch_dimension, self.width])
+        assert_shape(self.final_state, [self.time_dimension, self.batch_dimension, self.hyper_parameters.width])
 
-        final_state_for_matmul = tf.reshape(self.final_state, [-1, self.width])
-        assert_shape(final_state_for_matmul, [self.combine_dimensions(), self.width])
+        final_state_for_matmul = tf.reshape(self.final_state, [-1, self.hyper_parameters.width])
+        assert_shape(final_state_for_matmul, [self.combine_dimensions(), self.hyper_parameters.width])
 
         self.output_logits = tf.matmul(self.dropout(final_state_for_matmul), self.Y) + self.Y_bias
         assert_shape(self.output_logits, [self.combine_dimensions(), len(self.output_labels)])
@@ -240,7 +284,7 @@ class Rnn:
 
     def initial_state(self, batch_length):
         if batch_length not in self._initials:
-            self._initials[batch_length] = np.zeros([Rnn.SCAN_STATES, self.layers, batch_length, self.width], dtype="float32")
+            self._initials[batch_length] = np.zeros([Lstm.SCAN_STATES, self.hyper_parameters.layers, batch_length, self.hyper_parameters.width], dtype="float32")
 
         return self._initials[batch_length]
 
@@ -404,7 +448,7 @@ class Rnn:
         }
         return self.session.run([self.session.graph.get_tensor_by_name("embedding:0")], feed_dict=feed)[0].tolist()
 
-    def load(self, model_dir, version=None):
+    def load_parameters(self, model_dir, version=None):
         checkpoints = Checkpoints.load(model_dir)
         model_path = checkpoints.model_path(version)
         version_key = "latest" if version is None else checkpoints.version_key(version)
@@ -412,7 +456,7 @@ class Rnn:
         saver = tf.train.Saver(tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=self.scope))
         saver.restore(self.session, model_path)
 
-    def save(self, model_dir, version, set_latest=False):
+    def save_parameters(self, model_dir, version, set_latest=False):
         if os.path.isfile(model_dir) or (model_dir.endswith("/") and os.path.isfile(os.path.dirname(model_dir))):
             raise ValueError("model_dir '%s' must not be a file." % model_dir)
 
@@ -435,6 +479,49 @@ class Rnn:
         logging.debug("Copying model %s as %s (latest=%s)." % (checkpoints.version_key(version), checkpoints.version_key(copy_version), set_latest))
         checkpoints.copy(version, copy_version, set_latest) \
             .save()
+
+    def keys(self):
+        keys = [self.encode_key("embedding")]
+
+        for part in LSTM_PARTS:
+            for layer in range(self.hyper_parameters.layers):
+                keys += [self.encode_key(part, layer)]
+
+        return keys
+
+    def part_layers(self):
+        parts = [("embedding", 0)]
+
+        for part in LSTM_PARTS:
+            for layer in range(self.hyper_parameters.layers):
+                parts += [(part, layer)]
+
+        return parts
+
+    def is_embedding(self, key_or_part, layer=None):
+        if layer is None:
+            part_actual, layer_actual = self.decode_key(key_or_part)
+        else:
+            part_actual = key_or_part
+
+        return part_actual == "embedding"
+
+    def part_width(self, key):
+        if key == self.encode_key("embedding"):
+            return self.hyper_parameters.embedding_width
+        else:
+            return self.hyper_parameters.width
+
+    def encode_key(self, part, layer=None):
+        return "%s-%d" % (part, 0 if layer is None else layer)
+
+    def decode_key(self, key):
+        result = key.split("-")
+
+        if len(result) == 2:
+            return (result[0], int(result[1]))
+        else:
+            raise ValueError("invalid decode of '%s': %s" % (key, result))
 
 
 class Checkpoints:
@@ -511,9 +598,9 @@ class Checkpoints:
             return Checkpoints(model_dir, data["versions"], data["latest"], data["step"])
 
 
-class RnnLm(Rnn):
-    def __init__(self, layers, width, embedding_width, word_labels):
-        super(RnnLm, self).__init__(layers, width, embedding_width, word_labels, word_labels)
+class LstmLm(Lstm):
+    def __init__(self, hyper_parameters, ablations, word_labels):
+        super(LstmLm, self).__init__(hyper_parameters, ablations, word_labels, word_labels)
         pass
 
     def computational_graph_cost(self):
@@ -647,9 +734,9 @@ class RnnLm(Rnn):
         return -total_perplexity
 
 
-class RnnSa(Rnn):
-    def __init__(self, layers, width, embedding_width, word_labels, output_labels):
-        super(RnnSa, self).__init__(layers, width, embedding_width, word_labels, output_labels)
+class LstmSa(Lstm):
+    def __init__(self, hyper_parameters, ablations, word_labels, output_labels):
+        super(LstmSa, self).__init__(hyper_parameters, ablations, word_labels, output_labels)
         pass
 
     def computational_graph_cost(self):
@@ -747,13 +834,6 @@ class Result:
 
     def __repr__(self):
         return "(prediction=%s, distribution=%s)" % (self.prediction, sorted(self.distribution.items()))
-
-
-# Based off: LONG SHORT-TERM MEMORY AS A DYNAMICALLY COMPUTED ELEMENT-WISE WEIGHTED SUM (Levy*, Lee*, FitzGerald, Zettlemoyer 2018)
-class Ablations:
-    def __init__(self, srnn, out):
-        self.srnn = srnn
-        self.out = out
 
 
 def assert_shape(tensor, expected):

@@ -19,8 +19,8 @@ from nnwd import parameters
 from nnwd import pickler
 from nnwd import reduction
 from nnwd import rnn
+from nnwd import sequential
 from nnwd import states
-from nnwd import view
 
 from pytils import adjutant
 from pytils.log import setup_logging, user_log
@@ -29,17 +29,21 @@ from pytils.log import setup_logging, user_log
 def main(argv):
     ap = ArgumentParser(prog="generate-reduction-buckets")
     ap.add_argument("--verbose", "-v", default=False, action="store_true", help="Turn on verbose logging.")
+    ap.add_argument("data_dir")
+    ap.add_argument("sequential_dir")
     ap.add_argument("states_dir")
     ap.add_argument("buckets_dir")
     ap.add_argument("target", type=int)
     aargs = ap.parse_args(argv)
     setup_logging(".%s.log" % os.path.splitext(os.path.basename(__file__))[0], aargs.verbose, False, True, True)
     logging.debug(aargs)
+
+    lstm = sequential.model_for(aargs.data_dir, aargs.sequential_dir)
     part_learned_mse = {}
     part_fixed_mse = {}
 
-    for key in view.keys():
-        learned_mse, fixed_mse = generate_buckets(aargs.states_dir, key, aargs.buckets_dir, aargs.target)
+    for key in lstm.keys():
+        learned_mse, fixed_mse = generate_buckets(aargs.states_dir, key, lstm.part_width(key), aargs.buckets_dir, aargs.target)
         part_learned_mse[key] = learned_mse
         part_fixed_mse[key] = fixed_mse
 
@@ -56,20 +60,19 @@ def main(argv):
     return 0
 
 
-def generate_buckets(states_dir, key, buckets_dir, target):
+def generate_buckets(states_dir, key, width, buckets_dir, target):
     logging.debug("Calculating for '%s'." % key)
-    train_points, test_points = states.get_hidden_points(states_dir, key)
-    width = view.part_width(key)
-    learned_buckets, fixed_buckets = calculate_buckets(width, target, train_points)
+    train_points, test_points = states.get_hidden_states(states_dir, key)
+    learned_buckets, fixed_buckets = calculate_buckets(width, target, [hidden_state.point for hidden_state in train_points])
     reduction.set_buckets(buckets_dir, key, learned_buckets, fixed_buckets)
     learned_mse = 0.0
     fixed_mse = 0.0
     count = 0
 
-    for point in test_points:
+    for hidden_state in test_points:
         count += 1
-        learned_mse += reduction.mean_squared_error(learned_buckets, point)
-        fixed_mse += reduction.mean_squared_error(fixed_buckets, point)
+        learned_mse += reduction.mean_squared_error(learned_buckets, hidden_state.point)
+        fixed_mse += reduction.mean_squared_error(fixed_buckets, hidden_state.point)
 
     learned_mse /= count
     fixed_mse /= count
