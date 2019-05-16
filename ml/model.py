@@ -260,8 +260,8 @@ class CustomOutput(Model):
 
 class HyperParameters:
     def __init__(self, layers, width):
-        self.width = layers
-        self.layers = width
+        self.layers = layers
+        self.width = width
 
     def __repr__(self):
         return "HyperParameters{l=%d, w=%d}" % (self.layers, self.width)
