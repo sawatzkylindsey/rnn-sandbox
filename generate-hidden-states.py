@@ -92,7 +92,7 @@ def elicit_hidden_states(lstm, xys, annotation_fn, sample_rate, states_dir, is_t
                 result, instruments = stepwise_rnn.step(word_pos[0], rnn.LSTM_INSTRUMENTS)
 
                 for part, layer in lstm.part_layers():
-                    hidden_states[lstm.encode_key(part, layer)].put(states.HiddenState(word_pos[0], tuple(instruments[part][layer]), annotation))
+                    hidden_states[lstm.encode_key(part, layer)].put(states.HiddenState(word_pos[0], tuple([float(v) for v in instruments[part][layer]]), annotation))
 
     # Mark the queue as finished.
     for value in hidden_states.values():

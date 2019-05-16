@@ -565,6 +565,7 @@ class NeuralNetwork:
 
 class QueryEngine:
     TOP = 25
+    COMMIT_BATCH = 100
 
     def __init__(self, neural_network, activation_dir):
         self.neural_network = neural_network
@@ -574,46 +575,48 @@ class QueryEngine:
         self._background_setup.start()
 
     def _setup(self):
-        logging.debug("Processing activation data for query engine.")
         sqlite3.register_adapter(tuple, lambda t: pickle.dumps(t))
         sqlite3.register_converter("tuple", pickle.loads)
         db_path = os.path.join(self.activation_dir, "query-engine.db")
 
         if os.path.exists(db_path):
             self.db = sqlite3.connect(db_path, detect_types=sqlite3.PARSE_DECLTYPES)
+            logging.debug("Loaded QueryEngine.")
             return
 
+        logging.debug("Processing activation data for query engine.")
         self.db = sqlite3.connect(db_path, detect_types=sqlite3.PARSE_DECLTYPES)
-        maximum_axis = max(self.neural_network.lstm.hyper_parameters.width, self.neural_network.lstm.hyper_parameters.embedding_width)
+        maximum_dimensions = max(self.neural_network.lstm.hyper_parameters.width, self.neural_network.lstm.hyper_parameters.embedding_width)
         cursor = self.db.cursor()
 
         cursor.execute("""create table sequences
             (id integer primary key,
             sequence tuple not null unique)""")
+        # The (sequence_id, lstm_key, sequence_index) serve as a composite unique key.
+        # This key can uniquely define the point (hidden state).
         cursor.execute("""create table activations
-            (id integer primary key,
-            sequence_id integer not null,
+            (sequence_id integer not null,
             lstm_key text not null,
             sequence_index integer not null,
-            point tuple not null,
             %s,
             foreign key(sequence_id) references sequences(id),
-            unique (sequence_id, lstm_key, sequence_index) on conflict abort)""" % ", ".join(["axis_%d real" % d for d in range(maximum_axis)]))
-
+            unique (sequence_id, lstm_key, sequence_index) on conflict ignore)""" % ", ".join(["axis_%d real" % d for d in range(maximum_dimensions)]))
         cursor.execute("""create index lstm_key_index on activations(lstm_key)""")
 
-        for d in range(maximum_axis):
+        for d in range(maximum_dimensions):
             cursor.execute("""create index axis_%d_index on activations(axis_%d)""" % (d, d))
 
         self.db.commit()
+        sequence_ids = {}
+        batch = []
 
         for lstm_key in self.neural_network.lstm.keys():
-            part_width = self.neural_network.lstm.part_width(lstm_key)
+            dimensions = self.neural_network.lstm.part_width(lstm_key)
 
-            if part_width == maximum_axis:
+            if dimensions == maximum_dimensions:
                 padding = ()
             else:
-                padding = tuple([None] * (maximum_axis - part_width))
+                padding = tuple([None] * (maximum_dimensions - dimensions))
 
             for i, sequence_index_point in enumerate(states.stream_activations(self.activation_dir, lstm_key)):
                 if i % 100000 == 0:
@@ -622,32 +625,25 @@ class QueryEngine:
 
                 sequence = tuple([word_pos[0] for word_pos in sequence_index_point[0]])
                 sequence_index = sequence_index_point[1]
-                point = tuple(sequence_index_point[2])
-                cursor.execute("select id from sequences where sequence == ?", (sequence,))
-                sequence_id = cursor.fetchone()
+                # Need to turn the numpy numbers into regular floats.
+                point = sequence_index_point[2]
 
-                if sequence_id is None:
+                if sequence not in sequence_ids:
                     cursor.execute("insert into sequences values (null, ?)", (sequence,))
                     sequence_id = cursor.lastrowid
+                    sequence_ids[sequence] = sequence_id
                 else:
-                    sequence_id = sequence_id[0]
+                    sequence_id = sequence_ids[sequence]
 
-                data = (sequence_id, lstm_key, sequence_index, point)
+                data = (sequence_id, lstm_key, sequence_index) + point + padding
+                batch += [data]
 
-                try:
-                    # Tried to do this with '?' parameters but the data wasn't getting saved correctly.
-                    #                                                                 vv
-                    cursor.execute("insert into activations values (null, ?, ?, ?, ?, %s)" % ", ".join([str(v) if v is not None else "null" for v in point + padding]), data)
-                except sqlite3.IntegrityError as e:
-                    cursor.execute("select * from activations where sequence_id == ? and lstm_key == ? and sequence_index == ?", (sequence_id, lstm_key, sequence_index))
-                    existing = cursor.fetchone()
+                if len(batch) == QueryEngine.COMMIT_BATCH:
+                    cursor.executemany("insert into activations values (?, ?, ?, %s)" % ", ".join(["?"] * maximum_dimensions), batch)
+                    batch = []
 
-                    if data == existing[1:5]:
-                        pass
-                    else:
-                        logging.error("incoming: %s" % str(data))
-                        logging.error("existing: %s" % str(existing[1:5]))
-                        raise e
+        if len(batch) > 0:
+            cursor.executemany("insert into activations values (?, ?, ?, %s)" % ", ".join(["?"] * maximum_dimensions), batch)
 
         self.db.commit()
         user_log.info("Setup QueryEngine.")
@@ -701,7 +697,8 @@ class QueryEngine:
                 required_level_keys += [level_keys]
                 found = set()
 
-                for sequence_id, sequence, index, point in self._candidates(key, next(iter(features)), tolerance, matched_sequences):
+                for sequence_id, sequence, index, *point in self._candidates(key, next(iter(features)), tolerance, matched_sequences):
+                    point = tuple(point)
                     candidate_point = [point[axis] for axis, target in features]
                     target_point = [target for axis, target in features]
                     within, distance = self._measure(candidate_point, target_point, tolerance)
@@ -785,22 +782,25 @@ class QueryEngine:
         return results
 
     def _candidates(self, key, axis_target, tolerance, matched_sequences):
+        dimensions = self.neural_network.lstm.part_width(key)
+        select_point = ", ".join(["activations.axis_%d" % d for d in range(dimensions)])
+
         if matched_sequences is None:
             axis, target = axis_target
             parameters = (key, target - tolerance, target + tolerance)
             cursor = self.db.cursor()
-            cursor.execute("""select sequences.id, sequences.sequence, activations.sequence_index, activations.point
+            cursor.execute("""select sequences.id, sequences.sequence, activations.sequence_index, %s
                 from sequences inner join activations on sequences.id = activations.sequence_id
                 where activations.lstm_key == ?
-                    and activations.axis_%d >= ? and activations.axis_%d <= ?""" % (axis, axis), parameters)
+                    and activations.axis_%d >= ? and activations.axis_%d <= ?""" % (select_point, axis, axis), parameters)
             return cursor.fetchall()
         else:
             parameters = (key,) + tuple(matched_sequences)
             cursor = self.db.cursor()
-            cursor.execute("""select sequences.id, sequences.sequence, activations.sequence_index, actiations.point
+            cursor.execute("""select sequences.id, sequences.sequence, activations.sequence_index, %s
                 from sequences inner join activations on sequences.id = activations.sequence_id
                 where activations.lstm_key == ?
-                    and sequences.id in (%s)""" % ", ".join(["?"] * len(matched_sequences)), parameters)
+                    and sequences.id in (%s)""" % (select_point, ", ".join(["?"] * len(matched_sequences))), parameters)
             return cursor.fetchall()
 
     def _measure(self, candidate, target, tolerance):

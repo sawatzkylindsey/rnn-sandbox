@@ -65,7 +65,7 @@ def elicit_activation_states(lstm, xys, activations_dir):
             result, instruments = stepwise_rnn.step(word_pos[0], rnn.LSTM_INSTRUMENTS)
 
             for part, layer in lstm.part_layers():
-                activation_states[lstm.encode_key(part, layer)].put(states.ActivationState(sequence, i, tuple(instruments[part][layer])))
+                activation_states[lstm.encode_key(part, layer)].put(states.ActivationState(sequence, i, tuple([float(v) for v in instruments[part][layer]])))
 
     # Mark the queue as finished.
     for value in activation_states.values():
