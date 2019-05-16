@@ -33,10 +33,11 @@ class ServerHandler(BaseHTTPRequestHandler):
     @errorhandler.safely
     def do_GET(self):
         (path, data) = self._read_request()
-        logging.debug("GET %s: %s" % (path, data))
         handler = path.replace("/", "_")
 
         if handler in self.server.handlers:
+            # Only log requests that go to the handlers to reduce logging noise.
+            logging.debug("GET %s: %s" % (path, data))
             out = self.server.handlers[handler].get(data)
 
             if out == None:
@@ -49,6 +50,7 @@ class ServerHandler(BaseHTTPRequestHandler):
 
             self._write_content(json.dumps(out))
         else:
+            # The request is for a file on the file system.
             file_path = os.path.join(".", "javascript", path)
 
             # Some systems (like eccc-nll.bigdata.sfu.ca) allow for relative paths to pass through urllib.

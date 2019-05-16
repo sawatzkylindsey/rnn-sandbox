@@ -41,6 +41,7 @@ def main(argv):
     for thread in threads:
         thread.join()
 
+    # TODO STUCK
     return 0
 
 

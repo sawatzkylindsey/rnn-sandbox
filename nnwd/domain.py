@@ -9,12 +9,14 @@ import math
 from nltk.tokenize import word_tokenize
 import numpy as np
 import os
+import pickle
 import pdb
 import queue
 import random
 import resource
 from sklearn.mixture import GaussianMixture
 from sklearn.manifold import TSNE
+import sqlite3
 import string
 import sys
 import threading
@@ -573,38 +575,81 @@ class QueryEngine:
 
     def _setup(self):
         logging.debug("Processing activation data for query engine.")
-        self.thresholds = {}
-        self.keyed = {}
-        self.sequence_keyed = {}
+        sqlite3.register_adapter(tuple, lambda t: pickle.dumps(t))
+        sqlite3.register_converter("tuple", pickle.loads)
+        db_path = os.path.join(self.activation_dir, "query-engine.db")
 
-        for key in self.neural_network.lstm.keys():
-            for i, sequence_index_point in enumerate(states.stream_activations(self.activation_dir, key)):
+        if os.path.exists(db_path):
+            self.db = sqlite3.connect(db_path, detect_types=sqlite3.PARSE_DECLTYPES)
+            return
+
+        self.db = sqlite3.connect(db_path, detect_types=sqlite3.PARSE_DECLTYPES)
+        maximum_axis = max(self.neural_network.lstm.hyper_parameters.width, self.neural_network.lstm.hyper_parameters.embedding_width)
+        cursor = self.db.cursor()
+
+        cursor.execute("""create table sequences
+            (id integer primary key,
+            sequence tuple not null unique)""")
+        cursor.execute("""create table activations
+            (id integer primary key,
+            sequence_id integer not null,
+            lstm_key text not null,
+            sequence_index integer not null,
+            point tuple not null,
+            %s,
+            foreign key(sequence_id) references sequences(id),
+            unique (sequence_id, lstm_key, sequence_index) on conflict abort)""" % ", ".join(["axis_%d real" % d for d in range(maximum_axis)]))
+
+        cursor.execute("""create index lstm_key_index on activations(lstm_key)""")
+
+        for d in range(maximum_axis):
+            cursor.execute("""create index axis_%d_index on activations(axis_%d)""" % (d, d))
+
+        self.db.commit()
+
+        for lstm_key in self.neural_network.lstm.keys():
+            part_width = self.neural_network.lstm.part_width(lstm_key)
+
+            if part_width == maximum_axis:
+                padding = ()
+            else:
+                padding = tuple([None] * (maximum_axis - part_width))
+
+            for i, sequence_index_point in enumerate(states.stream_activations(self.activation_dir, lstm_key)):
                 if i % 100000 == 0:
-                    logging.debug("At the %d-hundred-Kth instance of %s." % (int(i / 100000), key))
+                    logging.debug("At the %d-hundred-Kth instance of %s." % (int(i / 100000), lstm_key))
+                    self.db.commit()
 
                 sequence = tuple([word_pos[0] for word_pos in sequence_index_point[0]])
-                index = sequence_index_point[1]
-                point = sequence_index_point[2]
-                sequence_key = (sequence, key)
+                sequence_index = sequence_index_point[1]
+                point = tuple(sequence_index_point[2])
+                cursor.execute("select id from sequences where sequence == ?", (sequence,))
+                sequence_id = cursor.fetchone()
 
-                if sequence_key not in self.sequence_keyed:
-                    self.sequence_keyed[sequence_key] = []
+                if sequence_id is None:
+                    cursor.execute("insert into sequences values (null, ?)", (sequence,))
+                    sequence_id = cursor.lastrowid
+                else:
+                    sequence_id = sequence_id[0]
 
-                if key not in self.keyed:
-                    self.keyed[key] = {}
+                data = (sequence_id, lstm_key, sequence_index, point)
 
-                self.sequence_keyed[sequence_key] += [(sequence, index, point)]
+                try:
+                    # Tried to do this with '?' parameters but the data wasn't getting saved correctly.
+                    #                                                                 vv
+                    cursor.execute("insert into activations values (null, ?, ?, ?, ?, %s)" % ", ".join([str(v) if v is not None else "null" for v in point + padding]), data)
+                except sqlite3.IntegrityError as e:
+                    cursor.execute("select * from activations where sequence_id == ? and lstm_key == ? and sequence_index == ?", (sequence_id, lstm_key, sequence_index))
+                    existing = cursor.fetchone()
 
-                for axis, value in enumerate(point):
-                    if axis not in self.keyed[key]:
-                        self.keyed[key][axis] = []
+                    if data == existing[1:5]:
+                        pass
+                    else:
+                        logging.error("incoming: %s" % str(data))
+                        logging.error("existing: %s" % str(existing[1:5]))
+                        raise e
 
-                    self.keyed[key][axis] += [(sequence, index, point)]
-
-        for key, subd in self.keyed.items():
-            for axis, points in subd.items():
-                self.keyed[key][axis] = sorted(points, key=lambda sequence_index_point: sequence_index_point[2][axis])
-
+        self.db.commit()
         user_log.info("Setup QueryEngine.")
 
     def find_estimate(self, tolerance, predicates):
@@ -656,13 +701,13 @@ class QueryEngine:
                 required_level_keys += [level_keys]
                 found = set()
 
-                for sequence, index, point in self._candidates(key, next(iter(features)), tolerance, matched_sequences):
+                for sequence_id, sequence, index, point in self._candidates(key, next(iter(features)), tolerance, matched_sequences):
                     candidate_point = [point[axis] for axis, target in features]
                     target_point = [target for axis, target in features]
                     within, distance = self._measure(candidate_point, target_point, tolerance)
 
                     if within:
-                        found.add(sequence)
+                        found.add(sequence_id)
 
                         if sequence not in matched_activations:
                             matched_activations[sequence] = {}
@@ -742,46 +787,21 @@ class QueryEngine:
     def _candidates(self, key, axis_target, tolerance, matched_sequences):
         if matched_sequences is None:
             axis, target = axis_target
-            sorted_sequence_index_points = self.keyed[key][axis]
-            bottom_index = self._binary_search(axis, target - tolerance, sorted_sequence_index_points, True)
-            top_index = self._binary_search(axis, target + tolerance, sorted_sequence_index_points, False)
-            return self.keyed[key][axis][bottom_index:top_index + 1]
+            parameters = (key, target - tolerance, target + tolerance)
+            cursor = self.db.cursor()
+            cursor.execute("""select sequences.id, sequences.sequence, activations.sequence_index, activations.point
+                from sequences inner join activations on sequences.id = activations.sequence_id
+                where activations.lstm_key == ?
+                    and activations.axis_%d >= ? and activations.axis_%d <= ?""" % (axis, axis), parameters)
+            return cursor.fetchall()
         else:
-            return adjutant.flat_map([self.sequence_keyed[(sequence, key)] for sequence in matched_sequences])
-
-    def _binary_search(self, axis, target, sequence_index_points, find_lower):
-        lower = 0
-        upper = len(sequence_index_points) - 1
-        found = upper if sequence_index_points[upper][2][axis] == target else None
-
-        while found is None:
-            if sequence_index_points[lower][2][axis] > target:
-                found = lower
-            elif sequence_index_points[upper][2][axis] < target:
-                found = upper
-            else:
-                current = int((upper + lower) / 2.0)
-                observation = sequence_index_points[current][2][axis]
-
-                if observation == target:
-                    found = current
-                elif observation < target:
-                    if lower == current:
-                        if sequence_index_points[upper][2][axis] <= target:
-                            found = upper
-                        else:
-                            found = lower if find_lower else upper
-                    else:
-                        lower = current
-                else:
-                    upper = current
-
-        direction = -1 if find_lower else 1
-
-        while found + direction < len(sequence_index_points) and sequence_index_points[found + direction][2][axis] == target:
-            found += direction
-
-        return found
+            parameters = (key,) + tuple(matched_sequences)
+            cursor = self.db.cursor()
+            cursor.execute("""select sequences.id, sequences.sequence, activations.sequence_index, actiations.point
+                from sequences inner join activations on sequences.id = activations.sequence_id
+                where activations.lstm_key == ?
+                    and sequences.id in (%s)""" % ", ".join(["?"] * len(matched_sequences)), parameters)
+            return cursor.fetchall()
 
     def _measure(self, candidate, target, tolerance):
         check.check_lte(check.check_gte(tolerance, 0), 1)
