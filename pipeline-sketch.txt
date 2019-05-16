@@ -1,0 +1,10 @@
+       script                    corpus data sequential states buckets target semantic               activations
+
+python generate-data.py          CORPUS DATA
+python generate-sequential-model.py     DATA SEQUENTIAL
+python generate-hidden-states.py        DATA SEQUENTIAL STATES
+python generate-activation-states.py    DATA SEQUENTIAL                                              ACTIVATIONS
+python generate-reduction-buckets.py    DATA SEQUENTIAL STATES BUCKETS TARGET
+python generate-semantic-model.py       DATA SEQUENTIAL STATES                SEMANTIC
+python dev-server.py                    DATA SEQUENTIAL        BUCKETS        SEMANTIC --activations ACTIVATIONS
+

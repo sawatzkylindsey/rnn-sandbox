@@ -8,15 +8,13 @@ import sys
 
 from nnwd import domain
 from nnwd import rnn
-from pytils.log import setup_logging, user_log
+from pytils.log import setup_logging, teardown, user_log
 
 
+@teardown
 def main(argv):
     ap = ArgumentParser(prog="language-model")
-    ap.add_argument("--verbose", "-v",
-                    default=False,
-                    action="store_true",
-                    help="Turn on verbose logging.")
+    ap.add_argument("-v", "--verbose", default=False, action="store_true", help="Turn on verbose logging.")
     ap.add_argument("--corpus", default="corpus.txt")
     ap.add_argument("--epochs", default=100, type=int)
     args = ap.parse_args(argv)

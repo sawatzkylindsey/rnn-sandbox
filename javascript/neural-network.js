@@ -5,6 +5,7 @@ var DETAIL_CHIP_WIDTH = 5;
 var total_width = null;
 var total_height = null;
 var detail_margin = 10;
+var matrix_margin = 15;
 var layer_height = 225;
 var input_width = 100;
 var x_margin = 20;
@@ -2551,7 +2552,7 @@ function drawClose(x_offset, y_offset, radius, items_class, callback) {
 }
 
 function drawAutocomplete(timestep) {
-    var section_height = main_view == "component" ? layer_height : state_height + detail_margin;
+    var section_height = main_view == "component" ? layer_height : state_height + matrix_margin;
     var x_offset = x_margin;
     var y_offset = y_margin + (timestep * section_height)
     var focus = null;
@@ -2795,7 +2796,7 @@ function textWidth(text, fontSize) {
     temporaryDiv.style.position = "absolute";
     temporaryDiv.style.left = -100;
     temporaryDiv.style.top = -100;
-    temporaryDiv.innerHTML = text;
+    temporaryDiv.innerHTML = String(text).replace("<", "_").replace(">", "_");
     var width = temporaryDiv.clientWidth;
     document.body.removeChild(temporaryDiv);
     temporaryDiv = null;
@@ -2897,12 +2898,27 @@ function drawAlignment(data) {
     var y_offset = y_margin + (state_height * 3 / 4);
     var max_x = 0;
 
+    var position = 0;
+    var datums = data.words.map(word => ({position: position++, word: word}));
+    var space_width = textWidth("&nbsp;&nbsp;", 14) + 2;
+    svg.selectAll(".wheel")
+        .data(datums)
+        .enter()
+            .append("text")
+            .attr("id", function (d) { return "position-" + d.position + "-0"; })
+            .attr("class", "alignment")
+            .attr("x", -50)
+            .attr("y", -50)
+            .style("font-size", "14px")
+            .style("fill", black)
+            .text(function(d) { return d.word; });
+
     for (row in data.matrix_units) {
         if (data.words[row] != main_sequence[row]) {
             svg.append("text")
                 .attr("class", "timestep-" + row + " alignment")
                 .attr("x", x_margin + (input_width * 1 / 3))
-                .attr("y", y_margin + (row * (state_height + detail_margin)) + state_height + (state_height / 5) + HEIGHT + 5)
+                .attr("y", y_margin + (row * (state_height + matrix_margin)) + state_height + (state_height / 5) + HEIGHT + 5)
                 .style("font-size", "14px")
                 .style("fill", black)
                 .text(data.words[row]);
@@ -2910,8 +2926,8 @@ function drawAlignment(data) {
 
         for (column in data.matrix_units[row]) {
             var geometry = {
-                x: x_offset + (column * (state_width + detail_margin)),
-                y: y_offset + (row * (state_height + detail_margin)),
+                x: x_offset + (column * (state_width + matrix_margin)),
+                y: y_offset + (row * (state_height + matrix_margin)),
                 width: state_width,
                 height: state_height,
             };
@@ -2925,16 +2941,32 @@ function drawAlignment(data) {
             if (geometry.x > max_x) {
                 max_x = geometry.x;
             }
+
+            var item_width = textWidth(data.words[column], 14);
+            $("#position-" + column + "-0")
+                .attr("x", x_offset + (column * (state_width + matrix_margin)) + (state_width / 2) - (item_width / 2) - 1)
+                .attr("y", y_offset - 10);
         }
     }
 
     x_offset = max_x + (state_width * 3);
+    svg.selectAll(".wheel")
+        .data(datums)
+        .enter()
+            .append("text")
+            .attr("id", function (d) { return "position-" + d.position + "-1"; })
+            .attr("class", "alignment")
+            .attr("x", -50)
+            .attr("y", -50)
+            .style("font-size", "14px")
+            .style("fill", black)
+            .text(function(d) { return d.word; });
 
     for (row in data.matrix_units) {
         for (column in data.matrix_units[row]) {
             var geometry = {
-                x: x_offset + (state_width * column) + (detail_margin * column),
-                y: y_offset + (state_height * row) + (detail_margin * row),
+                x: x_offset + (state_width * column) + (matrix_margin * column),
+                y: y_offset + (state_height * row) + (matrix_margin * row),
                 width: state_width,
                 height: state_height,
             };
@@ -2944,6 +2976,11 @@ function drawAlignment(data) {
             if (hidden_state != null) {
                 drawStateCell(geometry, hidden_state.minimum, hidden_state.maximum, hidden_state.vector, "alignment", MEMORY_CHIP_WIDTH, MEMORY_CHIP_HEIGHT);
             }
+
+            var item_width = textWidth(data.words[column], 14);
+            $("#position-" + column + "-1")
+                .attr("x", x_offset + (column * (state_width + matrix_margin)) + (state_width / 2) - (item_width / 2) - 1)
+                .attr("y", y_offset - 10);
         }
     }
 }

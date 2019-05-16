@@ -26,7 +26,7 @@ from nnwd import domain
 from nnwd import errorhandler
 from nnwd import errors
 from nnwd import handlers
-from pytils.log import setup_logging, user_log
+from pytils.log import setup_logging, teardown, user_log
 
 
 class ServerHandler(BaseHTTPRequestHandler):
@@ -116,12 +116,10 @@ def run_server(port, words, neural_network, query_engine):
     httpd.serve_forever()
 
 
+@teardown
 def main(argv):
     ap = ArgumentParser(prog="server")
-    ap.add_argument("--verbose", "-v",
-                    default=False,
-                    action="store_true",
-                    help="Turn on verbose logging.")
+    ap.add_argument("-v", "--verbose", default=False, action="store_true", help="Turn on verbose logging.")
     ap.add_argument("-p", "--port", default=8888, type=int)
     ap.add_argument("--activation-dir", default=None)
     ap.add_argument("--use-fixed-buckets", default=False, action="store_true")

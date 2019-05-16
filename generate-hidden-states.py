@@ -18,12 +18,13 @@ from nnwd import pickler
 from nnwd import rnn
 from nnwd import sequential
 
-from pytils.log import setup_logging, user_log
+from pytils.log import setup_logging, teardown, user_log
 
 
+@teardown
 def main(argv):
     ap = ArgumentParser(prog="generate-hidden-states")
-    ap.add_argument("--verbose", "-v", default=False, action="store_true", help="Turn on verbose logging.")
+    ap.add_argument("-v", "--verbose", default=False, action="store_true", help="Turn on verbose logging.")
     ap.add_argument("-s", "--sample-rates", type=float, default=0.1, nargs=2, help="train then test sampling rates.")
     ap.add_argument("-d", "--dry-run", default=False, action="store_true")
     ap.add_argument("data_dir")

@@ -27,7 +27,7 @@ from nnwd import sequential
 from nnwd import states
 
 from pytils import adjutant
-from pytils.log import setup_logging, user_log
+from pytils.log import setup_logging, teardown, user_log
 
 
 SCORES = {
@@ -46,9 +46,10 @@ moot = {
 }
 
 
+@teardown
 def main(argv):
     ap = ArgumentParser(prog="generate-semantic-model")
-    ap.add_argument("--verbose", "-v", default=False, action="store_true", help="Turn on verbose logging.")
+    ap.add_argument("-v", "--verbose", default=False, action="store_true", help="Turn on verbose logging.")
     #ap.add_argument("-d", "--dry-run", default=False, action="store_true")
     ap.add_argument("-e", "--epochs", default=10, type=int)
     ap.add_argument("-l", "--layers", default=2, type=int)

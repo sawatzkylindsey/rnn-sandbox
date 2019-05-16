@@ -34,7 +34,7 @@ from nnwd import rnn
 from nnwd import semantic
 from nnwd import sequential
 from nnwd import states
-from pytils.log import setup_logging, user_log
+from pytils.log import user_log
 from pytils import adjutant, check
 
 

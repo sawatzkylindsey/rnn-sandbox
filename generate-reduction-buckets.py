@@ -23,12 +23,13 @@ from nnwd import sequential
 from nnwd import states
 
 from pytils import adjutant
-from pytils.log import setup_logging, user_log
+from pytils.log import setup_logging, teardown, user_log
 
 
+@teardown
 def main(argv):
     ap = ArgumentParser(prog="generate-reduction-buckets")
-    ap.add_argument("--verbose", "-v", default=False, action="store_true", help="Turn on verbose logging.")
+    ap.add_argument("-v", "--verbose", default=False, action="store_true", help="Turn on verbose logging.")
     ap.add_argument("data_dir")
     ap.add_argument("sequential_dir")
     ap.add_argument("states_dir")
@@ -109,14 +110,30 @@ def calculate_fixed(width, target):
 def calculate_learned(width, target, points):
     buckets = {i: [] for i in range(target)}
     X = np.array([p for p in points])
+    X_transpose = X.transpose()
     logging.debug("learning gaussian mixture model from %d points (%d wide)." % X.shape)
-    gm = GaussianMixture(target)
-    dimension_grouping = gm.fit_predict(X.transpose())
+    dimension_grouping = None
+    # This is the default reg_covar from sklearn.
+    reg_covar = 1e-6
+
+    while dimension_grouping is None:
+        try:
+            dimension_grouping = _gaussian_mixture(target, reg_covar, X_transpose)
+        except ValueError as e:
+            if "Fitting the mixture model failed" in str(e):
+                reg_covar *= 10
+            else:
+                raise e
 
     for dimension, group in enumerate(dimension_grouping):
         buckets[group] += [dimension]
 
     return buckets
+
+
+def _gaussian_mixture(target, reg_covar, X_transpose):
+    gm = GaussianMixture(target, reg_covar=reg_covar)
+    return gm.fit_predict(X_transpose)
 
 
 if __name__ == "__main__":

@@ -6,7 +6,7 @@ import threading
 
 from nnwd.models import Estimate
 from pytils import check
-from pytils.log import setup_logging, user_log
+from pytils.log import user_log
 
 
 class Echo:
