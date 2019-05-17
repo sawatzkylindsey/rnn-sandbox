@@ -26,10 +26,8 @@ def dump(data, dir_path, converter=None):
         # Non-daemon threads will keep the program running until they finish (as per documentation).
         thread.daemon = False
         thread.start()
-        return thread
     else:
         _dump(data, dir_path, converter)
-        return None
 
 
 def _dump_stream(data, dir_path, converter):

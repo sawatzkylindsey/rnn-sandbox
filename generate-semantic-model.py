@@ -64,10 +64,10 @@ def main(argv):
     setup_logging(".%s.log" % os.path.splitext(os.path.basename(__file__))[0], aargs.verbose, False, True, True)
     logging.debug(aargs)
 
-    lstm = sequential.model_for(aargs.data_dir, aargs.sequential_dir)
+    lstm = sequential.load_model(aargs.data_dir, aargs.sequential_dir)
+    user_log.info("Sem")
     hyper_parameters = model.HyperParameters(aargs.layers, aargs.width)
     extra = {"word_input": aargs.word_input}
-    user_log.info("Sem")
     sem, sem_as_input = generate_sem(lstm, hyper_parameters, extra, aargs.states_dir, aargs.epochs, aargs.encoding_dir)
 
     if aargs.score:
@@ -99,6 +99,10 @@ def main(argv):
                 writer.writerow(["baseline", name, "%f" % score])
 
     return 0
+
+
+def load_sem(lstm, encoding_dir):
+    return semantic.load_model(lstm, aargs.encoding_dir, model_fn=lambda hp, e, i, o, s: model.Ffnn(hp, e, i, o, s))
 
 
 def generate_sem(lstm, hyper_parameters, extra, states_dir, epochs, encoding_dir):

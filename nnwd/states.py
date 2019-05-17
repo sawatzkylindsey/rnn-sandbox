@@ -19,7 +19,7 @@ ActivationState = collections.namedtuple("ActivationState", ["sequence", "index"
 
 
 def set_hidden_states(states_dir, is_train, key, states):
-    return pickler.dump(states, os.path.join(states_dir, (STATES_TRAIN if is_train else STATES_TEST) + "." + key), converter=lambda hs: tuple((hs.word, hs.point, hs.annotation)))
+    pickler.dump(states, os.path.join(states_dir, (STATES_TRAIN if is_train else STATES_TEST) + "." + key), converter=lambda hs: tuple((hs.word, hs.point, hs.annotation)))
 
 
 def get_hidden_states(states_dir, key):
@@ -53,7 +53,7 @@ def stream_hidden_test(states_dir, key):
 
 
 def set_activation_states(states_dir, key, states):
-    return pickler.dump(states, os.path.join(states_dir, STATES_ACTIVATION + "." + key), converter=lambda _as: tuple((_as.sequence, _as.index, _as.point)))
+    pickler.dump(states, os.path.join(states_dir, STATES_ACTIVATION + "." + key), converter=lambda _as: tuple((_as.sequence, _as.index, _as.point)))
 
 
 def get_activation_states(states_dir, key):

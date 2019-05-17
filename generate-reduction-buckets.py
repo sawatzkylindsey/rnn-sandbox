@@ -39,7 +39,7 @@ def main(argv):
     setup_logging(".%s.log" % os.path.splitext(os.path.basename(__file__))[0], aargs.verbose, False, True, True)
     logging.debug(aargs)
 
-    lstm = sequential.model_for(aargs.data_dir, aargs.sequential_dir)
+    lstm = sequential.load_model(aargs.data_dir, aargs.sequential_dir)
     part_learned_mse = {}
     part_fixed_mse = {}
 
