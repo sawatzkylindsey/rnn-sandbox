@@ -102,7 +102,7 @@ def main(argv):
 
 
 def load_sem(lstm, encoding_dir):
-    return semantic.load_model(lstm, aargs.encoding_dir, model_fn=lambda hp, e, i, o, s: model.Ffnn(hp, e, i, o, s))
+    return semantic.load_model(lstm, encoding_dir, model_fn=lambda hp, e, i, o, s: model.Ffnn(hp, e, i, o, s))
 
 
 def generate_sem(lstm, hyper_parameters, extra, states_dir, epochs, encoding_dir):
