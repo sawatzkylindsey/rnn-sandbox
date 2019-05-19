@@ -21,6 +21,7 @@ def database_for(query_dir, lstm, key):
     cursor.execute("""create table sequences
         (id integer primary key,
         sequence tuple not null unique)""")
+    cursor.execute("""create index sequence on sequences(sequence)""")
 
     # The (sequence_id, sequence_index) serve as a composite unique key.
     # This key can uniquely define the point (hidden state).
