@@ -2817,8 +2817,11 @@ function drawSequences(data) {
     var total_count = 0;
 
     for (var index in data.sequence_matches) {
-        drawSequence(data.sequence_matches[index], x_offset, y(index), 80, 20);
-        counts.push({position: index, count: data.sequence_matches[index].count});
+        if (counts.length < 28) {
+            drawSequence(data.sequence_matches[index], x_offset, y(index), 80, 20);
+            counts.push({position: index, count: data.sequence_matches[index].count});
+        }
+
         total_count += data.sequence_matches[index].count;
     }
 

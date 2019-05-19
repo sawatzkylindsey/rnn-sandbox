@@ -123,7 +123,7 @@ def main(argv):
     ap = ArgumentParser(prog="server")
     ap.add_argument("-v", "--verbose", default=False, action="store_true", help="Turn on verbose logging.")
     ap.add_argument("-p", "--port", default=8888, type=int)
-    ap.add_argument("--activation-dir", default=None)
+    ap.add_argument("--query-dir", default=None)
     ap.add_argument("--use-fixed-buckets", default=False, action="store_true")
     ap.add_argument("data_dir")
     ap.add_argument("sequential_dir")
@@ -138,8 +138,8 @@ def main(argv):
     neural_network = domain.NeuralNetwork(aargs.data_dir, aargs.sequential_dir, aargs.buckets_dir, aargs.encoding_dir, aargs.use_fixed_buckets)
     query_engine = None
 
-    if aargs.activation_dir is not None:
-        query_engine = domain.QueryEngine(neural_network, aargs.activation_dir)
+    if aargs.query_dir is not None:
+        query_engine = domain.QueryEngine(neural_network, aargs.query_dir)
 
     run_server(aargs.port, words, neural_network, query_engine)
 

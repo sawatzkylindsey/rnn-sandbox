@@ -31,6 +31,7 @@ from nnwd import latex
 from nnwd.models import Timestep, WeightExplain, WeightDetail, HiddenState, LabelDistribution, SequenceRollup, SequenceMatch, Estimate, SoftFilters
 from nnwd import parameters
 from nnwd import pickler
+from nnwd import query
 from nnwd import reduction
 from nnwd import rnn
 from nnwd import semantic
@@ -564,89 +565,16 @@ class NeuralNetwork:
 
 
 class QueryEngine:
-    TOP = 25
-    COMMIT_BATCH = 100
-
-    def __init__(self, neural_network, activation_dir):
+    def __init__(self, neural_network, query_dir):
         self.neural_network = neural_network
-        self.activation_dir = activation_dir
-        self._background_setup = threading.Thread(target=self._setup)
-        self._background_setup.daemon = True
-        self._background_setup.start()
+        self.query_dir = query_dir
+        # Very weird, but if you don't set the query_dbs in a sub-thread then sqllite complains.
+        thread = threading.Thread(target=self._setup)
+        thread.daemon = True
+        thread.start()
 
     def _setup(self):
-        sqlite3.register_adapter(tuple, lambda t: pickle.dumps(t))
-        sqlite3.register_converter("tuple", pickle.loads)
-        db_path = os.path.join(self.activation_dir, "query-engine.db")
-
-        if os.path.exists(db_path):
-            self.db = sqlite3.connect(db_path, detect_types=sqlite3.PARSE_DECLTYPES)
-            logging.debug("Loaded QueryEngine.")
-            return
-
-        logging.debug("Processing activation data for query engine.")
-        self.db = sqlite3.connect(db_path, detect_types=sqlite3.PARSE_DECLTYPES)
-        maximum_dimensions = max(self.neural_network.lstm.hyper_parameters.width, self.neural_network.lstm.hyper_parameters.embedding_width)
-        cursor = self.db.cursor()
-
-        cursor.execute("""create table sequences
-            (id integer primary key,
-            sequence tuple not null unique)""")
-        # The (sequence_id, lstm_key, sequence_index) serve as a composite unique key.
-        # This key can uniquely define the point (hidden state).
-        cursor.execute("""create table activations
-            (sequence_id integer not null,
-            lstm_key text not null,
-            sequence_index integer not null,
-            %s,
-            foreign key(sequence_id) references sequences(id),
-            unique (sequence_id, lstm_key, sequence_index) on conflict ignore)""" % ", ".join(["axis_%d real" % d for d in range(maximum_dimensions)]))
-        cursor.execute("""create index lstm_key_index on activations(lstm_key)""")
-
-        for d in range(maximum_dimensions):
-            cursor.execute("""create index axis_%d_index on activations(axis_%d)""" % (d, d))
-
-        self.db.commit()
-        sequence_ids = {}
-        batch = []
-
-        for lstm_key in self.neural_network.lstm.keys():
-            dimensions = self.neural_network.lstm.part_width(lstm_key)
-
-            if dimensions == maximum_dimensions:
-                padding = ()
-            else:
-                padding = tuple([None] * (maximum_dimensions - dimensions))
-
-            for i, sequence_index_point in enumerate(states.stream_activations(self.activation_dir, lstm_key)):
-                if i % 100000 == 0:
-                    logging.debug("At the %d-hundred-Kth instance of %s." % (int(i / 100000), lstm_key))
-                    self.db.commit()
-
-                sequence = tuple([word_pos[0] for word_pos in sequence_index_point[0]])
-                sequence_index = sequence_index_point[1]
-                # Need to turn the numpy numbers into regular floats.
-                point = sequence_index_point[2]
-
-                if sequence not in sequence_ids:
-                    cursor.execute("insert into sequences values (null, ?)", (sequence,))
-                    sequence_id = cursor.lastrowid
-                    sequence_ids[sequence] = sequence_id
-                else:
-                    sequence_id = sequence_ids[sequence]
-
-                data = (sequence_id, lstm_key, sequence_index) + point + padding
-                batch += [data]
-
-                if len(batch) == QueryEngine.COMMIT_BATCH:
-                    cursor.executemany("insert into activations values (?, ?, ?, %s)" % ", ".join(["?"] * maximum_dimensions), batch)
-                    batch = []
-
-        if len(batch) > 0:
-            cursor.executemany("insert into activations values (?, ?, ?, %s)" % ", ".join(["?"] * maximum_dimensions), batch)
-
-        self.db.commit()
-        user_log.info("Setup QueryEngine.")
+        self.query_dbs = query.get_databases(self.query_dir, self.neural_network.lstm)
 
     def find_estimate(self, tolerance, predicates):
         matches = self.find_matches(tolerance, True, predicates)
@@ -683,7 +611,7 @@ class QueryEngine:
 
             rollups[(matched_words, elides)] += 1
 
-        return SequenceRollup([SequenceMatch(key[0], key[1], value) for key, value in sorted(rollups.items(), key=lambda item: item[1], reverse=True)[:QueryEngine.TOP]])
+        return SequenceRollup([SequenceMatch(key[0], key[1], value) for key, value in sorted(rollups.items(), key=lambda item: item[1], reverse=True)])
 
     def find_matches(self, tolerance, first_only, predicates):
         required_level_keys = []
@@ -697,14 +625,14 @@ class QueryEngine:
                 required_level_keys += [level_keys]
                 found = set()
 
-                for sequence_id, sequence, index, *point in self._candidates(key, next(iter(features)), tolerance, matched_sequences):
+                for sequence, index, *point in self._candidates(key, next(iter(features)), tolerance, matched_sequences):
                     point = tuple(point)
                     candidate_point = [point[axis] for axis, target in features]
                     target_point = [target for axis, target in features]
                     within, distance = self._measure(candidate_point, target_point, tolerance)
 
                     if within:
-                        found.add(sequence_id)
+                        found.add(sequence)
 
                         if sequence not in matched_activations:
                             matched_activations[sequence] = {}
@@ -782,26 +710,11 @@ class QueryEngine:
         return results
 
     def _candidates(self, key, axis_target, tolerance, matched_sequences):
-        dimensions = self.neural_network.lstm.part_width(key)
-        select_point = ", ".join(["activations.axis_%d" % d for d in range(dimensions)])
-
         if matched_sequences is None:
             axis, target = axis_target
-            parameters = (key, target - tolerance, target + tolerance)
-            cursor = self.db.cursor()
-            cursor.execute("""select sequences.id, sequences.sequence, activations.sequence_index, %s
-                from sequences inner join activations on sequences.id = activations.sequence_id
-                where activations.lstm_key == ?
-                    and activations.axis_%d >= ? and activations.axis_%d <= ?""" % (select_point, axis, axis), parameters)
-            return cursor.fetchall()
+            return self.query_dbs[key].select_activations_range(axis, target - tolerance, target + tolerance)
         else:
-            parameters = (key,) + tuple(matched_sequences)
-            cursor = self.db.cursor()
-            cursor.execute("""select sequences.id, sequences.sequence, activations.sequence_index, %s
-                from sequences inner join activations on sequences.id = activations.sequence_id
-                where activations.lstm_key == ?
-                    and sequences.id in (%s)""" % (select_point, ", ".join(["?"] * len(matched_sequences))), parameters)
-            return cursor.fetchall()
+            return self.query_dbs[key].select_activations(matched_sequences)
 
     def _measure(self, candidate, target, tolerance):
         check.check_lte(check.check_gte(tolerance, 0), 1)
