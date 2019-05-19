@@ -17,7 +17,6 @@ from ml import base as mlbase
 from ml import model
 from ml import scoring
 from nnwd import data
-from nnwd.domain import NeuralNetwork
 from nnwd import pickler
 from nnwd import reduction
 from nnwd import rnn

@@ -14,7 +14,6 @@ from sklearn.mixture import GaussianMixture
 import sys
 
 from nnwd import data
-from nnwd.domain import NeuralNetwork
 from nnwd import parameters
 from nnwd import pickler
 from nnwd import reduction
