@@ -28,6 +28,7 @@ def main(argv):
     ap = ArgumentParser(prog="analyze-hidden-states")
     ap.add_argument("-v", "--verbose", default=False, action="store_true", help="Turn on verbose logging.")
     #ap.add_argument("-d", "--dry-run", default=False, action="store_true")
+    ap.add_argument("--train-data", default=False, action="store_true")
     ap.add_argument("data_dir")
     ap.add_argument("sequential_dir")
     ap.add_argument("states_dir")
@@ -36,25 +37,27 @@ def main(argv):
     logging.debug(aargs)
 
     lstm = sequential.load_model(aargs.data_dir, aargs.sequential_dir)
-    stats_train = {}
-    stats_test = {}
+    stats = {}
 
     for key in lstm.keys():
         train_points, test_points = states.get_hidden_states(aargs.states_dir, key)
-        stats_train[key] = calculate_stats(train_points)
-        stats_test[key] = calculate_stats(test_points)
+
+        if aargs.train_data:
+            stats[key] = calculate_stats(train_points)
+        else:
+            stats[key] = calculate_stats(test_points)
 
     writer = csv_writer(sys.stdout)
-    writer.writerow(["dataset", "key", "minimum", "maximum", "average", "stdev"])
+    writer.writerow(["key", "minimum", "maximum", "average", "stdev"])
     global_minimum = None
     global_maximum = None
     global_average = 0
     global_stdev = 0
     count = 0
 
-    for key, stats in sorted(stats_train.items()):
+    for key, stats in sorted(stats.items()):
         count += 1
-        writer.writerow(["train", key, stats["minimum"], stats["maximum"], stats["average"], stats["stdev"]])
+        writer.writerow([key, stats["minimum"], stats["maximum"], stats["average"], stats["stdev"]])
 
         if global_minimum is None or stats["minimum"] < global_minimum:
             global_minimum = stats["minimum"]
@@ -65,20 +68,7 @@ def main(argv):
         global_average += stats["average"]
         global_stdev += stats["stdev"]
 
-    for key, stats in sorted(stats_test.items()):
-        count += 1
-        writer.writerow(["test", key, stats["minimum"], stats["maximum"], stats["average"], stats["stdev"]])
-
-        if global_minimum is None or stats["minimum"] < global_minimum:
-            global_minimum = stats["minimum"]
-
-        if global_maximum is None or stats["maximum"] > global_maximum:
-            global_maximum = stats["maximum"]
-
-        global_average += stats["average"]
-        global_stdev += stats["stdev"]
-
-    writer.writerow(["global", "global", global_minimum, global_maximum, global_average / float(count), global_stdev / float(count)])
+    writer.writerow(["global", global_minimum, global_maximum, global_average / float(count), global_stdev / float(count)])
     return 0
 
 
