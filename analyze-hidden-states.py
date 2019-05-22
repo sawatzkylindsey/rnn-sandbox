@@ -48,33 +48,37 @@ def main(argv):
             stats[key] = calculate_stats(test_points)
 
     writer = csv_writer(sys.stdout)
-    writer.writerow(["key", "minimum", "maximum", "average", "stdev"])
-    global_minimum = None
-    global_maximum = None
-    global_average = 0
-    global_stdev = 0
+    writer.writerow(["key"] + sorted(stats[next(iter(lstm.keys()))].keys()))
+    averages = {}
     count = 0
 
     for key, stats in sorted(stats.items()):
         count += 1
-        writer.writerow([key, stats["minimum"], stats["maximum"], stats["average"], stats["stdev"]])
+        writer.writerow([key] + [item[1] for item in sorted(stats.items())])
 
-        if global_minimum is None or stats["minimum"] < global_minimum:
-            global_minimum = stats["minimum"]
+        for key, value in stats.items():
+            if key not in averages:
+                averages[key] = 0
 
-        if global_maximum is None or stats["maximum"] > global_maximum:
-            global_maximum = stats["maximum"]
+            averages[key] += value
 
-        global_average += stats["average"]
-        global_stdev += stats["stdev"]
-
-    writer.writerow(["global", global_minimum, global_maximum, global_average / float(count), global_stdev / float(count)])
+    writer.writerow(["global"] + [item[1] / count for item in sorted(averages.items())])
     return 0
 
 
 def calculate_stats(hidden_states):
-    flattened = adjutant.flat_map([[float(v) for v in hs.point] for hs in hidden_states])
-    return {"minimum": min(flattened), "maximum": max(flattened), "average": statistics.mean(flattened), "stdev": statistics.stdev(flattened)}
+    #flattened = adjutant.flat_map([[float(v) for v in hs.point] for hs in hidden_states])
+    points = [[float(v) for v in hs.point] for hs in hidden_states]
+    flattened = adjutant.flat_map(points)
+    global_average = sum(flattened) / len(flattened)
+    count = 0
+    total = 0
+
+    for point in points:
+        count += 1
+        total += sum([(v - global_average)**2 for v in point]) / len(point)
+
+    return {"stdev": statistics.stdev(flattened), "mse": total / count}
 
 
 if __name__ == "__main__":
