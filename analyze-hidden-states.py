@@ -3,6 +3,7 @@ from argparse import ArgumentParser
 import collections
 from csv import writer as csv_writer
 import glob
+import math
 import logging
 import os
 import pdb
@@ -42,21 +43,29 @@ def main(argv):
         stats_test[key] = calculate_stats(test_points)
 
     writer = csv_writer(sys.stdout)
-    writer.writerow(["dataset", "key", "minimum", "maximum"])
+    writer.writerow(["dataset", "key", "minimum", "maximum", "average", "stdev"])
     global_minimum = None
     global_maximum = None
+    global_average = 0
+    global_stdev = 0
+    count = 0
 
     for key, stats in sorted(stats_train.items()):
-        writer.writerow(["train", key, stats["minimum"], stats["maximum"]])
+        count += 1
+        writer.writerow(["train", key, stats["minimum"], stats["maximum"], stats["average"], stats["stdev"]])
 
         if global_minimum is None or stats["minimum"] < global_minimum:
             global_minimum = stats["minimum"]
 
         if global_maximum is None or stats["maximum"] > global_maximum:
             global_maximum = stats["maximum"]
+
+        global_average += stats["average"]
+        global_stdev += stats["stdev"]
 
     for key, stats in sorted(stats_test.items()):
-        writer.writerow(["test", key, stats["minimum"], stats["maximum"]])
+        count += 1
+        writer.writerow(["test", key, stats["minimum"], stats["maximum"], stats["average"], stats["stdev"]])
 
         if global_minimum is None or stats["minimum"] < global_minimum:
             global_minimum = stats["minimum"]
@@ -64,16 +73,22 @@ def main(argv):
         if global_maximum is None or stats["maximum"] > global_maximum:
             global_maximum = stats["maximum"]
 
-    writer.writerow(["global", "global", global_minimum, global_maximum])
+        global_average += stats["average"]
+        global_stdev += stats["stdev"]
 
+    writer.writerow(["global", "global", global_minimum, global_maximum, global_average / float(count), global_stdev / float(count)])
     return 0
 
 
 def calculate_stats(hidden_states):
     minimum = None
     maximum = None
+    totals = []
+    total = 0
+    count = 0
 
     for hidden_state in hidden_states:
+        count += 1
         local_minimum = min(hidden_state.point)
 
         if minimum is None or local_minimum < minimum:
@@ -84,7 +99,17 @@ def calculate_stats(hidden_states):
         if maximum is None or local_maximum > maximum:
             maximum = local_maximum
 
-    return {"minimum": minimum, "maximum": maximum}
+        t = sum(hidden_state.point) / len(hidden_state.point)
+        totals += [t]
+        total += t
+
+    average = total / float(count)
+    variance = 0
+
+    for value in totals:
+        variance += (average - value)**2
+
+    return {"minimum": minimum, "maximum": maximum, "average": average, "stdev": math.sqrt(variance / float(count))}
 
 
 
