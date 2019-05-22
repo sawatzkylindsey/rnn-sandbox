@@ -9,6 +9,7 @@ import os
 import pdb
 import queue
 import random
+import statistics
 import sys
 
 from nnwd import data
@@ -18,6 +19,7 @@ from nnwd import parameters
 from nnwd import pickler
 from nnwd import rnn
 
+from pytils import adjutant
 from pytils.log import setup_logging, teardown, user_log
 
 
@@ -81,36 +83,8 @@ def main(argv):
 
 
 def calculate_stats(hidden_states):
-    minimum = None
-    maximum = None
-    totals = []
-    total = 0
-    count = 0
-
-    for hidden_state in hidden_states:
-        count += 1
-        local_minimum = min(hidden_state.point)
-
-        if minimum is None or local_minimum < minimum:
-            minimum = local_minimum
-
-        local_maximum = max(hidden_state.point)
-
-        if maximum is None or local_maximum > maximum:
-            maximum = local_maximum
-
-        t = sum(hidden_state.point) / len(hidden_state.point)
-        totals += [t]
-        total += t
-
-    average = total / float(count)
-    variance = 0
-
-    for value in totals:
-        variance += (average - value)**2
-
-    return {"minimum": minimum, "maximum": maximum, "average": average, "stdev": math.sqrt(variance / float(count))}
-
+    flattened = adjutant.flat_map([[float(v) for v in hs.point] for hs in hidden_states])
+    return {"minimum": min(flattened), "maximum": max(flattened), "average": statistics.mean(flattened), "stdev": statistics.stdev(flattened)}
 
 
 if __name__ == "__main__":
