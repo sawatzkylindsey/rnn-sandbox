@@ -105,31 +105,40 @@ class Ffnn(Model):
         self.input_p = self.placeholder("input_p", [batch_size_dimension, len(self.input_field)])
         self.output_p = self.placeholder("output_p", [batch_size_dimension], tf.int32)
 
-        self.E = self.variable("E", [len(self.input_field), self.hyper_parameters.width])
-        self.E_bias = self.variable("E_bias", [1, self.hyper_parameters.width], 0.)
+        if self.hyper_parameters.layers > 0:
+            self.E = self.variable("E", [len(self.input_field), self.hyper_parameters.width])
+            self.E_bias = self.variable("E_bias", [1, self.hyper_parameters.width], 0.)
 
-        # The E layer is the first layer.
-        if self.hyper_parameters.layers - 1 > 0:
-            self.H = self.variable("H", [self.hyper_parameters.layers - 1, self.hyper_parameters.width, self.hyper_parameters.width])
-            self.H_bias = self.variable("H_bias", [self.hyper_parameters.layers - 1, 1, self.hyper_parameters.width], 0.)
+            self.Y = self.variable("Y", [self.hyper_parameters.width, len(self.output_labels)])
+            self.Y_bias = self.variable("Y_bias", [1, len(self.output_labels)], 0.)
 
-        self.Y = self.variable("Y", [self.hyper_parameters.width, len(self.output_labels)])
-        self.Y_bias = self.variable("Y_bias", [1, len(self.output_labels)], 0.)
+            # The E layer is the first layer.
+            if self.hyper_parameters.layers > 1:
+                self.H = self.variable("H", [self.hyper_parameters.layers - 1, self.hyper_parameters.width, self.hyper_parameters.width])
+                self.H_bias = self.variable("H_bias", [self.hyper_parameters.layers - 1, 1, self.hyper_parameters.width], 0.)
 
-        # Computational graph encoding
-        self.embedded_input = tf.tanh(tf.matmul(self.input_p, self.E) + self.E_bias)
-        mlbase.assert_shape(self.embedded_input, [batch_size_dimension, self.hyper_parameters.width])
-        hidden = self.embedded_input
-        mlbase.assert_shape(hidden, [batch_size_dimension, self.hyper_parameters.width])
-
-        for l in range(self.hyper_parameters.layers - 1):
-            hidden = tf.tanh(tf.matmul(hidden, self.H[l]) + self.H_bias[l])
+            # Computational graph encoding
+            self.embedded_input = tf.tanh(tf.matmul(self.input_p, self.E) + self.E_bias)
+            mlbase.assert_shape(self.embedded_input, [batch_size_dimension, self.hyper_parameters.width])
+            hidden = self.embedded_input
             mlbase.assert_shape(hidden, [batch_size_dimension, self.hyper_parameters.width])
+
+            for l in range(self.hyper_parameters.layers - 1):
+                hidden = tf.tanh(tf.matmul(hidden, self.H[l]) + self.H_bias[l])
+                mlbase.assert_shape(hidden, [batch_size_dimension, self.hyper_parameters.width])
+
+            mlbase.assert_shape(hidden, [batch_size_dimension, self.hyper_parameters.width])
+        else:
+            self.Y = self.variable("Y", [len(self.input_field), len(self.output_labels)])
+            self.Y_bias = self.variable("Y_bias", [1, len(self.output_labels)], 0.)
+
+            # Computational graph encoding
+            hidden = self.input_p
+            mlbase.assert_shape(hidden, [batch_size_dimension, len(self.input_field)])
 
         self.output_logit = tf.matmul(hidden, self.Y) + self.Y_bias
         mlbase.assert_shape(self.output_logit, [batch_size_dimension, len(self.output_labels)])
         self.output_distributions = tf.nn.softmax(self.output_logit)
-        #self.output_distributions = tf.nn.softmax(tf.matmul(hidden, self.Y) + self.Y_bias)
         mlbase.assert_shape(self.output_distributions, [batch_size_dimension, len(self.output_labels)])
         #self.cost = tf.reduce_mean(tf.nn.nce_loss(
         #    weights=tf.transpose(self.Y),
