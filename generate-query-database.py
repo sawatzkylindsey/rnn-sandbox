@@ -38,6 +38,7 @@ BATCH_SIZE = 100
 def main(argv):
     ap = ArgumentParser(prog="generate-query-database")
     ap.add_argument("-v", "--verbose", default=False, action="store_true", help="Turn on verbose logging.")
+    ap.add_argument("--key-offsets", nargs="*")
     ap.add_argument("data_dir")
     ap.add_argument("sequential_dir")
     ap.add_argument("activation_dir")
@@ -45,16 +46,32 @@ def main(argv):
     aargs = ap.parse_args(argv)
     setup_logging(".%s.log" % os.path.splitext(os.path.basename(__file__))[0], aargs.verbose, False, True, True)
     logging.debug(aargs)
+    things = None
+
+    if len(aargs.key_offsets) > 0:
+        things = []
+
+        for key_offset in aargs.key_offsets:
+            key, offset = key_offset.split("#")
+            things += [(key, int(offset))]
 
     lstm = sequential.load_model(aargs.data_dir, aargs.sequential_dir)
     threads = []
 
-    for key in lstm.keys():
-        thread = threading.Thread(target=generate_db, args=[lstm, aargs.activation_dir, key, aargs.query_dir])
-        # Non-daemon threads will keep the program running until they finish (as per documentation).
-        thread.daemon = False
-        thread.start()
-        threads += [thread]
+    if things is None:
+        for key in lstm.keys():
+            thread = threading.Thread(target=generate_db, args=[lstm, aargs.activation_dir, key, aargs.query_dir, 0])
+            # Non-daemon threads will keep the program running until they finish (as per documentation).
+            thread.daemon = False
+            thread.start()
+            threads += [thread]
+    else:
+        for key, offset in things:
+            thread = threading.Thread(target=generate_db, args=[lstm, aargs.activation_dir, key, aargs.query_dir, offset])
+            # Non-daemon threads will keep the program running until they finish (as per documentation).
+            thread.daemon = False
+            thread.start()
+            threads += [thread]
 
     for thread in threads:
         thread.join()
@@ -62,34 +79,38 @@ def main(argv):
     return 0
 
 
-def generate_db(lstm, activation_dir, key, query_dir):
-    logging.debug("Processing activation data for query database %s." % key)
+def generate_db(lstm, activation_dir, key, query_dir, offset):
+    logging.debug("Processing activation data for query database %s @%d." % (key, offset))
     query_db = query.database_for(query_dir, lstm, key)
     sequence_ids = {}
     batch = []
 
     for i, sequence_index_point in enumerate(states.stream_activations(activation_dir, key)):
-        if i % 100000 == 0:
-            logging.debug("At the %d-hundred-Kth instance of %s." % (int(i / 100000), key))
-            query_db.commit()
-
-        sequence = tuple([word_pos[0] for word_pos in sequence_index_point[0]])
-        sequence_index = sequence_index_point[1]
-        point = sequence_index_point[2]
-        #point = tuple([float(v) for v in sequence_index_point[2]])
-
-        if sequence not in sequence_ids:
-            sequence_id = query_db.insert_sequence(sequence)
-            sequence_ids[sequence] = sequence_id
+        if i < offset:
+            pass
         else:
-            sequence_id = sequence_ids[sequence]
+            if i % 10000 == 0 or len(sequence_ids) == 0:
+                query_db.commit()
+                logging.debug("At the %d-ten-Kth instance of %s." % (int(i / 10000), key))
 
-        data = (sequence_id, sequence_index) + point
-        batch += [data]
+            sequence = tuple([word_pos[0] for word_pos in sequence_index_point[0]])
+            sequence_index = sequence_index_point[1]
+            #point = sequence_index_point[2]
+            point = tuple([float(v) for v in sequence_index_point[2]])
 
-        if len(batch) == BATCH_SIZE:
-            query_db.insert_activations(batch)
-            batch = []
+            if sequence not in sequence_ids:
+                sequence_id = query_db.insert_sequence(sequence)
+                sequence_ids[sequence] = sequence_id
+            else:
+                sequence_id = sequence_ids[sequence]
+
+            assert isinstance(sequence_id, int), sequence_id
+            data = (sequence_id, sequence_index) + point
+            batch += [data]
+
+            if len(batch) == BATCH_SIZE:
+                query_db.insert_activations(batch)
+                batch = []
 
     if len(batch) > 0:
         query_db.insert_activations(batch)

@@ -18,22 +18,47 @@ def database_for(query_dir, lstm, key):
     dimensions = lstm.part_width(key)
     cursor = db.cursor()
 
-    cursor.execute("""create table sequences
-        (id integer primary key,
-        sequence tuple not null unique)""")
-    cursor.execute("""create index sequence on sequences(sequence)""")
+    try:
+        cursor.execute("""create table sequences
+            (id integer primary key,
+            sequence tuple not null unique)""")
+    except sqlite3.OperationalError as e:
+        if "already exists" in str(e):
+            pass
+        else:
+            raise e
 
-    # The (sequence_id, sequence_index) serve as a composite unique key.
-    # This key can uniquely define the point (hidden state).
-    cursor.execute("""create table activations
-        (sequence_id integer not null,
-        sequence_index integer not null,
-        %s,
-        foreign key(sequence_id) references sequences(id),
-        unique (sequence_id, sequence_index) on conflict ignore)""" % ", ".join(["axis_%d real" % d for d in range(dimensions)]))
+    try:
+        cursor.execute("""create index sequence on sequences(sequence)""")
+    except sqlite3.OperationalError as e:
+        if "already exists" in str(e):
+            pass
+        else:
+            raise e
+
+    try:
+        # The (sequence_id, sequence_index) serve as a composite unique key.
+        # This key can uniquely define the point (hidden state).
+        cursor.execute("""create table activations
+            (sequence_id integer not null,
+            sequence_index integer not null,
+            %s,
+            foreign key(sequence_id) references sequences(id),
+            unique (sequence_id, sequence_index) on conflict ignore)""" % ", ".join(["axis_%d real" % d for d in range(dimensions)]))
+    except sqlite3.OperationalError as e:
+        if "already exists" in str(e):
+            pass
+        else:
+            raise e
 
     for d in range(dimensions):
-        cursor.execute("""create index axis_%d_index on activations(axis_%d)""" % (d, d))
+        try:
+            cursor.execute("""create index axis_%d_index on activations(axis_%d)""" % (d, d))
+        except sqlite3.OperationalError as e:
+            if "already exists" in str(e):
+                pass
+            else:
+                raise e
 
     db.commit()
     return QueryDatabase(db, dimensions)
@@ -63,8 +88,13 @@ class QueryDatabase:
 
     def insert_sequence(self, sequence):
         cursor = self.db.cursor()
-        cursor.execute("insert into sequences values (null, ?)", (sequence,))
-        return cursor.lastrowid
+
+        try:
+            cursor.execute("insert into sequences values (null, ?)", (sequence,))
+            return cursor.lastrowid
+        except sqlite3.IntegrityError as e:
+            cursor.execute("select id from sequences where sequence == ?", (sequence,))
+            return cursor.fetchone()[0]
 
     def insert_activations(self, data):
         assert isinstance(data[0][0], int), "%s (%s) is not an int" % (data[0][0], type(data[0][0]))
@@ -80,7 +110,7 @@ class QueryDatabase:
         cursor.execute("""select sequences.sequence, activations.sequence_index, %s
             from sequences inner join activations on sequences.id = activations.sequence_id
             where activations.axis_%d >= ? and activations.axis_%d <= ?""" % (self._select_point, axis, axis), (lower_bound, upper_bound))
-        return cursor.fetchall()
+        return cursor.fetchall()[0]
 
     def select_activations(self, sequences):
         cursor = self.db.cursor()
