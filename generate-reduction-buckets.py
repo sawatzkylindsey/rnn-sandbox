@@ -203,7 +203,7 @@ def calculate_learned_grouping(width, target, keyed_points):
 
 
 def _gaussian_mixture(target, reg_covar, X_transpose):
-    gm = GaussianMixture(target, reg_covar=reg_covar)
+    gm = GaussianMixture(target, covariance_type="diag", reg_covar=reg_covar)
     return gm.fit_predict(X_transpose)
 
 

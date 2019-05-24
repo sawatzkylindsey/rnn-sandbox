@@ -67,6 +67,7 @@ def main(argv):
     user_log.info("Sem")
     hyper_parameters = model.HyperParameters(aargs.layers, aargs.width)
     extra = {"word_input": aargs.word_input}
+    #sem, sem_as_input = load_sem(lstm, aargs.encoding_dir)
     sem, sem_as_input = generate_sem(lstm, hyper_parameters, extra, aargs.states_dir, aargs.epochs, aargs.encoding_dir)
 
     if aargs.score:
