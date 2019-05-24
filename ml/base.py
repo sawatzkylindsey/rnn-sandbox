@@ -5,10 +5,13 @@ import collections
 import logging
 import math
 import numpy as np
+import os
 import pdb
 
 from pytils import check
 
+
+partial_sort_off = "partial_sort_off" in os.environ
 
 # Tasks
 MULTI_LABEL = "multi-label"
@@ -71,6 +74,7 @@ class Result:
         self._prediction = None
         self._distribution = None
         self._ranked_items = None
+        self._rank_cache = {}
 
     def prediction(self):
         if self._prediction is None:
@@ -85,11 +89,59 @@ class Result:
         return self._distribution
 
     def rank_of(self, value, handle_unknown=False):
-        if self._ranked_items is None:
-            self._ranked_items = [item[0] for item in sorted(self.distribution().items(), key=lambda item: item[1], reverse=True)]
-
         target = self.labels.decode(self.labels.encode(value, handle_unknown))
-        return self._ranked_items.index(target)
+
+        if partial_sort_off:
+            if self._ranked_items is None:
+                self._ranked_items = [item[0] for item in sorted(self.distribution().items(), key=lambda item: item[1], reverse=True)]
+
+            return self._ranked_items.index(target)
+
+        if target in self._rank_cache:
+            return self._rank_cache[target]
+
+        # Use partial sort to find the rank.
+        distribution_items = [item for item in self.distribution().items()]
+        insertion_sorted = []
+        partial_index = 0
+        partial_total = 0
+        index = 0
+        rank = None
+
+        while rank is None:
+            encoding, probability = distribution_items[index]
+            partial_total += probability
+            insertion_index = binary_search(insertion_sorted, probability, accessor=lambda item: item[1])
+            insertion_sorted.insert(insertion_index, (encoding, probability))
+
+            if len(insertion_sorted) == len(distribution_items):
+                # The entire list of items have been insertion sorted.
+                # Find the target.
+                while rank is None:
+                    if insertion_sorted[partial_index][0] == target:
+                        rank = partial_index
+
+                    partial_index += 1
+            else:
+                # A new item has been insertion sorted.
+                # Move up the partial index as much as is possible.
+                remaining = 1.0 - partial_total
+
+                # We can move up the partial index as long as the sum of the unknown portion of the probability distribution is less than
+                # the probability at the current partial index.
+                # This is true because we know that none of the unknown probabilities would exceed it (in which case they would need to be
+                # insertion sorted in a way that changes the item at the partial index's rank).
+                while remaining < insertion_sorted[partial_index][1] and partial_index < len(insertion_sorted):
+                    if insertion_sorted[partial_index][0] == target:
+                        rank = partial_index
+                        break
+
+                    partial_index += 1
+
+            index += 1
+
+        self._rank_cache[target] = rank
+        return self._rank_cache[target]
 
     def __repr__(self):
         return "(.., prediction=%s)" % (self.prediction())
@@ -602,4 +654,33 @@ def regmax(distribution):
         total += value
 
     return {k: v / total for k, v in output.items()}
+
+
+# Return the index of the target, or where it should be inserted, based of an input array sorted descending.
+def binary_search(descending_array, target, accessor=lambda item: item):
+    if len(descending_array) == 0:
+        return 0
+
+    lower = 0
+    upper = len(descending_array) - 1
+    found = upper + 1 if accessor(descending_array[upper]) > target else None
+
+    if found is None and accessor(descending_array[lower]) < target:
+        found = 0
+
+    while found is None:
+        current = int((upper + lower) / 2.0)
+        observation = accessor(descending_array[current])
+
+        if observation == target:
+            found = current + 1
+        elif observation < target:
+            upper = current
+        else:
+            lower = current
+
+        if lower + 1 == upper:
+            found = upper
+
+    return found
 
