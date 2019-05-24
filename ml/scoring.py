@@ -35,7 +35,8 @@ def descrete_rank(top_k=None, top_percent=None):
         assert top_k >= 0
 
     def _fn(xy, result):
-        rank = result.rank_of(xy.y, True)
+        #rank = result.rank_of(xy.y, True)         # Use the insertion-sort method.
+        rank = result.rank_of(xy.y, True, top_k) # Use the nlargest method.
         cutoff = int(len(result.labels) * top_percent) if top_k is None else top_k
         return (True, 1) if rank <= cutoff else (False, 0)
 

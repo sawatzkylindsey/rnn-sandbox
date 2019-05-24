@@ -32,8 +32,8 @@ class Model:
     def evaluate(self, x, handle_unknown=False):
         raise NotImplementedError()
 
-    def test(self, xys, debug=False, score_fns={}, include_loss=False):
-        total_scores = {key: 0 for key in score_fns.keys()}
+    def test(self, xys, debug=False, score_fns=[], include_loss=False):
+        total_scores = {name: 0 for name, function in score_fns}
 
         if include_loss:
             total_scores[LOSS] = 0.0
@@ -68,7 +68,7 @@ class Model:
 
     def _invoke(self, batch, cases, debug, score_fns, include_loss):
         results, total_loss = self.evaluate(batch, True)
-        scores = {key: 0 for key in score_fns.keys()}
+        scores = {name: 0 for name, function in score_fns}
 
         if include_loss:
             scores[LOSS] = total_loss
@@ -78,15 +78,15 @@ class Model:
                 if debug:
                     logging.debug("[%s] %s" % (self.scope, case_template.format(case)))
 
-                for key, fn in score_fns.items():
-                    passed, score = fn(batch[i], results[i])
-                    scores[key] += score
+                for name, function in score_fns:
+                    passed, score = function(batch[i], results[i])
+                    scores[name] += score
 
                     if debug:
                         if passed:
-                            logging.debug("  Passed '%s' (%.4f)!\n  Full correctly predicted output: '%s'." % (key, score, results[i].prediction()))
+                            logging.debug("  Passed '%s' (%.4f)!\n  Full correctly predicted output: '%s'." % (name, score, results[i].prediction()))
                         else:
-                            logging.debug("  Failed '%s' (%.4f)!\n  Expected: %s\n  Predicted: %s" % (key, score, str(results[i].y), str(results[i].prediction())))
+                            logging.debug("  Failed '%s' (%.4f)!\n  Expected: %s\n  Predicted: %s" % (name, score, str(results[i].y), str(results[i].prediction())))
 
         return scores
 

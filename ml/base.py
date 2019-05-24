@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import collections
+import heapq
 import logging
 import math
 import numpy as np
@@ -88,20 +89,35 @@ class Result:
 
         return self._distribution
 
-    def rank_of(self, value, handle_unknown=False):
+    def rank_of(self, value, handle_unknown=False, k=None):
         target = self.labels.decode(self.labels.encode(value, handle_unknown))
 
         if partial_sort_off:
             if self._ranked_items is None:
-                self._ranked_items = [item[0] for item in sorted(self.distribution().items(), key=lambda item: item[1], reverse=True)]
+                self._ranked_items = {item[0]: rank for rank, item in enumerate(sorted(self.distribution().items(), key=lambda item: item[1], reverse=True))}
 
-            return self._ranked_items.index(target)
+            return self._ranked_items[target]
 
+        # Use a partial sort to find the rank.
+        distribution_items = [item for item in self.distribution().items()]
+
+        # Partial sort mechanism 'nlargest'.
+        if k is not None:
+            if self._ranked_items is None or len(self._ranked_items) < k:
+                largest = heapq.nlargest(k, distribution_items, key=lambda item: item[1])
+                self._ranked_items = {item[0]: rank for rank, item in enumerate(sorted(largest, key=lambda item: item[1], reverse=True))}
+
+            if target in self._ranked_items:
+                return self._ranked_items[target]
+            else:
+                # This is a lie - the nlargest method says the correct rank of the top-k elements, after
+                # which everything else is given the last rank.
+                return len(self.labels) - 1
+
+        # Partial sort mechanism 'insertion-sort'.
         if target in self._rank_cache:
             return self._rank_cache[target]
 
-        # Use partial sort to find the rank.
-        distribution_items = [item for item in self.distribution().items()]
         insertion_sorted = []
         partial_index = 0
         partial_total = 0
@@ -118,6 +134,9 @@ class Result:
                 # The entire list of items have been insertion sorted.
                 # Find the target.
                 while rank is None:
+                    if partial_index >= len(insertion_sorted):
+                        logging.info("something wrong for value '%s' target '%s' (handle unknown %s)" % (value, target, handle_unknown))
+
                     if insertion_sorted[partial_index][0] == target:
                         rank = partial_index
 
@@ -131,7 +150,7 @@ class Result:
                 # the probability at the current partial index.
                 # This is true because we know that none of the unknown probabilities would exceed it (in which case they would need to be
                 # insertion sorted in a way that changes the item at the partial index's rank).
-                while remaining < insertion_sorted[partial_index][1] and partial_index < len(insertion_sorted):
+                while partial_index < len(insertion_sorted) and remaining < insertion_sorted[partial_index][1]:
                     if insertion_sorted[partial_index][0] == target:
                         rank = partial_index
                         break

@@ -29,32 +29,26 @@ from pytils import adjutant
 from pytils.log import setup_logging, teardown, user_log
 
 
-SCORES = {
-    "rank_score_linear": scoring.rank_score_linear(),
-    "top_k1": scoring.descrete_rank(top_k=0),
-    "top_k2": scoring.descrete_rank(top_k=1),
-    "top_k3": scoring.descrete_rank(top_k=2),
-}
-moot = {
-    "accuracy": scoring.accuracy,
-    "rank_score_linear": scoring.rank_score_linear(),
-    "rank_score_exponential": scoring.rank_score_exponential(),
-    "top_percent05": scoring.descrete_rank(top_percent=0.05),
-    "top_percent10": scoring.descrete_rank(top_percent=0.1),
-    "top_percent25": scoring.descrete_rank(top_percent=0.25),
-}
+SCORES = [
+    ("top_k100", scoring.descrete_rank(top_k=100)),
+    ("top_k25", scoring.descrete_rank(top_k=25)),
+    ("top_k10", scoring.descrete_rank(top_k=10)),
+    ("top_k1", scoring.descrete_rank(top_k=0)),
+    ("top_k2", scoring.descrete_rank(top_k=1)),
+    ("top_k3", scoring.descrete_rank(top_k=2)),
+]
 
 
 @teardown
 def main(argv):
     ap = ArgumentParser(prog="generate-semantic-model")
     ap.add_argument("-v", "--verbose", default=False, action="store_true", help="Turn on verbose logging.")
-    #ap.add_argument("-d", "--dry-run", default=False, action="store_true")
     ap.add_argument("-e", "--epochs", default=10, type=int)
     ap.add_argument("-l", "--layers", default=2, type=int)
     ap.add_argument("-w", "--width", default=100, type=int)
     ap.add_argument("--word-input", default=False, action="store_true")
     ap.add_argument("-s", "--score", default=False, action="store_true")
+    ap.add_argument("-p", "--pre-existing", default=False, action="store_true")
     ap.add_argument("data_dir")
     ap.add_argument("sequential_dir")
     ap.add_argument("states_dir")
@@ -67,8 +61,11 @@ def main(argv):
     user_log.info("Sem")
     hyper_parameters = model.HyperParameters(aargs.layers, aargs.width)
     extra = {"word_input": aargs.word_input}
-    #sem, sem_as_input = load_sem(lstm, aargs.encoding_dir)
-    sem, sem_as_input = generate_sem(lstm, hyper_parameters, extra, aargs.states_dir, aargs.epochs, aargs.encoding_dir)
+
+    if aargs.pre_existing:
+        sem, sem_as_input = load_sem(lstm, aargs.encoding_dir)
+    else:
+        sem, sem_as_input = generate_sem(lstm, hyper_parameters, extra, aargs.states_dir, aargs.epochs, aargs.encoding_dir)
 
     if aargs.score:
         scores_sem, totals_sem = test_model(lstm, sem, sem_as_input, aargs.states_dir, False)
@@ -147,7 +144,7 @@ def test_model(lstm, model, as_input, states_dir, is_baseline):
 
 def score_parts(lstm, model, stream_fn, debug, is_baseline):
     key_scores = {}
-    total_scores = {name: 0.0 for name in SCORES.keys()}
+    total_scores = {name: 0.0 for name, function in SCORES}
     total_scores["loss"] = 0.0
     count = 0
 
