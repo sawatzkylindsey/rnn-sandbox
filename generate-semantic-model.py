@@ -89,10 +89,10 @@ def main(argv):
             writer = csv_writer(fh)
             writer.writerow(["technique", "score_fn", "result"])
 
-            for key, scores in sorted(totals_sem.items()):
+            for name, score in sorted(totals_sem.items()):
                 writer.writerow(["sem", name, "%f" % score])
 
-            for name, scores in sorted(totals_baseline.items()):
+            for name, score in sorted(totals_baseline.items()):
                 writer.writerow(["baseline", name, "%f" % score])
 
     return 0
