@@ -57,7 +57,7 @@ def main(argv):
     if aargs.pre_existing:
         sem = load_sem(lstm, aargs.encoding_dir, model_fn)
     else:
-        sem = generate_sem(lstm, hyper_parameters, extra, aargs.states_dir, aargs.epochs, aargs.encoding_dir, model_fn, aargs.key_set)
+        sem = generate_sem(lstm, hyper_parameters, extra, aargs.states_dir, aargs.epochs, aargs.encoding_dir, model_fn, aargs.key_set, aargs.monolith)
 
     scores_sem, totals_sem = test_model(lstm, sem, aargs.states_dir, False, aargs.key_set)
     # TODO
@@ -101,9 +101,9 @@ def _ffnn_constructor(scope, hyper_parameters, extra, case_field, hidden_vector,
 
 def _switch_ffnn_constructor(scope, hyper_parameters, extra, case_field, hidden_vector, word_labels, output_labels):
     if extra["word_input"]:
-        statement_field = mlbase.ConcatField([hidden_vector, word_labels])
+        statement_field = mlbase.ConcatField([case_field, hidden_vector, word_labels])
     else:
-        statement_field = mlbase.ConcatField([hidden_vector])
+        statement_field = mlbase.ConcatField([case_field, hidden_vector])
 
     return model.SwitchFfnn(scope, hyper_parameters, extra, case_field, statement_field, output_labels)
 
@@ -112,16 +112,30 @@ def load_sem(lstm, encoding_dir, model_fn):
     return semantic.load_model(lstm, encoding_dir, model_fn=model_fn)
 
 
-def generate_sem(lstm, hyper_parameters, extra, states_dir, epochs, encoding_dir, model_fn, key_set):
+def generate_sem(lstm, hyper_parameters, extra, states_dir, epochs, encoding_dir, model_fn, key_set, monolith):
     sem = semantic.model_for(lstm, hyper_parameters=hyper_parameters, extra=extra, model_fn=model_fn)
     semantic.save_model(sem, encoding_dir)
     as_input = as_input_fn(lstm, sem)
-    train_xys = [mlbase.Xy(as_input(key, hidden_state), hidden_state.annotation) for key, hidden_state in states.stream_hidden_train(states_dir) if key_set is None or key in key_set]
+
+    if monolith:
+        def train_xys():
+            for key, hidden_state in states.stream_all_hidden_train(states_dir):
+                if key_set is None or key in key_set:
+                    yield mlbase.Xy(as_input(key, hidden_state), hidden_state.annotation)
+    else:
+        def training_subset(key):
+            def inner():
+                for hidden_state in states.stream_hidden_train(states_dir, key):
+                    yield mlbase.Xy(as_input(key, hidden_state), hidden_state.annotation)
+
+            return inner
+
+        train_xys = {key: training_subset(key) for key in lstm.keys() if key_set is None or key in key_set}
+
     training_parameters = mlbase.TrainingParameters() \
         .epochs(epochs) \
         .batch(32)
     loss = sem.train(train_xys, training_parameters)
-    del train_xys
     logging.info("Trained semantic encoding to a final loss of: %.6f" % loss)
     semantic.save_parameters(sem, encoding_dir)
     return sem

@@ -174,11 +174,8 @@ class Ffnn(TfModel):
         self.session = tf.Session()
         self.session.run(tf.global_variables_initializer())
 
-    def train(self, xys, training_parameters):
+    def train(self, xys_stream, training_parameters):
         check.check_instance(training_parameters, mlbase.TrainingParameters)
-        shuffled_xys = check.check_iterable_of_instances(xys, mlbase.Xy).copy()
-        # Shuffle the training set for every epoch.
-        random.shuffle(shuffled_xys)
         slot_length = len(str(training_parameters.epochs())) - 1
         epoch_template = "[%s] Epoch {:%dd}: {:f}" % (self.scope, slot_length)
         final_loss = None
@@ -191,20 +188,22 @@ class Ffnn(TfModel):
             epoch += 1
             epoch_loss = 0
             # Start at a different offset for every epoch to help avoid overfitting.
-            offset = random.randint(0, min(training_parameters.batch(), len(shuffled_xys)) - 1)
+            offset = random.randint(0, training_parameters.batch() - 1)
+            batch = []
             first = True
+            batch_set = False
             count = 0
 
-            while offset < len(shuffled_xys):
-                if first:
-                    first = False
-                    batch = shuffled_xys[0:offset]
-                else:
-                    batch = shuffled_xys[offset:offset + training_parameters.batch()]
-                    offset += training_parameters.batch()
+            for xy in xys_stream():
+                batch += [xy]
 
-                # To account for when offset is randomly assigned 0
-                if len(batch) > 0:
+                if first and len(batch) == offset:
+                    first = False
+                    batch_set = True
+                elif len(batch) == training_parameters.batch():
+                    batch_set = True
+
+                if batch_set:
                     count += len(batch)
                     xs = [self.input_field.vector_encode(xy.x, True) for xy in batch]
                     ys = [self.output_labels.encode(xy.y, True) for xy in batch]
@@ -213,8 +212,20 @@ class Ffnn(TfModel):
                         self.output_p: ys,
                     }
                     _, training_loss = self.session.run([self.updates, self.cost], feed_dict=feed)
-                    offset += training_parameters.batch()
                     epoch_loss += training_loss
+                    batch_set = False
+                    batch = []
+
+            if len(batch) > 0:
+                count += len(batch)
+                xs = [self.input_field.vector_encode(xy.x, True) for xy in batch]
+                ys = [self.output_labels.encode(xy.y, True) for xy in batch]
+                feed = {
+                    self.input_p: xs,
+                    self.output_p: ys,
+                }
+                _, training_loss = self.session.run([self.updates, self.cost], feed_dict=feed)
+                epoch_loss += training_loss
 
             epoch_loss /= count
             losses.append(epoch_loss)
@@ -228,7 +239,7 @@ class Ffnn(TfModel):
                     self.test(xys)
 
         logging.debug(epoch_template.format(epoch, epoch_loss))
-        logging.debug("Training on %d instances finished due to %s (%s)." % (len(shuffled_xys), reason, losses))
+        logging.debug("Training on %d instances finished due to %s (%s)." % (count, reason, losses))
         return epoch_loss
 
     def evaluate(self, batch, handle_unknown=False):
@@ -279,24 +290,24 @@ class SwitchFfnn(Model):
 
         self.ffnns = [Ffnn(scope + "/" + case, hyper_parameters, extra, self.statement_field, output_labels) for case in self.cases]
 
-    def train(self, xys, training_parameters):
-        cased_xys = {}
+    def train(self, xys_streams, training_parameters):
+        def sub_stream(stream, encoding):
+            def stream_fn():
+                for xy in stream():
+                    case, *statement = xy.x
 
-        for xy in xys:
-            case, *statement = xy.x
-            encoding = self.case_field.encode(case)
+                    if self.case_field.encode(case) == encoding:
+                        yield mlbase.Xy(statement, xy.y)
 
-            if encoding not in cased_xys:
-                cased_xys[encoding] = []
-
-            cased_xys[encoding] += [mlbase.Xy(statement, xy.y)]
+            return stream_fn
 
         loss = 0
         count = 0
 
-        for encoding, subset_xys in sorted(cased_xys.items()):
+        for case, xys_stream in xys_streams.items():
             count += 1
-            loss += self.ffnns[encoding].train(subset_xys, training_parameters)
+            encoding = self.case_field.encode(case)
+            loss += self.ffnns[encoding].train(xys_stream, training_parameters)
 
         return loss / count
 
@@ -312,7 +323,7 @@ class SwitchFfnn(Model):
                 cased_batches[encoding] = []
 
             mapping[encoding][len(cased_batches[encoding])] = i
-            cased_batches[encoding] += [mlbase.Xy(statement, xy.y)]
+            cased_batches[encoding] += [xy]
 
         mapped_results = [None for i in range(len(batch))]
         total_loss = 0

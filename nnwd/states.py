@@ -28,7 +28,7 @@ def get_hidden_states(states_dir, key):
     return train, test
 
 
-def stream_hidden_train(states_dir):
+def stream_all_hidden_train(states_dir):
     for name in os.listdir(states_dir):
         if name.startswith(STATES_TRAIN):
             for item in pickler.load(os.path.join(states_dir, name), converter=lambda item: HiddenState(*item)):
@@ -46,6 +46,10 @@ def _key(name):
 
 def _is_key(name):
     return name.startswith(STATES_TRAIN) or name.startswith(STATES_TEST)
+
+
+def stream_hidden_train(states_dir, key):
+    return pickler.load(os.path.join(states_dir, STATES_TRAIN + "." + key), converter=lambda item: HiddenState(*item))
 
 
 def stream_hidden_test(states_dir, key):
