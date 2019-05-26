@@ -46,7 +46,8 @@ def set_extra(semantic_dir, extra):
         fh.write(json.dumps(extra, sort_keys=True, indent=4))
 
 
-def model_for(lstm, semantic_dir=None, hyper_parameters=None, extra=None, model_fn=None):
+def model_for(lstm, semantic_dir=None, hyper_parameters=None, extra=None, \
+              model_fn=lambda scope, hyper_parameters, extra, case_labels, hidden_vector, word_labels, output_labels: None):
     if semantic_dir is None:
         assert hyper_parameters is not None and extra is not None, "one of (semantic_dir) or (hyper_parameters, extra) must be specified"
     else:
@@ -54,33 +55,15 @@ def model_for(lstm, semantic_dir=None, hyper_parameters=None, extra=None, model_
         hyper_parameters = get_hyper_parameters(semantic_dir)
         extra = get_extra(semantic_dir)
 
-    part_labels = mlbase.Labels(set(rnn.LSTM_INSTRUMENTS))
-    layer_labels = mlbase.Labels(set(range(lstm.hyper_parameters.layers)))
+    case_labels = mlbase.Labels(lstm.keys())
     hidden_vector = mlbase.VectorField(max(lstm.hyper_parameters.width, lstm.hyper_parameters.embedding_width))
-
-    embedding_padding = tuple([0] * max(0, lstm.hyper_parameters.width - lstm.hyper_parameters.embedding_width))
-    hidden_padding = tuple([0] * max(0, lstm.hyper_parameters.embedding_width - lstm.hyper_parameters.width))
-
-    if extra["word_input"]:
-        input_field = mlbase.ConcatField([lstm.word_labels, part_labels, layer_labels, hidden_vector])
-
-        def as_input(key, hidden_state):
-            part, layer = lstm.decode_key(key)
-            return (hidden_state.word, part, layer, tuple(hidden_state.point) + (embedding_padding if lstm.is_embedding(key) else hidden_padding))
-    else:
-        input_field = mlbase.ConcatField([part_labels, layer_labels, hidden_vector])
-
-        def as_input(key, hidden_state):
-            part, layer = lstm.decode_key(key)
-            return (part, layer, tuple(hidden_state.point) + (embedding_padding if lstm.is_embedding(key) else hidden_padding))
-
-    return model_fn(hyper_parameters, extra, input_field, lstm.output_labels, "sem"), as_input
+    return model_fn("sem", hyper_parameters, extra, case_labels, hidden_vector, lstm.word_labels, lstm.output_labels)
 
 
 def load_model(lstm, semantic_dir, model_fn):
-    sem, as_input = model_for(lstm, semantic_dir, model_fn=model_fn)
+    sem = model_for(lstm, semantic_dir, model_fn=model_fn)
     load_parameters(sem, semantic_dir)
-    return sem, as_input
+    return sem
 
 
 def load_parameters(sem, semantic_dir):

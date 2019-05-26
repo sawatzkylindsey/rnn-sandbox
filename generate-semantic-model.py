@@ -29,16 +29,6 @@ from pytils import adjutant
 from pytils.log import setup_logging, teardown, user_log
 
 
-SCORES = [
-    ("top_k100", scoring.descrete_rank(top_k=100)),
-    ("top_k25", scoring.descrete_rank(top_k=25)),
-    ("top_k10", scoring.descrete_rank(top_k=10)),
-    ("top_k1", scoring.descrete_rank(top_k=0)),
-    ("top_k2", scoring.descrete_rank(top_k=1)),
-    ("top_k3", scoring.descrete_rank(top_k=2)),
-]
-
-
 @teardown
 def main(argv):
     ap = ArgumentParser(prog="generate-semantic-model")
@@ -47,8 +37,9 @@ def main(argv):
     ap.add_argument("-l", "--layers", default=2, type=int)
     ap.add_argument("-w", "--width", default=100, type=int)
     ap.add_argument("--word-input", default=False, action="store_true")
-    ap.add_argument("-s", "--score", default=False, action="store_true")
     ap.add_argument("-p", "--pre-existing", default=False, action="store_true")
+    ap.add_argument("--key-set", nargs="*", default=None)
+    ap.add_argument("-m", "--monolith", default=False, action="store_true")
     ap.add_argument("data_dir")
     ap.add_argument("sequential_dir")
     ap.add_argument("states_dir")
@@ -61,51 +52,71 @@ def main(argv):
     user_log.info("Sem")
     hyper_parameters = model.HyperParameters(aargs.layers, aargs.width)
     extra = {"word_input": aargs.word_input}
+    model_fn = _ffnn_constructor if aargs.monolith else _switch_ffnn_constructor
 
     if aargs.pre_existing:
-        sem, sem_as_input = load_sem(lstm, aargs.encoding_dir)
+        sem = load_sem(lstm, aargs.encoding_dir, model_fn)
     else:
-        sem, sem_as_input = generate_sem(lstm, hyper_parameters, extra, aargs.states_dir, aargs.epochs, aargs.encoding_dir)
+        sem = generate_sem(lstm, hyper_parameters, extra, aargs.states_dir, aargs.epochs, aargs.encoding_dir, model_fn, aargs.key_set)
 
-    if aargs.score:
-        scores_sem, totals_sem = test_model(lstm, sem, sem_as_input, aargs.states_dir, False)
-        user_log.info("Baseline")
-        baseline, baseline_as_input = generate_baseline(aargs.data_dir, lstm, hyper_parameters, extra)
-        scores_baseline, totals_baseline = test_model(lstm, baseline, baseline_as_input, aargs.states_dir, True)
+    scores_sem, totals_sem = test_model(lstm, sem, aargs.states_dir, False, aargs.key_set)
+    # TODO
+    #user_log.info("Baseline")
+    #baseline = generate_baseline(aargs.data_dir, lstm, hyper_parameters, extra)
+    #scores_baseline, totals_baseline = test_model(lstm, baseline, aargs.states_dir, True, aargs.key_set)
 
-        with open(os.path.join(aargs.encoding_dir, "analysis-breakdown.csv"), "w") as fh:
-            writer = csv_writer(fh)
-            writer.writerow(["technique", "key", "score_fn", "result"])
+    with open(os.path.join(aargs.encoding_dir, "analysis-breakdown.csv"), "w") as fh:
+        writer = csv_writer(fh)
+        writer.writerow(["technique", "key", "score_fn", "result"])
 
-            for key, scores in sorted(scores_sem.items()):
-                for name, score in sorted(scores.items()):
-                    writer.writerow(["sem", key, name, "%f" % score])
+        for key, scores in sorted(scores_sem.items()):
+            for name, score in sorted(scores.items()):
+                writer.writerow(["sem", key, name, "%f" % score])
 
-            for key, scores in sorted(scores_baseline.items()):
-                for name, score in sorted(scores.items()):
-                    writer.writerow(["baseline", key, name, "%f" % score])
+        #for key, scores in sorted(scores_baseline.items()):
+        #    for name, score in sorted(scores.items()):
+        #        writer.writerow(["baseline", key, name, "%f" % score])
 
-        with open(os.path.join(aargs.encoding_dir, "analysis-totals.csv"), "w") as fh:
-            writer = csv_writer(fh)
-            writer.writerow(["technique", "score_fn", "result"])
+    with open(os.path.join(aargs.encoding_dir, "analysis-totals.csv"), "w") as fh:
+        writer = csv_writer(fh)
+        writer.writerow(["technique", "score_fn", "result"])
 
-            for name, score in sorted(totals_sem.items()):
-                writer.writerow(["sem", name, "%f" % score])
+        for name, score in sorted(totals_sem.items()):
+            writer.writerow(["sem", name, "%f" % score])
 
-            for name, score in sorted(totals_baseline.items()):
-                writer.writerow(["baseline", name, "%f" % score])
+        #for name, score in sorted(totals_baseline.items()):
+        #    writer.writerow(["baseline", name, "%f" % score])
 
     return 0
 
 
-def load_sem(lstm, encoding_dir):
-    return semantic.load_model(lstm, encoding_dir, model_fn=lambda hp, e, i, o, s: model.Ffnn(hp, e, i, o, s))
+def _ffnn_constructor(scope, hyper_parameters, extra, case_field, hidden_vector, word_labels, output_labels):
+    if extra["word_input"]:
+        input_field = mlbase.ConcatField([case_field, hidden_vector, word_labels])
+    else:
+        input_field = mlbase.ConcatField([case_field, hidden_vector])
+
+    return model.Ffnn(scope, hyper_parameters, extra, input_field, output_labels)
 
 
-def generate_sem(lstm, hyper_parameters, extra, states_dir, epochs, encoding_dir):
-    sem, as_input = semantic.model_for(lstm, hyper_parameters=hyper_parameters, extra=extra, model_fn=lambda hp, e, i, o, s: model.Ffnn(hp, e, i, o, s))
+def _switch_ffnn_constructor(scope, hyper_parameters, extra, case_field, hidden_vector, word_labels, output_labels):
+    if extra["word_input"]:
+        statement_field = mlbase.ConcatField([hidden_vector, word_labels])
+    else:
+        statement_field = mlbase.ConcatField([hidden_vector])
+
+    return model.SwitchFfnn(scope, hyper_parameters, extra, case_field, statement_field, output_labels)
+
+
+def load_sem(lstm, encoding_dir, model_fn):
+    return semantic.load_model(lstm, encoding_dir, model_fn=model_fn)
+
+
+def generate_sem(lstm, hyper_parameters, extra, states_dir, epochs, encoding_dir, model_fn, key_set):
+    sem = semantic.model_for(lstm, hyper_parameters=hyper_parameters, extra=extra, model_fn=model_fn)
     semantic.save_model(sem, encoding_dir)
-    train_xys = [mlbase.Xy(as_input(key, hidden_state), hidden_state.annotation) for key, hidden_state in states.stream_hidden_train(states_dir)]
+    as_input = as_input_fn(lstm, sem)
+    train_xys = [mlbase.Xy(as_input(key, hidden_state), hidden_state.annotation) for key, hidden_state in states.stream_hidden_train(states_dir) if key_set is None or key in key_set]
     training_parameters = mlbase.TrainingParameters() \
         .epochs(epochs) \
         .batch(32)
@@ -113,24 +124,26 @@ def generate_sem(lstm, hyper_parameters, extra, states_dir, epochs, encoding_dir
     del train_xys
     logging.info("Trained semantic encoding to a final loss of: %.6f" % loss)
     semantic.save_parameters(sem, encoding_dir)
-    return sem, as_input
+    return sem
 
 
 def generate_baseline(data_dir, lstm, hyper_parameters, extra):
     output_distribution = data.get_output_distribution(data_dir)
 
-    def custom_model(hp, e, i, o, s):
-        custom_distribution = [0] * len(o)
+    def custom_model(scope, hp, e, c, h, w, output_labels):
+        custom_distribution = [0] * len(output_labels)
 
         for key, value in output_distribution.items():
-            custom_distribution[o.encode(key)] = value
+            custom_distribution[output_labels.encode(key)] = value
 
-        return model.CustomOutput(hp, e, i, o, s, np.array(custom_distribution))
+        return model.CustomOutput(scope, output_labels, np.array(custom_distribution))
 
     return semantic.model_for(lstm, hyper_parameters=hyper_parameters, extra=extra, model_fn=custom_model)
 
 
-def test_model(lstm, model, as_input, states_dir, is_baseline):
+def test_model(lstm, model, states_dir, is_baseline, key_set):
+    as_input = as_input_fn(lstm, model)
+
     def stream_fn(key):
         for hidden_state in states.stream_hidden_test(states_dir, key):
             yield mlbase.Xy(as_input(key, hidden_state), hidden_state.annotation)
@@ -138,34 +151,50 @@ def test_model(lstm, model, as_input, states_dir, is_baseline):
     #user_log.info("Train data.")
     #_, _ = score_parts(model, stream_fn, False, is_baseline)
     user_log.info("Test data.")
-    key_scores, total_scores = score_parts(lstm, model, stream_fn, True, is_baseline)
+    key_scores, total_scores = score_parts(lstm, model, stream_fn, True, is_baseline, key_set)
     return key_scores, total_scores
 
 
-def score_parts(lstm, model, stream_fn, debug, is_baseline):
+def score_parts(lstm, model, stream_fn, debug, is_baseline, key_set):
     key_scores = {}
-    total_scores = {name: 0.0 for name, function in SCORES}
+    total_scores = {}
     total_scores["loss"] = 0.0
+    total_scores["perplexity"] = 0.0
     count = 0
 
     for key in lstm.keys():
-        if is_baseline and count == 1:
-            # We don't need to run across all the keys for the baseline - they would all be the same.
-            break
+        if key_set is None or key in key_set:
+            if is_baseline and count == 1:
+                # We don't need to run across all the keys for the baseline - they would all be the same.
+                break
 
-        count += 1
-        scores = model.test(stream_fn(key), False, SCORES, include_loss=not is_baseline)
-        key_scores[key] = scores
+            count += 1
+            scores = model.test(stream_fn(key), False, include_loss=True)
+            key_scores[key] = scores
 
-        if debug:
-            logging.debug("Scores for '%s': %s" % (key, adjutant.dict_as_str(scores)))
+            if debug:
+                logging.debug("Scores for '%s': %s" % (key, adjutant.dict_as_str(scores)))
 
-        for name, score in scores.items():
-            total_scores[name] += score
+            for name, score in scores.items():
+                total_scores[name] += score
 
     total_scores = {name: score / float(count) for name, score in total_scores.items()}
     user_log.info("Total scores: %s" % (adjutant.dict_as_str(total_scores)))
     return key_scores, total_scores
+
+
+def as_input_fn(lstm, model):
+    embedding_padding = tuple([0] * max(0, lstm.hyper_parameters.width - lstm.hyper_parameters.embedding_width))
+    hidden_padding = tuple([0] * max(0, lstm.hyper_parameters.embedding_width - lstm.hyper_parameters.width))
+
+    if hasattr(model, "extra") and model.extra["word_input"]:
+        def converter(key, hidden_state):
+            return (key, tuple(hidden_state.point) + (embedding_padding if lstm.is_embedding(key) else hidden_padding), hidden_state.word)
+    else:
+        def converter(key, hidden_state):
+            return (key, tuple(hidden_state.point) + (embedding_padding if lstm.is_embedding(key) else hidden_padding))
+
+    return converter
 
 
 if __name__ == "__main__":

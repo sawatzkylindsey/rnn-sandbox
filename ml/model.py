@@ -3,6 +3,7 @@
 
 import json
 import logging
+import math
 import numpy as np
 import os
 import pdb
@@ -19,14 +20,11 @@ from pytils.log import user_log
 
 
 LOSS = "loss"
+PERPLEXITY = "perplexity"
 
 
 class Model:
-    def __init__(self, hyper_parameters, extra, input_field, output_labels, scope="model"):
-        self.hyper_parameters = check.check_instance(hyper_parameters, HyperParameters)
-        self.extra = extra
-        self.input_field = input_field
-        self.output_labels = output_labels
+    def __init__(self, scope="model"):
         self.scope = scope
 
     def evaluate(self, x, handle_unknown=False):
@@ -63,8 +61,13 @@ class Model:
 
         #logging.info("Tested on %d instances." % count)
         # We count (rather then using len()) in case the xys come from a stream.
-        #                          v
-        return {key: score / float(count) for key, score in total_scores.items()}
+        #                         v
+        out = {key: score / float(count) for key, score in total_scores.items()}
+
+        if include_loss:
+            out[PERPLEXITY] = math.exp(out[LOSS])
+
+        return out
 
     def _invoke(self, batch, cases, debug, score_fns, include_loss):
         results, total_loss = self.evaluate(batch, True)
@@ -91,9 +94,26 @@ class Model:
         return scores
 
 
-class Ffnn(Model):
-    def __init__(self, hyper_parameters, extra, input_field, output_labels, scope):
-        super(Ffnn, self).__init__(hyper_parameters, extra, input_field, output_labels, scope)
+class TfModel(Model):
+    def __init__(self, scope):
+        super(TfModel, self).__init__(scope)
+
+    def placeholder(self, name, shape, dtype=tf.float32):
+        return tf.placeholder(dtype, shape, name=name)
+
+    def variable(self, name, shape, initial=None):
+        with tf.variable_scope(self.scope):
+            return tf.get_variable(name, shape=shape,
+                initializer=tf.contrib.layers.xavier_initializer() if initial is None else tf.constant_initializer(initial))
+
+
+class Ffnn(TfModel):
+    def __init__(self, scope, hyper_parameters, extra, input_field, output_labels):
+        super(Ffnn, self).__init__(scope)
+        self.hyper_parameters = check.check_instance(hyper_parameters, HyperParameters)
+        self.extra = extra
+        self.input_field = check.check_instance(input_field, mlbase.Field)
+        self.output_labels = check.check_instance(output_labels, mlbase.Labels)
 
         batch_size_dimension = None
 
@@ -153,14 +173,6 @@ class Ffnn(Model):
 
         self.session = tf.Session()
         self.session.run(tf.global_variables_initializer())
-
-    def placeholder(self, name, shape, dtype=tf.float32):
-        return tf.placeholder(dtype, shape, name=name)
-
-    def variable(self, name, shape, initial=None):
-        with tf.variable_scope(self.scope):
-            return tf.get_variable(name, shape=shape,
-                initializer=tf.contrib.layers.xavier_initializer() if initial is None else tf.constant_initializer(initial))
 
     def train(self, xys, training_parameters):
         check.check_instance(training_parameters, mlbase.TrainingParameters)
@@ -250,17 +262,88 @@ class Ffnn(Model):
         saver.save(self.session, model_file)
 
 
-class CustomOutput(Model):
-    def __init__(self, hyper_parameters, extra, input_field, output_labels, scope, output_distribution):
-        super(CustomOutput, self).__init__(hyper_parameters, extra, input_field, output_labels, scope)
-        check.check_pdist(output_distribution)
-        assert len(output_labels) == len(output_distribution), "%d != %d" % (len(output_labels), len(output_distribution))
-        self.output_distribution = output_distribution
+class SwitchFfnn(Model):
+    def __init__(self, scope, hyper_parameters, extra, case_field, statement_field, output_labels):
+        super(SwitchFfnn, self).__init__(scope)
+        self.hyper_parameters = check.check_instance(hyper_parameters, HyperParameters)
+        self.extra = extra
+        self.case_field = check.check_instance(case_field, mlbase.Labels)
+        self.statement_field = check.check_instance(statement_field, mlbase.Field)
+        self.output_labels = check.check_instance(output_labels, mlbase.Labels)
+        self.cases = []
+        self.case_encodings = []
+
+        for case, encoding in sorted(self.case_field.encoding().items(), key=lambda item: item[1]):
+            self.cases += [case]
+            self.case_encodings += [encoding]
+
+        self.ffnns = [Ffnn(scope + "/" + case, hyper_parameters, extra, self.statement_field, output_labels) for case in self.cases]
+
+    def train(self, xys, training_parameters):
+        cased_xys = {}
+
+        for xy in xys:
+            case, *statement = xy.x
+            encoding = self.case_field.encode(case)
+
+            if encoding not in cased_xys:
+                cased_xys[encoding] = []
+
+            cased_xys[encoding] += [mlbase.Xy(statement, xy.y)]
+
+        loss = 0
+        count = 0
+
+        for encoding, subset_xys in sorted(cased_xys.items()):
+            count += 1
+            loss += self.ffnns[encoding].train(subset_xys, training_parameters)
+
+        return loss / count
 
     def evaluate(self, batch, handle_unknown=False):
-        # Don't need xs, but run through the transformation to check data anyways.
-        xs = [self.input_field.vector_encode(xy.x, handle_unknown) for xy in batch]
+        cased_batches = {}
+        mapping = {i: {} for i in range(len(self.case_field))}
 
+        for i, xy in enumerate(batch):
+            case, *statement = xy.x
+            encoding = self.case_field.encode(case)
+
+            if encoding not in cased_batches:
+                cased_batches[encoding] = []
+
+            mapping[encoding][len(cased_batches[encoding])] = i
+            cased_batches[encoding] += [mlbase.Xy(statement, xy.y)]
+
+        mapped_results = [None for i in range(len(batch))]
+        total_loss = 0
+
+        for encoding, cased_batch in cased_batches.items():
+            results, loss = self.ffnns[encoding].evaluate(cased_batch, handle_unknown)
+            total_loss += loss
+
+            for i, result in enumerate(results):
+                mapped_results[mapping[encoding][i]] = result
+
+        assert not any([r is None for r in results])
+        return mapped_results, total_loss / len(cased_batches)
+
+    def load_parameters(self, model_dir):
+        for encoding in self.case_encodings:
+            self.ffnns[encoding].load_parameters(os.path.join(model_dir, str(encoding)))
+
+    def save_parameters(self, model_dir):
+        for encoding in self.case_encodings:
+            self.ffnns[encoding].save_parameters(os.path.join(model_dir, str(encoding)))
+
+
+class CustomOutput(Model):
+    def __init__(self, scope, output_labels, output_distribution):
+        super(CustomOutput, self).__init__(scope)
+        self.output_labels = check.check_instance(output_labels, mlbase.Labels)
+        self.output_distribution = check.check_pdist(output_distribution)
+        assert len(self.output_labels) == len(self.output_distribution), "%d != %d" % (len(self.output_labels), len(self.output_distribution))
+
+    def evaluate(self, batch, handle_unknown=False):
         if isinstance(batch, list):
             return [mlbase.Result(self.output_labels, self.output_distribution) for i in range(len(batch))], None
         else:
