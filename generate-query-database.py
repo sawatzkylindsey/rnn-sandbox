@@ -38,7 +38,7 @@ BATCH_SIZE = 100
 def main(argv):
     ap = ArgumentParser(prog="generate-query-database")
     ap.add_argument("-v", "--verbose", default=False, action="store_true", help="Turn on verbose logging.")
-    ap.add_argument("--key-offsets", nargs="*")
+    ap.add_argument("--key-offsets", nargs="*", default=None)
     ap.add_argument("data_dir")
     ap.add_argument("sequential_dir")
     ap.add_argument("activation_dir")
@@ -46,32 +46,18 @@ def main(argv):
     aargs = ap.parse_args(argv)
     setup_logging(".%s.log" % os.path.splitext(os.path.basename(__file__))[0], aargs.verbose, False, True, True)
     logging.debug(aargs)
-    things = None
-
-    if len(aargs.key_offsets) > 0:
-        things = []
-
-        for key_offset in aargs.key_offsets:
-            key, offset = key_offset.split("#")
-            things += [(key, int(offset))]
 
     lstm = sequential.load_model(aargs.data_dir, aargs.sequential_dir)
     threads = []
 
-    if things is None:
-        for key in lstm.keys():
-            thread = threading.Thread(target=generate_db, args=[lstm, aargs.activation_dir, key, aargs.query_dir, 0])
-            # Non-daemon threads will keep the program running until they finish (as per documentation).
-            thread.daemon = False
-            thread.start()
-            threads += [thread]
-    else:
-        for key, offset in things:
-            thread = threading.Thread(target=generate_db, args=[lstm, aargs.activation_dir, key, aargs.query_dir, offset])
-            # Non-daemon threads will keep the program running until they finish (as per documentation).
-            thread.daemon = False
-            thread.start()
-            threads += [thread]
+    for parameter in (lstm.keys() if aargs.key_offsets is None else aargs.key_offsets):
+        key = parameter if aargs.key_offsets is None else parameter.split("#")[0]
+        offset = 0 if aargs.key_offsets is None else int(parameter.split("#")[1])
+        thread = threading.Thread(target=generate_db, args=[lstm, aargs.activation_dir, key, aargs.query_dir, 0])
+        # Non-daemon threads will keep the program running until they finish (as per documentation).
+        thread.daemon = False
+        thread.start()
+        threads += [thread]
 
     for thread in threads:
         thread.join()
