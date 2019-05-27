@@ -119,7 +119,7 @@ def generate_sem(lstm, hyper_parameters, extra, states_dir, epochs, encoding_dir
 
     if monolith:
         def train_xys():
-            for key, hidden_state in states.stream_all_hidden_train(states_dir):
+            for key, hidden_state in states.random_stream_all_hidden_train(states_dir):
                 if key_set is None or key in key_set:
                     yield mlbase.Xy(as_input(key, hidden_state), hidden_state.annotation)
     else:

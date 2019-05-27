@@ -3,6 +3,7 @@ import collections
 import json
 import os
 import pdb
+import random
 
 from ml import base as mlbase
 from ml import nlp
@@ -28,11 +29,24 @@ def get_hidden_states(states_dir, key):
     return train, test
 
 
-def stream_all_hidden_train(states_dir):
+def random_stream_all_hidden_train(states_dir):
+    streams = {}
+    stream_names = []
+
     for name in os.listdir(states_dir):
         if name.startswith(STATES_TRAIN):
-            for item in pickler.load(os.path.join(states_dir, name), converter=lambda item: HiddenState(*item)):
-                yield _key(name), item
+            streams[name] = pickler.load(os.path.join(states_dir, name), converter=lambda item: HiddenState(*item))
+            stream_names += [name]
+
+    while len(streams) > 0:
+        name = random.choice(stream_names)
+
+        try:
+            item = next(streams[name])
+            yield _key(name), item
+        except StopIteration as e:
+            del streams[name]
+            stream_names.remove(name)
 
 
 def _key(name):
