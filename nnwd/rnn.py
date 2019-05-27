@@ -71,12 +71,17 @@ class Lstm:
     # we track all the other intermediate gates/states for the weight instrumentation.
     SCAN_STATES = 10
 
-    def __init__(self, hyper_parameters, ablations, word_labels, output_labels, scope="rnn"):
+    def __init__(self, hyper_parameters, ablations, word_labels, output_labels, scope="rnn", skeleton=False):
         self.hyper_parameters = hyper_parameters
         self.ablations = ablations
         self.word_labels = word_labels
         self.output_labels = output_labels
         self.scope = scope
+
+        if not skeleton:
+            self.computational_graph()
+
+    def computational_graph(self):
         self._initials = {}
         self._instruments = {}
         self._training_id = None
@@ -599,8 +604,8 @@ class Checkpoints:
 
 
 class LstmLm(Lstm):
-    def __init__(self, hyper_parameters, ablations, word_labels):
-        super(LstmLm, self).__init__(hyper_parameters, ablations, word_labels, word_labels)
+    def __init__(self, hyper_parameters, ablations, word_labels, skeleton):
+        super(LstmLm, self).__init__(hyper_parameters, ablations, word_labels, word_labels, skeleton=skeleton)
         pass
 
     def computational_graph_cost(self):
@@ -735,8 +740,8 @@ class LstmLm(Lstm):
 
 
 class LstmSa(Lstm):
-    def __init__(self, hyper_parameters, ablations, word_labels, output_labels):
-        super(LstmSa, self).__init__(hyper_parameters, ablations, word_labels, output_labels)
+    def __init__(self, hyper_parameters, ablations, word_labels, output_labels, skeleton):
+        super(LstmSa, self).__init__(hyper_parameters, ablations, word_labels, output_labels, skeleton=skeleton)
         pass
 
     def computational_graph_cost(self):

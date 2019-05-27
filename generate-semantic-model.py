@@ -48,7 +48,7 @@ def main(argv):
     setup_logging(".%s.log" % os.path.splitext(os.path.basename(__file__))[0], aargs.verbose, False, True, True)
     logging.debug(aargs)
 
-    lstm = sequential.load_model(aargs.data_dir, aargs.sequential_dir)
+    lstm = sequential.load_model(aargs.data_dir, aargs.sequential_dir, True)
     user_log.info("Sem")
     hyper_parameters = model.HyperParameters(aargs.layers, aargs.width)
     extra = {"word_input": aargs.word_input}

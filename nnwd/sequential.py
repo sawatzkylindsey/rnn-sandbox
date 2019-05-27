@@ -47,7 +47,7 @@ def set_ablations(sequential_dir, ablations):
         fh.write(json.dumps(key_values, sort_keys=True, indent=4))
 
 
-def model_for(data_dir, sequential_dir=None, hyper_parameters=None, ablations=None):
+def model_for(data_dir, sequential_dir=None, hyper_parameters=None, ablations=None, skeleton=False):
     if sequential_dir is None:
         assert hyper_parameters is not None and ablations is not None, "one of (sequential_dir) or (hyper_parameters, ablations) must be specified"
     else:
@@ -59,15 +59,18 @@ def model_for(data_dir, sequential_dir=None, hyper_parameters=None, ablations=No
     words = data.get_words(data_dir)
 
     if description.task == data.LM:
-        return rnn.LstmLm(hyper_parameters, ablations, words)
+        return rnn.LstmLm(hyper_parameters, ablations, words, skeleton)
     else:
         outputs = data.get_outputs(data_dir)
-        return rnn.LstmSa(hyper_parameters, ablations, words, outputs)
+        return rnn.LstmSa(hyper_parameters, ablations, words, outputs, skeleton)
 
 
-def load_model(data_dir, sequential_dir):
-    rnn = model_for(data_dir, sequential_dir)
-    load_parameters(rnn, sequential_dir)
+def load_model(data_dir, sequential_dir, skeleton):
+    rnn = model_for(data_dir, sequential_dir, skeleton=skeleton)
+
+    if not skeleton:
+        load_parameters(rnn, sequential_dir)
+
     return rnn
 
 
