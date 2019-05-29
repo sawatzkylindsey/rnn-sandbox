@@ -25,25 +25,18 @@ from pytils.log import setup_logging, teardown, user_log
 def main(argv):
     ap = ArgumentParser(prog="generate-hidden-states")
     ap.add_argument("-v", "--verbose", default=False, action="store_true", help="Turn on verbose logging.")
-    ap.add_argument("-s", "--sample-rates", type=float, default=0.1, nargs=2, help="train then test sampling rates.")
+    ap.add_argument("-s", "--sample-rate", type=float, default=0.1, help="train then test sampling rates.")
     ap.add_argument("-d", "--dry-run", default=False, action="store_true")
     ap.add_argument("data_dir")
     ap.add_argument("sequential_dir")
     ap.add_argument("states_dir")
+    ap.add_argument("kind", choices=["train", "validation", "test"])
     aargs = ap.parse_args(argv)
     setup_logging(".%s.log" % os.path.splitext(os.path.basename(__file__))[0], aargs.verbose, False, True, True)
     logging.debug(aargs)
 
-    if isinstance(aargs.sample_rates, list):
-        sample_rate_train = aargs.sample_rates[0]
-        sample_rate_test = aargs.sample_rates[1]
-    else:
-        sample_rate_train = aargs.sample_rates
-        sample_rate_test = aargs.sample_rates
-
     if aargs.dry_run:
-        dry_run(data.stream_train(aargs.data_dir), sample_rate_train, is_train=True)
-        dry_run(data.stream_test(aargs.data_dir), sample_rate_test, is_train=False)
+        dry_run(data.stream_data(aargs.data_dir, aargs.kind), aargs.sample_rate, aargs.kind)
         return 0
 
     lstm = sequential.load_model(aargs.data_dir, aargs.sequential_dir)
@@ -54,17 +47,15 @@ def main(argv):
     else:
         annotation_fn = lambda y, i: y
 
-    elicit_hidden_states(lstm, data.stream_train(aargs.data_dir), annotation_fn, sample_rate_train, aargs.states_dir, is_train=True)
-    elicit_hidden_states(lstm, data.stream_test(aargs.data_dir), annotation_fn, sample_rate_test, aargs.states_dir, is_train=False)
-
+    elicit_hidden_states(lstm, data.stream_data(aargs.data_dir, aargs.kind), annotation_fn, aargs.sample_rate, aargs.states_dir, aargs.kind)
     return 0
 
 
-def elicit_hidden_states(lstm, xys, annotation_fn, sample_rate, states_dir, is_train):
+def elicit_hidden_states(lstm, xys, annotation_fn, sample_rate, states_dir, kind):
     hidden_states = {}
 
     for key in lstm.keys():
-        start_queue(hidden_states, states_dir, is_train, key)
+        start_queue(hidden_states, states_dir, kind, key)
 
     total = 0
     sampled = 0
@@ -92,11 +83,10 @@ def elicit_hidden_states(lstm, xys, annotation_fn, sample_rate, states_dir, is_t
     for value in hidden_states.values():
         value.put(None)
 
-    prefix = "Train" if is_train else "Test"
-    user_log.info("%s %.4f: %d sentences sampled down to %d, eliciting %d hidden states (per part-layer)." % (prefix, sample_rate, total, sampled, instances))
+    user_log.info("%s %.4f: %d sentences sampled down to %d, eliciting %d hidden states (per part-layer)." % (kind, sample_rate, total, sampled, instances))
 
 
-def dry_run(xys, sample_rate, is_train):
+def dry_run(xys, sample_rate, kind):
     total = 0
     sampled = 0
     instances = 0
@@ -108,14 +98,13 @@ def dry_run(xys, sample_rate, is_train):
             sampled += 1
             instances += len(xy.x)
 
-    prefix = "Train" if is_train else "Test"
-    user_log.info("(dry run) %s %.4f: %d sentences sampled down to %d, eliciting %d hidden states (per part-layer)." % (prefix, sample_rate, total, sampled, instances))
+    user_log.info("(dry run) %s %.4f: %d sentences sampled down to %d, eliciting %d hidden states (per part-layer)." % (kind, sample_rate, total, sampled, instances))
 
 
-def start_queue(hidden_states, states_dir, is_train, key):
+def start_queue(hidden_states, states_dir, kind, key):
     states_queue = queue.Queue()
     hidden_states[key] = states_queue
-    states.set_hidden_states(states_dir, is_train, key, states_queue)
+    states.set_hidden_states(states_dir, kind, key, states_queue)
 
 
 if __name__ == "__main__":

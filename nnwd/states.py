@@ -13,14 +13,20 @@ from nnwd import pickler
 
 
 STATES_TRAIN = "hidden-states-xys.train"
+STATES_VALIDATION = "hidden-states-xys.validation"
 STATES_TEST = "hidden-states-xys.test"
 STATES_ACTIVATION = "activation-states-xys"
 HiddenState = collections.namedtuple("HiddenState", ["word", "point", "annotation"])
 ActivationState = collections.namedtuple("ActivationState", ["sequence", "index", "point"])
 
 
-def set_hidden_states(states_dir, is_train, key, states):
-    pickler.dump(states, os.path.join(states_dir, (STATES_TRAIN if is_train else STATES_TEST) + "." + key), converter=lambda hs: tuple((hs.word, hs.point, hs.annotation)))
+def _folder(kind):
+    return STATES_TRAIN if kind == "train" else \
+        STATES_VALIDATION if kind == "validation" else STATES_TEST
+
+
+def set_hidden_states(states_dir, kind, key, states):
+    pickler.dump(states, os.path.join(states_dir, _folder(kind) + "." + key), converter=lambda hs: tuple((hs.word, hs.point, hs.annotation)))
 
 
 def get_hidden_states(states_dir, key):
@@ -63,11 +69,19 @@ def _is_key(name):
 
 
 def stream_hidden_train(states_dir, key):
-    return pickler.load(os.path.join(states_dir, STATES_TRAIN + "." + key), converter=lambda item: HiddenState(*item))
+    return stream_hidden_states(states_dir, "test", key)
+
+
+def stream_hidden_validation(states_dir, key):
+    return stream_hidden_states(states_dir, "test", key)
 
 
 def stream_hidden_test(states_dir, key):
-    return pickler.load(os.path.join(states_dir, STATES_TEST + "." + key), converter=lambda item: HiddenState(*item))
+    return stream_hidden_states(states_dir, "test", key)
+
+
+def stream_hidden_states(states_dir, kind, key):
+    return pickler.load(os.path.join(states_dir, _folder(kind) + "." + key), converter=lambda item: HiddenState(*item))
 
 
 def set_activation_states(states_dir, key, states):

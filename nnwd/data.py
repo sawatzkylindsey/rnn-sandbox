@@ -66,18 +66,18 @@ def set_output_distribution(data_dir, distribution):
 
 
 def stream_train(data_dir):
-    return _stream_data(data_dir, "train")
+    return stream_data(data_dir, "train")
 
 
 def stream_validation(data_dir):
-    return _stream_data(data_dir, "validation")
+    return stream_data(data_dir, "validation")
 
 
 def stream_test(data_dir):
-    return _stream_data(data_dir, "test")
+    return stream_data(data_dir, "test")
 
 
-def _stream_data(data_dir, kind):
+def stream_data(data_dir, kind):
     description = get_description(data_dir)
 
     if description.task == LM:

@@ -65,7 +65,7 @@ def model_for(data_dir, sequential_dir=None, hyper_parameters=None, ablations=No
         return rnn.LstmSa(hyper_parameters, ablations, words, outputs, skeleton)
 
 
-def load_model(data_dir, sequential_dir, skeleton):
+def load_model(data_dir, sequential_dir, skeleton=False):
     rnn = model_for(data_dir, sequential_dir, skeleton=skeleton)
 
     if not skeleton:
