@@ -70,12 +70,12 @@ def load_parameters(sem, semantic_dir):
     sem.load_parameters(os.path.join(semantic_dir, SEM))
 
 
-def save_model(sem, semantic_dir):
+def train_model(sem, data_streams, semantic_dir, arc_epochs, initial_decays, convergence_decays):
     set_hyper_parameters(semantic_dir, sem.hyper_parameters)
     set_extra(semantic_dir, sem.extra)
-    save_parameters(sem, semantic_dir)
+    sem.converging_train(data_streams, os.path.join(semantic_dir, SEM), arc_epochs=arc_epochs, initial_decays=initial_decays, convergence_decays=convergence_decays)
 
 
-def save_parameters(sem, semantic_dir):
-    sem.save_parameters(os.path.join(semantic_dir, SEM))
+def save_parameters(sem, semantic_dir, version):
+    sem.save_parameters(os.path.join(semantic_dir, SEM), version, True)
 

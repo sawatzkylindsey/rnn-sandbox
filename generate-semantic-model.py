@@ -20,7 +20,6 @@ from nnwd import data
 from nnwd import parameters
 from nnwd import pickler
 from nnwd import reduction
-from nnwd import rnn
 from nnwd import semantic
 from nnwd import sequential
 from nnwd import states
@@ -33,13 +32,14 @@ from pytils.log import setup_logging, teardown, user_log
 def main(argv):
     ap = ArgumentParser(prog="generate-semantic-model")
     ap.add_argument("-v", "--verbose", default=False, action="store_true", help="Turn on verbose logging.")
-    ap.add_argument("-e", "--epochs", default=10, type=int)
+    ap.add_argument("-i", "--initial-decays", default=5, type=int)
+    ap.add_argument("-c", "--convergence-decays", default=2, type=int)
+    ap.add_argument("-a", "--arc-epochs", default=3, type=int)
     ap.add_argument("-l", "--layers", default=2, type=int)
     ap.add_argument("-w", "--width", default=100, type=int)
     ap.add_argument("--word-input", default=False, action="store_true")
     ap.add_argument("-p", "--pre-existing", default=False, action="store_true")
     ap.add_argument("--key-set", nargs="*", default=None)
-    ap.add_argument("-m", "--monolith", default=False, action="store_true")
     ap.add_argument("data_dir")
     ap.add_argument("sequential_dir")
     ap.add_argument("states_dir")
@@ -52,14 +52,13 @@ def main(argv):
     user_log.info("Sem")
     hyper_parameters = model.HyperParameters(aargs.layers, aargs.width)
     extra = {"word_input": aargs.word_input}
-    model_fn = _ffnn_constructor if aargs.monolith else _switch_ffnn_constructor
 
     if aargs.pre_existing:
-        sem = load_sem(lstm, aargs.encoding_dir, model_fn)
+        sem = load_sem(lstm, aargs.encoding_dir)
     else:
-        sem = generate_sem(lstm, hyper_parameters, extra, aargs.states_dir, aargs.epochs, aargs.encoding_dir, model_fn, aargs.key_set, aargs.monolith)
+        sem = generate_sem(lstm, hyper_parameters, extra, aargs.states_dir, aargs.arc_epochs, aargs.encoding_dir, aargs.key_set, aargs.initial_decays, aargs.convergence_decays)
 
-    scores_sem, totals_sem = test_model(lstm, sem, aargs.states_dir, False, aargs.key_set)
+    keys_sem, total_sem = test_model(lstm, sem, aargs.states_dir, False, aargs.key_set)
     # TODO
     #user_log.info("Baseline")
     #baseline = generate_baseline(aargs.data_dir, lstm, hyper_parameters, extra)
@@ -67,11 +66,10 @@ def main(argv):
 
     with open(os.path.join(aargs.encoding_dir, "analysis-breakdown.csv"), "w") as fh:
         writer = csv_writer(fh)
-        writer.writerow(["technique", "key", "score_fn", "result"])
+        writer.writerow(["technique", "key", "perplexity"])
 
-        for key, scores in sorted(scores_sem.items()):
-            for name, score in sorted(scores.items()):
-                writer.writerow(["sem", key, name, "%f" % score])
+        for key, perplexity in sorted(keys_sem.items()):
+            writer.writerow(["sem", key, "%f" % perplexity])
 
         #for key, scores in sorted(scores_baseline.items()):
         #    for name, score in sorted(scores.items()):
@@ -79,10 +77,8 @@ def main(argv):
 
     with open(os.path.join(aargs.encoding_dir, "analysis-totals.csv"), "w") as fh:
         writer = csv_writer(fh)
-        writer.writerow(["technique", "score_fn", "result"])
-
-        for name, score in sorted(totals_sem.items()):
-            writer.writerow(["sem", name, "%f" % score])
+        writer.writerow(["technique", "perplexity"])
+        writer.writerow(["sem", "%f" % total_sem])
 
         #for name, score in sorted(totals_baseline.items()):
         #    writer.writerow(["baseline", name, "%f" % score])
@@ -99,45 +95,27 @@ def _ffnn_constructor(scope, hyper_parameters, extra, case_field, hidden_vector,
     return model.Ffnn(scope, hyper_parameters, extra, input_field, output_labels)
 
 
-def _switch_ffnn_constructor(scope, hyper_parameters, extra, case_field, hidden_vector, word_labels, output_labels):
-    if extra["word_input"]:
-        statement_field = mlbase.ConcatField([case_field, hidden_vector, word_labels])
-    else:
-        statement_field = mlbase.ConcatField([case_field, hidden_vector])
-
-    return model.SwitchFfnn(scope, hyper_parameters, extra, case_field, statement_field, output_labels)
+def load_sem(lstm, encoding_dir):
+    return semantic.load_model(lstm, encoding_dir, model_fn=_ffnn_constructor)
 
 
-def load_sem(lstm, encoding_dir, model_fn):
-    return semantic.load_model(lstm, encoding_dir, model_fn=model_fn)
-
-
-def generate_sem(lstm, hyper_parameters, extra, states_dir, epochs, encoding_dir, model_fn, key_set, monolith):
-    sem = semantic.model_for(lstm, hyper_parameters=hyper_parameters, extra=extra, model_fn=model_fn)
-    semantic.save_model(sem, encoding_dir)
+def generate_sem(lstm, hyper_parameters, extra, states_dir, arc_epochs, encoding_dir, key_set, initial_decays, convergence_decays):
+    sem = semantic.model_for(lstm, hyper_parameters=hyper_parameters, extra=extra, model_fn=_ffnn_constructor)
     as_input = as_input_fn(lstm, sem)
 
-    if monolith:
-        def train_xys():
-            for key, hidden_state in states.random_stream_all_hidden_train(states_dir):
-                if key_set is None or key in key_set:
-                    yield mlbase.Xy(as_input(key, hidden_state), hidden_state.annotation)
-    else:
-        def training_subset(key):
-            def inner():
-                for hidden_state in states.stream_hidden_train(states_dir, key):
-                    yield mlbase.Xy(as_input(key, hidden_state), hidden_state.annotation)
+    def train_xys():
+        for key, hidden_state in states.random_stream_hidden_states(states_dir, "train", key_set):
+            yield mlbase.Xy(as_input(key, hidden_state), hidden_state.annotation)
 
-            return inner
+    def validation_xys():
+        for key, hidden_state in states.random_stream_hidden_states(states_dir, "validation", key_set):
+            yield mlbase.Xy(as_input(key, hidden_state), hidden_state.annotation)
 
-        train_xys = {key: training_subset(key) for key in lstm.keys() if key_set is None or key in key_set}
+    def test_xys():
+        for key, hidden_state in states.random_stream_hidden_states(states_dir, "test", key_set):
+            yield mlbase.Xy(as_input(key, hidden_state), hidden_state.annotation)
 
-    training_parameters = mlbase.TrainingParameters() \
-        .epochs(epochs) \
-        .batch(32)
-    loss = sem.train(train_xys, training_parameters)
-    logging.info("Trained semantic encoding to a final loss of: %.6f" % loss)
-    semantic.save_parameters(sem, encoding_dir)
+    semantic.train_model(sem, [train_xys, validation_xys, test_xys], encoding_dir, arc_epochs, initial_decays, convergence_decays)
     return sem
 
 
@@ -165,15 +143,13 @@ def test_model(lstm, model, states_dir, is_baseline, key_set):
     #user_log.info("Train data.")
     #_, _ = score_parts(model, stream_fn, False, is_baseline)
     user_log.info("Test data.")
-    key_scores, total_scores = score_parts(lstm, model, stream_fn, True, is_baseline, key_set)
-    return key_scores, total_scores
+    key_perplexity, total_perplexity = score_parts(lstm, model, stream_fn, True, is_baseline, key_set)
+    return key_perplexity, total_perplexity
 
 
 def score_parts(lstm, model, stream_fn, debug, is_baseline, key_set):
-    key_scores = {}
-    total_scores = {}
-    total_scores["loss"] = 0.0
-    total_scores["perplexity"] = 0.0
+    key_perplexity = {}
+    total_perplexity = 0.0
     count = 0
 
     for key in lstm.keys():
@@ -183,18 +159,17 @@ def score_parts(lstm, model, stream_fn, debug, is_baseline, key_set):
                 break
 
             count += 1
-            scores = model.test(stream_fn(key), False, include_loss=True)
-            key_scores[key] = scores
+            perplexity = model.test(lambda: stream_fn(key), False)
+            key_perplexity[key] = perplexity
 
             if debug:
-                logging.debug("Scores for '%s': %s" % (key, adjutant.dict_as_str(scores)))
+                logging.debug("Perplexity for '%s': %.6f" % (key, perplexity))
 
-            for name, score in scores.items():
-                total_scores[name] += score
+            total_perplexity += perplexity
 
-    total_scores = {name: score / float(count) for name, score in total_scores.items()}
-    user_log.info("Total scores: %s" % (adjutant.dict_as_str(total_scores)))
-    return key_scores, total_scores
+    total_perplexity = total_perplexity / count
+    user_log.info("Total perplexity: %.6f" % total_perplexity)
+    return key_perplexity, total_perplexity
 
 
 def as_input_fn(lstm, model):

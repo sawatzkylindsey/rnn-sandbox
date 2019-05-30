@@ -454,7 +454,7 @@ class Lstm:
         return self.session.run([self.session.graph.get_tensor_by_name("embedding:0")], feed_dict=feed)[0].tolist()
 
     def load_parameters(self, model_dir, version=None):
-        checkpoints = Checkpoints.load(model_dir)
+        checkpoints = mlbase.Checkpoints.load(model_dir)
         model_path = checkpoints.model_path(version)
         version_key = "latest" if version is None else checkpoints.version_key(version)
         logging.debug("Restoring model %s=%s." % (version_key, model_path))
@@ -465,10 +465,10 @@ class Lstm:
         if os.path.isfile(model_dir) or (model_dir.endswith("/") and os.path.isfile(os.path.dirname(model_dir))):
             raise ValueError("model_dir '%s' must not be a file." % model_dir)
 
-        checkpoints = Checkpoints.load(model_dir)
+        checkpoints = mlbase.Checkpoints.load(model_dir)
 
         if checkpoints is None:
-            checkpoints = Checkpoints(model_dir)
+            checkpoints = mlbase.Checkpoints(model_dir)
 
         os.makedirs(model_dir, exist_ok=True)
         logging.debug("Saving model at %s=%d (latest=%s)." % (checkpoints.version_key(version), checkpoints.next_step, set_latest))
@@ -478,7 +478,7 @@ class Lstm:
             .save()
 
     def copy(self, model_dir, version, set_latest=False):
-        checkpoints = Checkpoints.load(model_dir)
+        checkpoints = mlbase.Checkpoints.load(model_dir)
         checkpoints.version_key(version)
         copy_version = "%s-%s" % (version, "".join([random.choice(string.ascii_lowercase) for i in range(6)]))
         logging.debug("Copying model %s as %s (latest=%s)." % (checkpoints.version_key(version), checkpoints.version_key(copy_version), set_latest))
@@ -527,80 +527,6 @@ class Lstm:
             return (result[0], int(result[1]))
         else:
             raise ValueError("invalid decode of '%s': %s" % (key, result))
-
-
-class Checkpoints:
-    def __init__(self, model_dir, versions={}, latest=None, step=-1):
-        self.model_dir = check.check_instance(model_dir, str)
-        self.save_path = self.get_save_path(self.model_dir)
-        self.versions = check.check_instance(versions, dict)
-        self.latest = latest
-        self.step = check.check_instance(step, int)
-        self.next_step = self.step + 1
-
-    def model_path_prefix(self):
-        return os.path.join(self.model_dir, "basename")
-
-    def version_key(self, version):
-        return "v%s" % str(version)
-
-    def model_path(self, version=None):
-        if version is None:
-            key = self.latest
-        else:
-            key = self.version_key(version)
-
-        step = self.versions[key]
-        return self.model_path_prefix() + ("-%d" % step)
-
-    def update_next(self, version, set_latest=False):
-        key = self.version_key(version)
-        self.versions[key] = self.next_step
-        self.step = self.next_step
-        self.next_step += 1
-
-        if self.latest is None or set_latest:
-            self.latest = key
-
-        return self
-
-    def copy(self, source, target, set_latest=False):
-        source_key = self.version_key(source)
-        target_key = self.version_key(target)
-        self.versions[target_key] = self.versions[source_key]
-
-        if self.latest is None or set_latest:
-            self.latest = target_key
-
-        return self
-
-    def as_json(self):
-        return {
-            "versions": self.versions,
-            "latest": self.latest,
-            "step": self.step,
-        }
-
-    def save(self):
-        os.makedirs(self.model_dir, exist_ok=True)
-
-        with open(self.save_path, "w") as fh:
-            json.dump(self.as_json(), fh)
-
-    @classmethod
-    def get_save_path(self, model_dir):
-        return os.path.join(model_dir, "checkpoints.json")
-
-    @classmethod
-    def load(self, model_dir):
-        save_path = self.get_save_path(model_dir)
-
-        if not os.path.exists(save_path):
-            return None
-
-        with open(save_path, "r") as fh:
-            data = json.load(fh)
-            return Checkpoints(model_dir, data["versions"], data["latest"], data["step"])
 
 
 class LstmLm(Lstm):

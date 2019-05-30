@@ -3,6 +3,7 @@
 
 import collections
 import heapq
+import json
 import logging
 import math
 import numpy as np
@@ -204,16 +205,18 @@ class TrainingParameters:
         self._score = TrainingParameters.DEFAULT_SCORE
         self._decays = 0
 
-    def decay(self):
+    def decay(self, initial=False):
         new_tp= TrainingParameters.__new__(TrainingParameters)
         new_tp.__dict__ = {k: v for k, v in self.__dict__.items()}
         new_tp._decays += 1
         new_tp._learning_rate /= 1.15
 
-        #new_tp._epochs = min(self._epochs + 1, TrainingParameters.EPOCHS_MAXIMUM)
-        #new_tp._clip_norm = min(self._clip_norm * 2, TrainingParameters.CLIP_NORM_MAXIMUM)
-        #new_tp._batch = max(int(self._batch * 0.8), TrainingParameters.BATCH_MINIMUM)
-        #new_tp._dropout_rate = min(self._dropout_rate * 1.2, TrainingParameters.DROPOUT_RATE_MAXIMUM)
+        if not initial:
+            pass
+            #new_tp._epochs = min(self._epochs + 1, TrainingParameters.EPOCHS_MAXIMUM)
+            #new_tp._clip_norm = min(self._clip_norm * 2, TrainingParameters.CLIP_NORM_MAXIMUM)
+            #new_tp._batch = max(int(self._batch * 0.8), TrainingParameters.BATCH_MINIMUM)
+            #new_tp._dropout_rate = min(self._dropout_rate * 1.2, TrainingParameters.DROPOUT_RATE_MAXIMUM)
 
         return new_tp
 
@@ -372,6 +375,80 @@ class TrainingParameters:
         else:
             return "TrainingParameters{btch=%d, epch=%d, drop=%.4f, learn=%.4f, cnrm=%.4f, degr=%d, wndw=%d, debug=%s}" % \
                 (self._batch, self._epochs, self._dropout_rate, self._learning_rate, self._clip_norm, self._degradation, self._window, self._debug)
+
+
+class Checkpoints:
+    def __init__(self, model_dir, versions={}, latest=None, step=-1):
+        self.model_dir = check.check_instance(model_dir, str)
+        self.save_path = self.get_save_path(self.model_dir)
+        self.versions = check.check_instance(versions, dict)
+        self.latest = latest
+        self.step = check.check_instance(step, int)
+        self.next_step = self.step + 1
+
+    def model_path_prefix(self):
+        return os.path.join(self.model_dir, "basename")
+
+    def version_key(self, version):
+        return "v%s" % str(version)
+
+    def model_path(self, version=None):
+        if version is None:
+            key = self.latest
+        else:
+            key = self.version_key(version)
+
+        step = self.versions[key]
+        return self.model_path_prefix() + ("-%d" % step)
+
+    def update_next(self, version, set_latest=False):
+        key = self.version_key(version)
+        self.versions[key] = self.next_step
+        self.step = self.next_step
+        self.next_step += 1
+
+        if self.latest is None or set_latest:
+            self.latest = key
+
+        return self
+
+    def copy(self, source, target, set_latest=False):
+        source_key = self.version_key(source)
+        target_key = self.version_key(target)
+        self.versions[target_key] = self.versions[source_key]
+
+        if self.latest is None or set_latest:
+            self.latest = target_key
+
+        return self
+
+    def as_json(self):
+        return {
+            "versions": self.versions,
+            "latest": self.latest,
+            "step": self.step,
+        }
+
+    def save(self):
+        os.makedirs(self.model_dir, exist_ok=True)
+
+        with open(self.save_path, "w") as fh:
+            json.dump(self.as_json(), fh)
+
+    @classmethod
+    def get_save_path(self, model_dir):
+        return os.path.join(model_dir, "checkpoints.json")
+
+    @classmethod
+    def load(self, model_dir):
+        save_path = self.get_save_path(model_dir)
+
+        if not os.path.exists(save_path):
+            return None
+
+        with open(save_path, "r") as fh:
+            data = json.load(fh)
+            return Checkpoints(model_dir, data["versions"], data["latest"], data["step"])
 
 
 class Field(object):

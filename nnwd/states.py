@@ -35,12 +35,14 @@ def get_hidden_states(states_dir, key):
     return train, test
 
 
-def random_stream_all_hidden_train(states_dir):
+def random_stream_hidden_states(states_dir, kind, keys):
     streams = {}
     stream_names = []
 
     for name in os.listdir(states_dir):
-        if name.startswith(STATES_TRAIN):
+        key = _key(name)
+
+        if name.startswith(_folder(kind)) and (keys is None or key in keys):
             streams[name] = pickler.load(os.path.join(states_dir, name), converter=lambda item: HiddenState(*item))
             stream_names += [name]
 
@@ -60,12 +62,14 @@ def _key(name):
 
     if name.startswith(STATES_TRAIN):
         return name[len(STATES_TRAIN) + 1:]
+    elif name.startswith(STATES_VALIDATION):
+        return name[len(STATES_VALIDATION) + 1:]
     else:
         return name[len(STATES_TEST) + 1:]
 
 
 def _is_key(name):
-    return name.startswith(STATES_TRAIN) or name.startswith(STATES_TEST)
+    return name.startswith(STATES_TRAIN) or name.startswith(STATES_TEST) or name.startswith(STATES_VALIDATION)
 
 
 def stream_hidden_train(states_dir, key):

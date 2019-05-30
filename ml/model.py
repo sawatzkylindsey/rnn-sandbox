@@ -30,68 +30,33 @@ class Model:
     def evaluate(self, x, handle_unknown=False):
         raise NotImplementedError()
 
-    def test(self, xys, debug=False, score_fns=[], include_loss=False):
-        total_scores = {name: 0 for name, function in score_fns}
-
-        if include_loss:
-            total_scores[LOSS] = 0.0
-
+    def test(self, xys_stream, debug=False):
+        total_loss = 0.0
         count = 0
-        case_slot_length = len(str(len(xys) if hasattr(xys, "__len__") else 1000000))
+        case_slot_length = len(str(len(xys_stream) if hasattr(xys_stream, "__len__") else 1000000))
         case_template = "{{Case {:%dd}}}" % case_slot_length
         batch = []
         cases = []
         total_loss = 0.0
 
-        for case, xy in enumerate(xys):
+        for case, xy in enumerate(xys_stream()):
             count += 1
             batch += [xy]
             cases += [case]
 
             if len(batch) == 100:
-                for key, score in self._invoke(batch, cases, debug, score_fns, include_loss).items():
-                    total_scores[key] += score
-
+                results, loss = self.evaluate(batch, True)
+                total_loss += loss
                 batch = []
                 cases = []
 
         if len(batch) > 0:
-            for key, score in self._invoke(batch, cases, debug, score_fns, include_loss).items():
-                total_scores[key] += score
+            results, loss = self.evaluate(batch, True)
+            total_loss += loss
 
-        #logging.info("Tested on %d instances." % count)
         # We count (rather then using len()) in case the xys come from a stream.
-        #                         v
-        out = {key: score / float(count) for key, score in total_scores.items()}
-
-        if include_loss:
-            out[PERPLEXITY] = math.exp(out[LOSS])
-
-        return out
-
-    def _invoke(self, batch, cases, debug, score_fns, include_loss):
-        results, total_loss = self.evaluate(batch, True)
-        scores = {name: 0 for name, function in score_fns}
-
-        if include_loss:
-            scores[LOSS] = total_loss
-
-        if len(score_fns) > 0:
-            for i, case in enumerate(cases):
-                if debug:
-                    logging.debug("[%s] %s" % (self.scope, case_template.format(case)))
-
-                for name, function in score_fns:
-                    passed, score = function(batch[i], results[i])
-                    scores[name] += score
-
-                    if debug:
-                        if passed:
-                            logging.debug("  Passed '%s' (%.4f)!\n  Full correctly predicted output: '%s'." % (name, score, results[i].prediction()))
-                        else:
-                            logging.debug("  Failed '%s' (%.4f)!\n  Expected: %s\n  Predicted: %s" % (name, score, str(results[i].y), str(results[i].prediction())))
-
-        return scores
+        #                             v
+        return -math.exp(total_loss / count)
 
 
 class TfModel(Model):
@@ -124,6 +89,9 @@ class Ffnn(TfModel):
         # Base variable setup
         self.input_p = self.placeholder("input_p", [batch_size_dimension, len(self.input_field)])
         self.output_p = self.placeholder("output_p", [batch_size_dimension], tf.int32)
+        self.learning_rate_p = self.placeholder("learning_rate_p", [1], tf.float32)
+        self.clip_norm_p = self.placeholder("clip_norm_p", [1], tf.float32)
+        self.dropout_keep_p = self.placeholder("dropout_keep_p", [1], tf.float32)
 
         if self.hyper_parameters.layers > 0:
             self.E = self.variable("E", [len(self.input_field), self.hyper_parameters.width])
@@ -144,7 +112,7 @@ class Ffnn(TfModel):
             mlbase.assert_shape(hidden, [batch_size_dimension, self.hyper_parameters.width])
 
             for l in range(self.hyper_parameters.layers - 1):
-                hidden = tf.tanh(tf.matmul(hidden, self.H[l]) + self.H_bias[l])
+                hidden = tf.tanh(tf.matmul(self.dropout(hidden), self.H[l]) + self.H_bias[l])
                 mlbase.assert_shape(hidden, [batch_size_dimension, self.hyper_parameters.width])
 
             mlbase.assert_shape(hidden, [batch_size_dimension, self.hyper_parameters.width])
@@ -156,11 +124,11 @@ class Ffnn(TfModel):
             hidden = self.input_p
             mlbase.assert_shape(hidden, [batch_size_dimension, len(self.input_field)])
 
-        self.output_logit = tf.matmul(hidden, self.Y) + self.Y_bias
+        self.output_logit = tf.matmul(self.dropout(hidden), self.Y) + self.Y_bias
         mlbase.assert_shape(self.output_logit, [batch_size_dimension, len(self.output_labels)])
         self.output_distributions = tf.nn.softmax(self.output_logit)
         mlbase.assert_shape(self.output_distributions, [batch_size_dimension, len(self.output_labels)])
-        #self.cost = tf.reduce_mean(tf.nn.nce_loss(
+        #self.cost = tf.reduce_sum(tf.nn.nce_loss(
         #    weights=tf.transpose(self.Y),
         #    biases=self.Y_bias,
         #    labels=self.output_p,
@@ -169,15 +137,23 @@ class Ffnn(TfModel):
         #    num_classes=len(self.output_labels)))
         loss_fn = tf.nn.sparse_softmax_cross_entropy_with_logits
         self.cost = tf.reduce_sum(loss_fn(labels=tf.stop_gradient(self.output_p), logits=self.output_logit))
-        self.updates = tf.train.AdamOptimizer().minimize(self.cost)
+        #self.updates = tf.train.AdamOptimizer().minimize(self.cost)
+
+        optimizer = tf.train.GradientDescentOptimizer(self.learning_rate_p[0])
+        gradients = optimizer.compute_gradients(self.cost)
+        gradients_clipped = [(tf.clip_by_norm(g, self.clip_norm_p[0]), var) for g, var in gradients if g is not None]
+        self.updates = optimizer.apply_gradients(gradients_clipped)
 
         self.session = tf.Session()
         self.session.run(tf.global_variables_initializer())
 
+    def dropout(self, tensor):
+        return tf.nn.dropout(tensor, self.dropout_keep_p[0])
+
     def train(self, xys_stream, training_parameters):
         check.check_instance(training_parameters, mlbase.TrainingParameters)
         slot_length = len(str(training_parameters.epochs())) - 1
-        epoch_template = "[%s] Epoch {:%dd}: {:f}" % (self.scope, slot_length)
+        epoch_template = "[%s] Epoch training {:%dd}: (loss, perplexity): {:.6f}, {:.6f}" % (self.scope, slot_length)
         final_loss = None
         epochs_tenth = max(1, int(training_parameters.epochs() / 10))
         losses = training_parameters.losses()
@@ -210,6 +186,9 @@ class Ffnn(TfModel):
                     feed = {
                         self.input_p: xs,
                         self.output_p: ys,
+                        self.learning_rate_p: [training_parameters.learning_rate()],
+                        self.clip_norm_p: [training_parameters.clip_norm()],
+                        self.dropout_keep_p: [1.0 - training_parameters.dropout_rate()],
                     }
                     _, training_loss = self.session.run([self.updates, self.cost], feed_dict=feed)
                     epoch_loss += training_loss
@@ -223,24 +202,108 @@ class Ffnn(TfModel):
                 feed = {
                     self.input_p: xs,
                     self.output_p: ys,
+                    self.learning_rate_p: [training_parameters.learning_rate()],
+                    self.clip_norm_p: [training_parameters.clip_norm()],
+                    self.dropout_keep_p: [1.0 - training_parameters.dropout_rate()],
                 }
                 _, training_loss = self.session.run([self.updates, self.cost], feed_dict=feed)
                 epoch_loss += training_loss
 
             epoch_loss /= count
+            epoch_perplexity = math.exp(epoch_loss)
             losses.append(epoch_loss)
             finished, reason = training_parameters.finished(epoch, losses)
 
             if not finished and epoch % epochs_tenth == 0:
-                logging.debug(epoch_template.format(epoch, epoch_loss))
+                logging.debug(epoch_template.format(epoch, epoch_loss, epoch_perplexity))
 
-                if training_parameters.debug():
-                    # Run the training data and compare the network's output with that of what is expected.
-                    self.test(xys)
-
-        logging.debug(epoch_template.format(epoch, epoch_loss))
+        logging.debug(epoch_template.format(epoch, epoch_loss, epoch_perplexity))
         logging.debug("Training on %d instances finished due to %s (%s)." % (count, reason, losses))
-        return epoch_loss
+        return epoch_loss, -epoch_perplexity
+
+    def converging_train(self, data_streams, model_dir, batch=32, arc_epochs=5, initial_decays=5, convergence_decays=2):
+        assert initial_decays > convergence_decays, "%d <= %d" % (initial_decays, convergence_decays)
+        train_stream, validation_stream, test_stream = data_streams
+        best_score_train = self.test(train_stream)
+        best_score_validation = self.test(validation_stream)
+        score_test = self.test(test_stream)
+        logging.debug("Baseline train/validation/test scores (random initialized weights): %.4f / %.4f / %.4f" % (best_score_train, best_score_validation, score_test))
+        training_parameters = mlbase.TrainingParameters() \
+            .batch(batch) \
+            .epochs(arc_epochs) \
+            .convergence(False) \
+            .debug(True)
+        previous_loss = None
+        arc = -1
+        version = 0
+        self.save_parameters(model_dir, version, True)
+        initialized = False
+        converged = False
+        decays = 0
+
+        while not converged:
+            arc += 1
+            logging.debug("Train arc %d: %s" % (arc, training_parameters))
+            loss, score_train, score_validation = self._train_loop(train_stream, validation_stream, training_parameters)
+            loss_change = self._change(previous_loss, loss, lambda prev, curr: prev > curr)
+            train_change = self._change(best_score_train, score_train, lambda prev, curr: prev < curr)
+            validation_change = self._change(best_score_validation, score_validation, lambda prev, curr: prev < curr)
+            logging.debug("Train arc %d: (loss, tr, va) (%s %.4f, %s %.4f, %s %.4f)" % (arc, loss_change, loss, train_change, score_train, validation_change, score_validation))
+            both_improved = score_train > best_score_train and score_validation > best_score_validation
+
+            if score_train > best_score_train or score_validation > best_score_validation:
+                previous_loss = loss
+                version += 1
+                initialized = True
+                self.save_parameters(model_dir, version, True)
+
+                # At least one improved.
+                if score_train > best_score_train:
+                    best_score_train = score_train
+
+                if score_validation > best_score_validation:
+                    best_score_validation = score_validation
+                else:
+                    # The validation score didn't improve.  Lets see where the test score is at.
+                    score_test = self.test(test_stream)
+                    logging.debug("Test score: %.4f" % score_test)
+            else:
+                # Neither improved.
+                # Load the best known version to continue training off of.
+                self.load_parameters(model_dir)
+
+            if not both_improved:
+                if decays >= convergence_decays if initialized else decays >= initial_decays:
+                    converged = True
+                    logging.debug("Converged" + ("" if initialized else " without initialization!"))
+                else:
+                    decays += 1
+                    logging.debug("Decaying.. %d", decays)
+                    training_parameters = training_parameters.decay(initial=initialized)
+            else:
+                logging.debug("Reset decay")
+                decays = 0
+
+        # Load which ever version was marked as the latest as the final trained self.
+        self.load_parameters(model_dir)
+        logging.debug("Calculating final scores.")
+        score_train = self.test(train_stream, False)
+        score_validation = self.test(validation_stream, False)
+        score_test = self.test(test_stream, True)
+        logging.debug("(tr, va, te): (%.4f, %.4f, %.4f)" % (score_train, score_validation, score_test))
+
+    def _change(self, previous, current, better_fn):
+        if previous is None:
+            return "-"
+        elif better_fn(previous, current):
+            return "▲"
+        else:
+            return "▼"
+
+    def _train_loop(self, train_xys, validation_xys, training_parameters):
+        loss, score_train = self.train(train_xys, training_parameters)
+        score_validation = self.test(validation_xys)
+        return loss, score_train, score_validation
 
     def evaluate(self, batch, handle_unknown=False):
         xs = [self.input_field.vector_encode(xy.x, handle_unknown) for xy in batch]
@@ -248,6 +311,7 @@ class Ffnn(TfModel):
         feed = {
             self.input_p: xs,
             self.output_p: ys,
+            self.dropout_keep_p: np.array([1.0]),
         }
 
         distributions, loss = self.session.run([self.output_distributions, self.cost], feed_dict=feed)
@@ -257,94 +321,29 @@ class Ffnn(TfModel):
         else:
             return mlbase.Result(self.output_labels, distributions[0]), loss
 
-    def load_parameters(self, model_dir):
-        model = tf.train.get_checkpoint_state(model_dir)
-        assert model is not None, "No saved model in '%s'." % model_dir
+    def load_parameters(self, model_dir, version=None):
+        checkpoints = mlbase.Checkpoints.load(model_dir)
+        model_path = checkpoints.model_path(version)
+        version_key = "latest" if version is None else checkpoints.version_key(version)
+        logging.debug("Restoring model %s=%s." % (version_key, model_path))
         saver = tf.train.Saver(tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=self.scope))
-        saver.restore(self.session, model.model_checkpoint_path)
+        saver.restore(self.session, model_path)
 
-    def save_parameters(self, model_dir):
+    def save_parameters(self, model_dir, version, set_latest=False):
         if os.path.isfile(model_dir) or (model_dir.endswith("/") and os.path.isfile(os.path.dirname(model_dir))):
             raise ValueError("model_dir '%s' must not be a file." % model_dir)
 
+        checkpoints = mlbase.Checkpoints.load(model_dir)
+
+        if checkpoints is None:
+            checkpoints = mlbase.Checkpoints(model_dir)
+
         os.makedirs(model_dir, exist_ok=True)
-        model_file = os.path.join(model_dir, "basename")
+        logging.debug("Saving model at %s=%d (latest=%s)." % (checkpoints.version_key(version), checkpoints.next_step, set_latest))
         saver = tf.train.Saver(tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES, scope=self.scope))
-        saver.save(self.session, model_file)
-
-
-class SwitchFfnn(Model):
-    def __init__(self, scope, hyper_parameters, extra, case_field, statement_field, output_labels):
-        super(SwitchFfnn, self).__init__(scope)
-        self.hyper_parameters = check.check_instance(hyper_parameters, HyperParameters)
-        self.extra = extra
-        self.case_field = check.check_instance(case_field, mlbase.Labels)
-        self.statement_field = check.check_instance(statement_field, mlbase.Field)
-        self.output_labels = check.check_instance(output_labels, mlbase.Labels)
-        self.cases = []
-        self.case_encodings = []
-
-        for case, encoding in sorted(self.case_field.encoding().items(), key=lambda item: item[1]):
-            self.cases += [case]
-            self.case_encodings += [encoding]
-
-        self.ffnns = [Ffnn(scope + "/" + case, hyper_parameters, extra, self.statement_field, output_labels) for case in self.cases]
-
-    def train(self, xys_streams, training_parameters):
-        def sub_stream(stream, encoding):
-            def stream_fn():
-                for xy in stream():
-                    case, *statement = xy.x
-
-                    if self.case_field.encode(case) == encoding:
-                        yield mlbase.Xy(statement, xy.y)
-
-            return stream_fn
-
-        loss = 0
-        count = 0
-
-        for case, xys_stream in xys_streams.items():
-            count += 1
-            encoding = self.case_field.encode(case)
-            loss += self.ffnns[encoding].train(xys_stream, training_parameters)
-
-        return loss / count
-
-    def evaluate(self, batch, handle_unknown=False):
-        cased_batches = {}
-        mapping = {i: {} for i in range(len(self.case_field))}
-
-        for i, xy in enumerate(batch):
-            case, *statement = xy.x
-            encoding = self.case_field.encode(case)
-
-            if encoding not in cased_batches:
-                cased_batches[encoding] = []
-
-            mapping[encoding][len(cased_batches[encoding])] = i
-            cased_batches[encoding] += [xy]
-
-        mapped_results = [None for i in range(len(batch))]
-        total_loss = 0
-
-        for encoding, cased_batch in cased_batches.items():
-            results, loss = self.ffnns[encoding].evaluate(cased_batch, handle_unknown)
-            total_loss += loss
-
-            for i, result in enumerate(results):
-                mapped_results[mapping[encoding][i]] = result
-
-        assert not any([r is None for r in results])
-        return mapped_results, total_loss / len(cased_batches)
-
-    def load_parameters(self, model_dir):
-        for encoding in self.case_encodings:
-            self.ffnns[encoding].load_parameters(os.path.join(model_dir, str(encoding)))
-
-    def save_parameters(self, model_dir):
-        for encoding in self.case_encodings:
-            self.ffnns[encoding].save_parameters(os.path.join(model_dir, str(encoding)))
+        saver.save(self.session, checkpoints.model_path_prefix(), global_step=checkpoints.next_step)
+        checkpoints.update_next(version, set_latest) \
+            .save()
 
 
 class CustomOutput(Model):
