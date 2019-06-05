@@ -64,7 +64,7 @@ def elicit_hidden_states(lstm, xys, annotation_fn, sample_rate, states_dir, kind
     for j, xy in enumerate(xys):
         total += 1
 
-        if random.random() <= sample_rate:
+        if sample_rate == 1.0 or random.random() <= sample_rate:
             sampled += 1
             instances += len(xy.x)
             stepwise_rnn = lstm.stepwise(handle_unknown=True)
@@ -94,7 +94,7 @@ def dry_run(xys, sample_rate, kind):
     for j, xy in enumerate(xys):
         total += 1
 
-        if random.random() <= sample_rate:
+        if sample_rate == 1.0 or random.random() <= sample_rate:
             sampled += 1
             instances += len(xy.x)
 

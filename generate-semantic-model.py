@@ -111,7 +111,7 @@ def generate_sem(lstm, hyper_parameters, extra, states_dir, arc_epochs, encoding
     as_input = as_input_fn(lstm, sem)
 
     def train_xys():
-        for key, hidden_state in states.random_stream_hidden_states(states_dir, "train", key_set):
+        for key, hidden_state in states.random_stream_hidden_states(states_dir, "train", key_set, sample_rate=0.25):
             yield mlbase.Xy(as_input(key, hidden_state), hidden_state.annotation)
 
     def validation_xys():

@@ -35,7 +35,7 @@ def get_hidden_states(states_dir, key):
     return train, test
 
 
-def random_stream_hidden_states(states_dir, kind, keys):
+def random_stream_hidden_states(states_dir, kind, keys, sample_rate=1.0):
     streams = {}
     stream_names = []
 
@@ -51,7 +51,9 @@ def random_stream_hidden_states(states_dir, kind, keys):
 
         try:
             item = next(streams[name])
-            yield _key(name), item
+
+            if sample_rate == 1.0 or random.random() <= sample_rate:
+                yield _key(name), item
         except StopIteration as e:
             del streams[name]
             stream_names.remove(name)
