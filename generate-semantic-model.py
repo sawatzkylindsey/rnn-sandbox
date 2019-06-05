@@ -39,6 +39,7 @@ def main(argv):
     ap.add_argument("-w", "--width", default=100, type=int)
     ap.add_argument("--word-input", default=False, action="store_true")
     ap.add_argument("-p", "--pre-existing", default=False, action="store_true")
+    ap.add_argument("-m", "--monolith", default=False, action="store_true")
     ap.add_argument("--key-set", nargs="*", default=None)
     ap.add_argument("data_dir")
     ap.add_argument("sequential_dir")
@@ -51,7 +52,10 @@ def main(argv):
     lstm = sequential.load_model(aargs.data_dir, aargs.sequential_dir, True)
     user_log.info("Sem")
     hyper_parameters = model.HyperParameters(aargs.layers, aargs.width)
-    extra = {"word_input": aargs.word_input}
+    extra = {
+        "word_input": aargs.word_input,
+        "monolith": aargs.monolith,
+    }
 
     if aargs.pre_existing:
         sem = load_sem(lstm, aargs.encoding_dir)
@@ -92,7 +96,10 @@ def _ffnn_constructor(scope, hyper_parameters, extra, case_field, hidden_vector,
     else:
         input_field = mlbase.ConcatField([case_field, hidden_vector])
 
-    return model.Ffnn(scope, hyper_parameters, extra, input_field, output_labels)
+    if extra["monolith"]:
+        return model.Ffnn(scope, hyper_parameters, extra, input_field, output_labels)
+    else:
+        return model.SeparateFfnn(scope, hyper_parameters, extra, input_field, output_labels, case_field)
 
 
 def load_sem(lstm, encoding_dir):

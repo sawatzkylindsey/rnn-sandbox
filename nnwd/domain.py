@@ -164,8 +164,32 @@ class NeuralNetwork:
             self.bucket_mappings = reduction.get_learned_buckets(self.buckets_dir)
 
         self.lstm = sequential.load_model(self.data_dir, self.sequential_dir)
+
+        def _ffnn_constructor(scope, hyper_parameters, extra, case_field, hidden_vector, word_labels, output_labels):
+            if extra["word_input"]:
+                input_field = mlbase.ConcatField([case_field, hidden_vector, word_labels])
+            else:
+                input_field = mlbase.ConcatField([case_field, hidden_vector])
+
+            if extra["monolith"]:
+                return model.Ffnn(scope, hyper_parameters, extra, input_field, output_labels)
+            else:
+                return model.SeparateFfnn(scope, hyper_parameters, extra, input_field, output_labels, case_field)
+
+        self.sem = semantic.load_model(self.lstm, self.encoding_dir, model_fn=_ffnn_constructor)
+
         # TODO
-        self.sem, self.sem_as_input = semantic.load_model(self.lstm, self.encoding_dir, model_fn=lambda hp, e, i, o, s: model.Ffnn(hp, e, i, o, s))
+        embedding_padding = tuple([0] * max(0, self.lstm.hyper_parameters.width - self.lstm.hyper_parameters.embedding_width))
+        hidden_padding = tuple([0] * max(0, self.lstm.hyper_parameters.embedding_width - self.lstm.hyper_parameters.width))
+
+        #if hasattr(model, "extra") and model.extra["word_input"]:
+        #    def converter(key, hidden_state):
+        #        return (key, tuple(hidden_state.point) + (embedding_padding if self.lstm.is_embedding(key) else hidden_padding), hidden_state.word)
+        #else:
+        def _as_input(key, point):
+            return (key, tuple(point) + (embedding_padding if self.lstm.is_embedding(key) else hidden_padding))
+
+        self.as_input = _as_input
 
     #@functools.lru_cache()
     def stepwise(self, sequence):
@@ -251,14 +275,15 @@ class NeuralNetwork:
 
     def predict_distributions(self, word, points):
         annotation = None
-        xys = []
         keys = []
+        xys = []
 
         for key, point in points.items():
-            xys += [mlbase.Xy(self.sem_as_input(key, states.HiddenState(word, point, annotation)), annotation)]
             keys += [key]
+            xys += [mlbase.Xy(self.as_input(key, point), annotation)]
 
         results, _ = self.sem.evaluate(xys)
+
         distribution_predictions = {}
 
         for i, key in enumerate(keys):

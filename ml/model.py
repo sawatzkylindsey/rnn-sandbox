@@ -71,85 +71,6 @@ class TfModel(Model):
             return tf.get_variable(name, shape=shape,
                 initializer=tf.contrib.layers.xavier_initializer() if initial is None else tf.constant_initializer(initial))
 
-
-class Ffnn(TfModel):
-    def __init__(self, scope, hyper_parameters, extra, input_field, output_labels):
-        super(Ffnn, self).__init__(scope)
-        self.hyper_parameters = check.check_instance(hyper_parameters, HyperParameters)
-        self.extra = extra
-        self.input_field = check.check_instance(input_field, mlbase.Field)
-        self.output_labels = check.check_instance(output_labels, mlbase.Labels)
-
-        batch_size_dimension = None
-
-        # Notation:
-        #   _p      placeholder
-        #   _c      constant
-
-        # Base variable setup
-        self.input_p = self.placeholder("input_p", [batch_size_dimension, len(self.input_field)])
-        self.output_p = self.placeholder("output_p", [batch_size_dimension], tf.int32)
-        self.learning_rate_p = self.placeholder("learning_rate_p", [1], tf.float32)
-        self.clip_norm_p = self.placeholder("clip_norm_p", [1], tf.float32)
-        self.dropout_keep_p = self.placeholder("dropout_keep_p", [1], tf.float32)
-
-        if self.hyper_parameters.layers > 0:
-            self.E = self.variable("E", [len(self.input_field), self.hyper_parameters.width])
-            self.E_bias = self.variable("E_bias", [1, self.hyper_parameters.width], 0.)
-
-            self.Y = self.variable("Y", [self.hyper_parameters.width, len(self.output_labels)])
-            self.Y_bias = self.variable("Y_bias", [1, len(self.output_labels)], 0.)
-
-            # The E layer is the first layer.
-            if self.hyper_parameters.layers > 1:
-                self.H = self.variable("H", [self.hyper_parameters.layers - 1, self.hyper_parameters.width, self.hyper_parameters.width])
-                self.H_bias = self.variable("H_bias", [self.hyper_parameters.layers - 1, 1, self.hyper_parameters.width], 0.)
-
-            # Computational graph encoding
-            self.embedded_input = tf.tanh(tf.matmul(self.input_p, self.E) + self.E_bias)
-            mlbase.assert_shape(self.embedded_input, [batch_size_dimension, self.hyper_parameters.width])
-            hidden = self.embedded_input
-            mlbase.assert_shape(hidden, [batch_size_dimension, self.hyper_parameters.width])
-
-            for l in range(self.hyper_parameters.layers - 1):
-                hidden = tf.tanh(tf.matmul(self.dropout(hidden), self.H[l]) + self.H_bias[l])
-                mlbase.assert_shape(hidden, [batch_size_dimension, self.hyper_parameters.width])
-
-            mlbase.assert_shape(hidden, [batch_size_dimension, self.hyper_parameters.width])
-        else:
-            self.Y = self.variable("Y", [len(self.input_field), len(self.output_labels)])
-            self.Y_bias = self.variable("Y_bias", [1, len(self.output_labels)], 0.)
-
-            # Computational graph encoding
-            hidden = self.input_p
-            mlbase.assert_shape(hidden, [batch_size_dimension, len(self.input_field)])
-
-        self.output_logit = tf.matmul(self.dropout(hidden), self.Y) + self.Y_bias
-        mlbase.assert_shape(self.output_logit, [batch_size_dimension, len(self.output_labels)])
-        self.output_distributions = tf.nn.softmax(self.output_logit)
-        mlbase.assert_shape(self.output_distributions, [batch_size_dimension, len(self.output_labels)])
-        #self.cost = tf.reduce_sum(tf.nn.nce_loss(
-        #    weights=tf.transpose(self.Y),
-        #    biases=self.Y_bias,
-        #    labels=self.output_p,
-        #    inputs=hidden,
-        #    num_sampled=1,
-        #    num_classes=len(self.output_labels)))
-        loss_fn = tf.nn.sparse_softmax_cross_entropy_with_logits
-        self.cost = tf.reduce_sum(loss_fn(labels=tf.stop_gradient(self.output_p), logits=self.output_logit))
-        #self.updates = tf.train.AdamOptimizer().minimize(self.cost)
-
-        optimizer = tf.train.GradientDescentOptimizer(self.learning_rate_p[0])
-        gradients = optimizer.compute_gradients(self.cost)
-        gradients_clipped = [(tf.clip_by_norm(g, self.clip_norm_p[0]), var) for g, var in gradients if g is not None]
-        self.updates = optimizer.apply_gradients(gradients_clipped)
-
-        self.session = tf.Session()
-        self.session.run(tf.global_variables_initializer())
-
-    def dropout(self, tensor):
-        return tf.nn.dropout(tensor, self.dropout_keep_p[0])
-
     def train(self, xys_stream, training_parameters):
         check.check_instance(training_parameters, mlbase.TrainingParameters)
         slot_length = len(str(training_parameters.epochs())) - 1
@@ -181,15 +102,7 @@ class Ffnn(TfModel):
 
                 if batch_set:
                     count += len(batch)
-                    xs = [self.input_field.vector_encode(xy.x, True) for xy in batch]
-                    ys = [self.output_labels.encode(xy.y, True) for xy in batch]
-                    feed = {
-                        self.input_p: xs,
-                        self.output_p: ys,
-                        self.learning_rate_p: [training_parameters.learning_rate()],
-                        self.clip_norm_p: [training_parameters.clip_norm()],
-                        self.dropout_keep_p: [1.0 - training_parameters.dropout_rate()],
-                    }
+                    feed = self.get_training_feed(batch, training_parameters)
                     _, training_loss = self.session.run([self.updates, self.cost], feed_dict=feed)
                     epoch_loss += training_loss
                     batch_set = False
@@ -197,15 +110,7 @@ class Ffnn(TfModel):
 
             if len(batch) > 0:
                 count += len(batch)
-                xs = [self.input_field.vector_encode(xy.x, True) for xy in batch]
-                ys = [self.output_labels.encode(xy.y, True) for xy in batch]
-                feed = {
-                    self.input_p: xs,
-                    self.output_p: ys,
-                    self.learning_rate_p: [training_parameters.learning_rate()],
-                    self.clip_norm_p: [training_parameters.clip_norm()],
-                    self.dropout_keep_p: [1.0 - training_parameters.dropout_rate()],
-                }
+                feed = self.get_training_feed(batch, training_parameters)
                 _, training_loss = self.session.run([self.updates, self.cost], feed_dict=feed)
                 epoch_loss += training_loss
 
@@ -306,13 +211,7 @@ class Ffnn(TfModel):
         return loss, score_train, score_validation
 
     def evaluate(self, batch, handle_unknown=False):
-        xs = [self.input_field.vector_encode(xy.x, handle_unknown) for xy in batch]
-        ys = [self.output_labels.encode(xy.y, True) for xy in batch]
-        feed = {
-            self.input_p: xs,
-            self.output_p: ys,
-            self.dropout_keep_p: np.array([1.0]),
-        }
+        feed = self.get_testing_feed(batch)
 
         distributions, loss = self.session.run([self.output_distributions, self.cost], feed_dict=feed)
 
@@ -344,6 +243,234 @@ class Ffnn(TfModel):
         saver.save(self.session, checkpoints.model_path_prefix(), global_step=checkpoints.next_step)
         checkpoints.update_next(version, set_latest) \
             .save()
+
+
+class Ffnn(TfModel):
+    def __init__(self, scope, hyper_parameters, extra, input_field, output_labels):
+        super(Ffnn, self).__init__(scope)
+        self.hyper_parameters = check.check_instance(hyper_parameters, HyperParameters)
+        self.extra = extra
+        self.input_field = check.check_instance(input_field, mlbase.Field)
+        self.output_labels = check.check_instance(output_labels, mlbase.Labels)
+
+        batch_size_dimension = None
+
+        # Notation:
+        #   _p      placeholder
+        #   _c      constant
+
+        # Base variable setup
+        self.input_p = self.placeholder("input_p", [batch_size_dimension, len(self.input_field)])
+        self.output_p = self.placeholder("output_p", [batch_size_dimension], tf.int32)
+        self.learning_rate_p = self.placeholder("learning_rate_p", [1], tf.float32)
+        self.clip_norm_p = self.placeholder("clip_norm_p", [1], tf.float32)
+        self.dropout_keep_p = self.placeholder("dropout_keep_p", [1], tf.float32)
+
+        if self.hyper_parameters.layers > 0:
+            self.E = self.variable("E", [len(self.input_field), self.hyper_parameters.width])
+            self.E_bias = self.variable("E_bias", [1, self.hyper_parameters.width], 0.)
+
+            self.Y = self.variable("Y", [self.hyper_parameters.width, len(self.output_labels)])
+            self.Y_bias = self.variable("Y_bias", [1, len(self.output_labels)], 0.)
+
+            # The E layer is the first layer.
+            if self.hyper_parameters.layers > 1:
+                self.H = self.variable("H", [self.hyper_parameters.layers - 1, self.hyper_parameters.width, self.hyper_parameters.width])
+                self.H_bias = self.variable("H_bias", [self.hyper_parameters.layers - 1, 1, self.hyper_parameters.width], 0.)
+
+            # Computational graph encoding
+            self.embedded_input = tf.tanh(tf.matmul(self.input_p, self.E) + self.E_bias)
+            mlbase.assert_shape(self.embedded_input, [batch_size_dimension, self.hyper_parameters.width])
+            hidden = self.embedded_input
+            mlbase.assert_shape(hidden, [batch_size_dimension, self.hyper_parameters.width])
+
+            for l in range(self.hyper_parameters.layers - 1):
+                hidden = tf.tanh(tf.matmul(self.dropout(hidden), self.H[l]) + self.H_bias[l])
+                mlbase.assert_shape(hidden, [batch_size_dimension, self.hyper_parameters.width])
+
+            mlbase.assert_shape(hidden, [batch_size_dimension, self.hyper_parameters.width])
+        else:
+            self.Y = self.variable("Y", [len(self.input_field), len(self.output_labels)])
+            self.Y_bias = self.variable("Y_bias", [1, len(self.output_labels)], 0.)
+
+            # Computational graph encoding
+            hidden = self.input_p
+            mlbase.assert_shape(hidden, [batch_size_dimension, len(self.input_field)])
+
+        self.output_logit = tf.matmul(self.dropout(hidden), self.Y) + self.Y_bias
+        mlbase.assert_shape(self.output_logit, [batch_size_dimension, len(self.output_labels)])
+        self.output_distributions = tf.nn.softmax(self.output_logit)
+        mlbase.assert_shape(self.output_distributions, [batch_size_dimension, len(self.output_labels)])
+        #self.cost = tf.reduce_sum(tf.nn.nce_loss(
+        #    weights=tf.transpose(self.Y),
+        #    biases=self.Y_bias,
+        #    labels=self.output_p,
+        #    inputs=hidden,
+        #    num_sampled=1,
+        #    num_classes=len(self.output_labels)))
+        loss_fn = tf.nn.sparse_softmax_cross_entropy_with_logits
+        self.cost = tf.reduce_sum(loss_fn(labels=tf.stop_gradient(self.output_p), logits=self.output_logit))
+        #self.updates = tf.train.AdamOptimizer().minimize(self.cost)
+
+        optimizer = tf.train.GradientDescentOptimizer(self.learning_rate_p[0])
+        gradients = optimizer.compute_gradients(self.cost)
+        gradients_clipped = [(tf.clip_by_norm(g, self.clip_norm_p[0]), var) for g, var in gradients if g is not None]
+        self.updates = optimizer.apply_gradients(gradients_clipped)
+
+        self.session = tf.Session()
+        self.session.run(tf.global_variables_initializer())
+
+    def dropout(self, tensor):
+        return tf.nn.dropout(tensor, self.dropout_keep_p[0])
+
+    def get_training_feed(self, batch, training_parameters):
+        xs = [self.input_field.vector_encode(xy.x, True) for xy in batch]
+        ys = [self.output_labels.encode(xy.y, True) for xy in batch]
+        return {
+            self.input_p: xs,
+            self.output_p: ys,
+            self.learning_rate_p: [training_parameters.learning_rate()],
+            self.clip_norm_p: [training_parameters.clip_norm()],
+            self.dropout_keep_p: [1.0 - training_parameters.dropout_rate()],
+        }
+
+    def get_testing_feed(self, batch):
+        xs = [self.input_field.vector_encode(xy.x, True) for xy in batch]
+        ys = [self.output_labels.encode(xy.y, True) for xy in batch]
+        return {
+            self.input_p: xs,
+            self.output_p: ys,
+            self.dropout_keep_p: np.array([1.0]),
+        }
+
+
+class SeparateFfnn(TfModel):
+    def __init__(self, scope, hyper_parameters, extra, input_field, output_labels, case_field):
+        super(SeparateFfnn, self).__init__(scope)
+        self.hyper_parameters = check.check_instance(hyper_parameters, HyperParameters)
+        self.extra = extra
+        self.input_field = check.check_instance(input_field, mlbase.Field)
+        self.output_labels = check.check_instance(output_labels, mlbase.Labels)
+        self.case_field = check.check_instance(case_field, mlbase.Labels)
+
+        batch_size_dimension = None
+
+        # Notation:
+        #   _p      placeholder
+        #   _c      constant
+
+        # Base variable setup
+        self.input_p = self.placeholder("input_p", [batch_size_dimension, len(self.input_field)])
+        self.input_cases_p = self.placeholder("input_cases_p", [batch_size_dimension], tf.int32)
+        self.output_p = self.placeholder("output_p", [batch_size_dimension], tf.int32)
+        self.learning_rate_p = self.placeholder("learning_rate_p", [1], tf.float32)
+        self.clip_norm_p = self.placeholder("clip_norm_p", [1], tf.float32)
+        self.dropout_keep_p = self.placeholder("dropout_keep_p", [1], tf.float32)
+
+        self.batch_size, _ = tf.unstack(tf.shape(self.input_p))
+
+        if self.hyper_parameters.layers > 0:
+            self.E = self.variable("E", [len(self.case_field), len(self.input_field), self.hyper_parameters.width])
+            self.E_bias = self.variable("E_bias", [len(self.case_field), 1, self.hyper_parameters.width], 0.)
+
+            self.Y = self.variable("Y", [len(self.case_field), self.hyper_parameters.width, len(self.output_labels)])
+            self.Y_bias = self.variable("Y_bias", [len(self.case_field), 1, len(self.output_labels)], 0.)
+
+            # The E layer is the first layer.
+            if self.hyper_parameters.layers > 1:
+                self.H = self.variable("H", [len(self.case_field), self.hyper_parameters.layers - 1, self.hyper_parameters.width, self.hyper_parameters.width])
+                self.H_bias = self.variable("H_bias", [len(self.case_field), self.hyper_parameters.layers - 1, 1, self.hyper_parameters.width], 0.)
+
+            # Computational graph encoding
+            cased_E = tf.nn.embedding_lookup(self.E, self.input_cases_p)
+            mlbase.assert_shape(cased_E, [batch_size_dimension, len(self.input_field), self.hyper_parameters.width])
+            cased_E_bias = tf.nn.embedding_lookup(self.E_bias, self.input_cases_p)
+            mlbase.assert_shape(cased_E_bias, [batch_size_dimension, 1, self.hyper_parameters.width])
+
+            self.embedded_input = tf.tanh(tf.matmul(tf.expand_dims(self.input_p, axis=1), cased_E) + cased_E_bias)
+            mlbase.assert_shape(self.embedded_input, [batch_size_dimension, 1, self.hyper_parameters.width])
+            hidden = self.embedded_input
+            mlbase.assert_shape(hidden, [batch_size_dimension, 1, self.hyper_parameters.width])
+
+            for l in range(self.hyper_parameters.layers - 1):
+                cased_H = tf.nn.embedding_lookup(self.H, self.input_cases_p)
+                mlbase.assert_shape(cased_H, [batch_size_dimension, self.hyper_parameters.layers - 1, self.hyper_parameters.width, self.hyper_parameters.width])
+                cased_H_bias = tf.nn.embedding_lookup(self.H_bias, self.input_cases_p)
+                mlbase.assert_shape(cased_H_bias, [batch_size_dimension, self.hyper_parameters.layers - 1, 1, self.hyper_parameters.width])
+
+                hidden = tf.tanh(tf.matmul(self.dropout(hidden), cased_H[:, l]) + cased_H_bias[:, l])
+                mlbase.assert_shape(hidden, [batch_size_dimension, 1, self.hyper_parameters.width])
+
+            mlbase.assert_shape(hidden, [batch_size_dimension, 1, self.hyper_parameters.width])
+
+            cased_Y = tf.nn.embedding_lookup(self.Y, self.input_cases_p)
+            mlbase.assert_shape(cased_Y, [batch_size_dimension, self.hyper_parameters.width, len(self.output_labels)])
+            cased_Y_bias = tf.nn.embedding_lookup(self.Y_bias, self.input_cases_p)
+            mlbase.assert_shape(cased_Y_bias, [batch_size_dimension, 1, len(self.output_labels)])
+        else:
+            self.Y = self.variable("Y", [len(self.case_field), len(self.input_field), len(self.output_labels)])
+            self.Y_bias = self.variable("Y_bias", [len(self.case_field), 1, len(self.output_labels)], 0.)
+
+            # Computational graph encoding
+            hidden = tf.expand_dims(self.input_p, axis=1)
+            mlbase.assert_shape(hidden, [batch_size_dimension, 1, len(self.input_field)])
+
+            cased_Y = tf.nn.embedding_lookup(self.Y, self.input_cases_p)
+            mlbase.assert_shape(cased_Y, [batch_size_dimension, len(self.input_field), len(self.output_labels)])
+            cased_Y_bias = tf.nn.embedding_lookup(self.Y_bias, self.input_cases_p)
+            mlbase.assert_shape(cased_Y_bias, [batch_size_dimension, 1, len(self.output_labels)])
+
+        cased_logit = tf.matmul(self.dropout(hidden), cased_Y) + cased_Y_bias
+        mlbase.assert_shape(cased_logit, [batch_size_dimension, 1, len(self.output_labels)])
+
+        self.output_logit = tf.reshape(cased_logit, [-1, len(self.output_labels)])
+        mlbase.assert_shape(self.output_logit, [batch_size_dimension, len(self.output_labels)])
+
+        self.output_distributions = tf.nn.softmax(self.output_logit)
+        mlbase.assert_shape(self.output_distributions, [batch_size_dimension, len(self.output_labels)])
+        #self.cost = tf.reduce_sum(tf.nn.nce_loss(
+        #    weights=tf.transpose(self.Y),
+        #    biases=self.Y_bias,
+        #    labels=self.output_p,
+        #    inputs=hidden,
+        #    num_sampled=1,
+        #    num_classes=len(self.output_labels)))
+        loss_fn = tf.nn.sparse_softmax_cross_entropy_with_logits
+        self.cost = tf.reduce_sum(loss_fn(labels=tf.stop_gradient(self.output_p), logits=self.output_logit))
+        #self.updates = tf.train.AdamOptimizer().minimize(self.cost)
+
+        optimizer = tf.train.GradientDescentOptimizer(self.learning_rate_p[0])
+        gradients = optimizer.compute_gradients(self.cost)
+        gradients_clipped = [(tf.clip_by_norm(g, self.clip_norm_p[0]), var) for g, var in gradients if g is not None]
+        self.updates = optimizer.apply_gradients(gradients_clipped)
+
+        self.session = tf.Session()
+        self.session.run(tf.global_variables_initializer())
+
+    def dropout(self, tensor):
+        return tf.nn.dropout(tensor, self.dropout_keep_p[0])
+
+    def get_training_feed(self, batch, training_parameters):
+        xs = [self.input_field.vector_encode(xy.x, True) for xy in batch]
+        ys = [self.output_labels.encode(xy.y, True) for xy in batch]
+        return {
+            self.input_p: xs,
+            self.input_cases_p: [self.case_field.encode(xy.x[0]) for xy in batch],
+            self.output_p: ys,
+            self.learning_rate_p: [training_parameters.learning_rate()],
+            self.clip_norm_p: [training_parameters.clip_norm()],
+            self.dropout_keep_p: [1.0 - training_parameters.dropout_rate()],
+        }
+
+    def get_testing_feed(self, batch):
+        xs = [self.input_field.vector_encode(xy.x, True) for xy in batch]
+        ys = [self.output_labels.encode(xy.y, True) for xy in batch]
+        return {
+            self.input_p: xs,
+            self.input_cases_p: [self.case_field.encode(xy.x[0]) for xy in batch],
+            self.output_p: ys,
+            self.dropout_keep_p: np.array([1.0]),
+        }
 
 
 class CustomOutput(Model):
