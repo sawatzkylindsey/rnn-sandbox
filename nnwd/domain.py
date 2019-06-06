@@ -298,14 +298,64 @@ class NeuralNetwork:
         colours = {}
 
         for key, point in points.items():
-            average = [0, 0, 0]
+            ### Averaging - which isn't going to be right.
+            #average = [0, 0, 0]
+
+            #for output, probability in predictions[key].items():
+            #    self.mapped_output(output)
+            #    colour = self.output_colour(output)
+            #    average = [average[i] + (colour[i]) for i in range(3)]
+
+            #colours[key] = "rgb(%d, %d, %d)" % tuple([round(i / len(predictions[key])) for i in average])
+
+            ### Fitting across top-k points.
+            colour_probabilities = {}
 
             for output, probability in predictions[key].items():
                 self.mapped_output(output)
                 colour = self.output_colour(output)
-                average = [average[i] + (colour[i] * probability) for i in range(3)]
 
-            colours[key] = "rgb(%d, %d, %d)" % tuple([round(i) for i in average])
+                if colour not in colour_probabilities:
+                    colour_probabilities[colour] = 0
+
+                colour_probabilities[colour] += probability
+
+            maximum_distance = None
+
+            for pair in itertools.combinations([colour for colour in colour_probabilities.keys()], 2):
+                distance = geometry.distance(pair[0], pair[1])
+
+                if maximum_distance is None or distance > maximum_distance:
+                    maximum_distance = distance
+
+            inverted = [item for item in mlbase.regmax({c: 1.0 - p for c, p in colour_probabilities.items()}).items()]
+            fit, _ = geometry.fit_point([item[0] for item in inverted], [item[1] * maximum_distance for item in inverted])
+            colours[key] = "rgb(%d, %d, %d)" % tuple([round(i) for i in fit])
+
+            ### Fitting across top-2 points (done differently than top-k, k=2).
+            #output_colourings = {}
+
+            #for output, probability in predictions[key].items():
+            #    self.mapped_output(output)
+            #    colour = self.output_colour(output)
+            #    output_colourings[output] = (colour, probability)
+
+            #interpolation_points = {}
+
+            #for output, colour_probability in sorted(output_colourings.items(), key=lambda item: item[1][1], reverse=True)[:2]:
+            #    colour, probability = colour_probability
+            #    interpolation_points[colour] = (output, probability)
+
+            #if len(interpolation_points) == 1:
+            #    colours[key] = "rgb(%d, %d, %d)" % next(iter(interpolation_points.keys()))
+            #else:
+            #    point_a, point_b = [item for item in interpolation_points.items()]
+            #    distance = geometry.distance(point_a[0], point_b[0])
+            #    # Not a typo: we want to invert their probabilities so that the most likely prediction gets the smallest distance, and visa versa.
+            #    #                            v              v              v              v
+            #    pdist = mlbase.regmax({point_a[1][0]: point_b[1][1], point_b[1][0]: point_a[1][1]})
+            #    fit = geometry.fit_proportion((point_a[0], point_b[0]), (pdist[point_a[1][0]], pdist[point_b[1][0]]))
+            #    colours[key] = "rgb(%d, %d, %d)" % tuple([round(i) for i in fit])
 
         return colours
 
