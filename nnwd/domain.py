@@ -158,6 +158,8 @@ class NeuralNetwork:
             self.colour_mapping = sa_colour_mapping()
             self.sort_key = lambda key_value: sa.sentiment_sort_key(key_value[1])
 
+        self.top_k = max(1, int(len(self.outputs) * parameters.SEM_TOP_K_PERCENT))
+
         if use_fixed_buckets:
             self.bucket_mappings = reduction.get_fixed_buckets(self.buckets_dir)
         else:
@@ -288,7 +290,7 @@ class NeuralNetwork:
 
         for i, key in enumerate(keys):
             ordered_predictions = [item[0] for item in sorted(results[i].distribution().items(), key=lambda item: item[1], reverse=True)]
-            distribution_predictions[key] = {prediction: results[i].distribution()[prediction] for prediction in ordered_predictions[:parameters.TOP_PREDICTIONS]}
+            distribution_predictions[key] = {prediction: results[i].distribution()[prediction] for prediction in ordered_predictions[:self.top_k]}
 
         return distribution_predictions
 
@@ -296,29 +298,14 @@ class NeuralNetwork:
         colours = {}
 
         for key, point in points.items():
-            output_colourings = {}
+            average = [0, 0, 0]
 
             for output, probability in predictions[key].items():
                 self.mapped_output(output)
                 colour = self.output_colour(output)
-                output_colourings[output] = (colour, probability)
+                average = [average[i] + (colour[i] * probability) for i in range(3)]
 
-            interpolation_points = {}
-
-            for output, colour_probability in sorted(output_colourings.items(), key=lambda item: item[1][1], reverse=True)[:2]:
-                colour, probability = colour_probability
-                interpolation_points[colour] = (output, probability)
-
-            if len(interpolation_points) == 1:
-                colours[key] = "rgb(%d, %d, %d)" % next(iter(interpolation_points.keys()))
-            else:
-                point_a, point_b = [item for item in interpolation_points.items()]
-                distance = geometry.distance(point_a[0], point_b[0])
-                # Not a typo: we want to invert their probabilities so that the most likely prediction gets the smallest distance, and visa versa.
-                #                            v              v              v              v
-                pdist = mlbase.regmax({point_a[1][0]: point_b[1][1], point_b[1][0]: point_a[1][1]})
-                fit = geometry.fit_proportion((point_a[0], point_b[0]), (pdist[point_a[1][0]], pdist[point_b[1][0]]))
-                colours[key] = "rgb(%d, %d, %d)" % tuple([round(i) for i in fit])
+            colours[key] = "rgb(%d, %d, %d)" % tuple([round(i) for i in average])
 
         return colours
 
@@ -338,7 +325,7 @@ class NeuralNetwork:
         embedding = HiddenState(embedding_name, embedding_name_no_t, point_reductions[embedding_key], colour=point_colours[embedding_key], predictions=self.prediction_distribution(point_predictions[embedding_key]))
         units = self.make_lstm_units(len(sequence) - 1, point_reductions, point_colours, point_predictions)
         softmax_name = self.latex_name(len(sequence) - 1, "softmax")
-        softmax = LabelDistribution(softmax_name, result.distribution, self.sort_key, parameters.OUTPUT_WIDTH, lambda output: self.rgb(self.output_colour(output)))
+        softmax = LabelDistribution(softmax_name, result.distribution, self.sort_key, parameters.OUTPUT_TOP_K, lambda output: self.rgb(self.output_colour(output)))
         return Timestep(embedding, units, softmax, len(sequence) - 1, last_word, result.prediction)
 
     def weight_detail(self, sequence, part, layer):
@@ -402,7 +389,7 @@ class NeuralNetwork:
         if prediction is None:
             return None
 
-        return LabelDistribution(None, prediction, self.sort_key, colour_fn=lambda output: self.rgb(self.output_colour(output)))
+        return LabelDistribution(None, prediction, self.sort_key, parameters.PSE_TOP_K, colour_fn=lambda output: self.rgb(self.output_colour(output)))
 
     def make_lstm_units(self, timestep, point_reductions, point_colours, point_predictions):
         units = {}

@@ -39,7 +39,8 @@ def main(argv):
     ap.add_argument("--out", default=False, action="store_true", help="use the 'out' ablation")
     ap.add_argument("-b", "--batch", default=32, type=int)
     ap.add_argument("-a", "--arc-epochs", default=5, type=int)
-    ap.add_argument("-c", "--consecutive-decays", default=5, type=int)
+    ap.add_argument("-i", "--initial-decays", default=5, type=int)
+    ap.add_argument("-c", "--convergence-decays", default=2, type=int)
     ap.add_argument("data_dir")
     ap.add_argument("sequential_dir")
     aargs = ap.parse_args(argv)
@@ -47,22 +48,23 @@ def main(argv):
     logging.debug(aargs)
     hyper_parameters = sequential.HyperParameters(aargs.layers, aargs.width, aargs.embedding_width)
     ablations = sequential.Ablations(aargs.srnn, aargs.out)
-    rnn = generate_rnn(aargs.data_dir, hyper_parameters, ablations, aargs.batch, aargs.arc_epochs, aargs.consecutive_decays, aargs.sequential_dir)
+    rnn = generate_rnn(aargs.data_dir, hyper_parameters, ablations, aargs.batch, aargs.arc_epochs, aargs.initial_decays, aargs.convergence_decays, aargs.sequential_dir)
     return 0
 
 
-def generate_rnn(data_dir, hyper_parameters, ablations, batch, arc_epochs, consecutive_decays, sequential_dir):
+def generate_rnn(data_dir, hyper_parameters, ablations, batch, arc_epochs, initial_decays, convergence_decays, sequential_dir):
     rnn = sequential.model_for(data_dir, hyper_parameters=hyper_parameters, ablations=ablations)
     train_xys = [xy for xy in data.stream_train(data_dir)]
     validation_xys = [xy for xy in data.stream_validation(data_dir)]
     test_xys = [xy for xy in data.stream_test(data_dir)]
     logging.debug("data sets (train, validation, test): %d, %d, %d" % (len(train_xys), len(validation_xys), len(test_xys)))
-    converging_train(rnn, batch, arc_epochs, consecutive_decays, sequential_dir, train_xys, validation_xys, test_xys)
+    converging_train(rnn, batch, arc_epochs, initial_decays, convergence_decays, sequential_dir, train_xys, validation_xys, test_xys)
     del train_xys
     return rnn
 
 
-def converging_train(rnn, batch, arc_epochs, consecutive_decays, sequential_dir, train_xys, validation_xys, test_xys):
+def converging_train(rnn, batch, arc_epochs, initial_decays, convergence_decays, sequential_dir, train_xys, validation_xys, test_xys):
+    assert initial_decays > convergence_decays, "%d <= %d" % (initial_decays, convergence_decays)
     best_score_train = rnn.test(train_xys)
     best_score_validation = rnn.test(validation_xys)
     score_test = rnn.test(test_xys)
@@ -77,6 +79,7 @@ def converging_train(rnn, batch, arc_epochs, consecutive_decays, sequential_dir,
     arc = -1
     version = 0
     sequential.save_model(rnn, sequential_dir, version)
+    initialized = False
     converged = False
     decays = 0
 
@@ -93,6 +96,7 @@ def converging_train(rnn, batch, arc_epochs, consecutive_decays, sequential_dir,
         if score_train > best_score_train or score_validation > best_score_validation:
             previous_loss = loss
             version += 1
+            initialized = True
             sequential.save_parameters(rnn, sequential_dir, version)
 
             # At least one improved.
@@ -111,13 +115,15 @@ def converging_train(rnn, batch, arc_epochs, consecutive_decays, sequential_dir,
             sequential.load_parameters(rnn, sequential_dir)
 
         if not both_improved:
-            if decays > consecutive_decays:
+            if decays >= convergence_decays if initialized else decays >= initial_decays:
                 converged = True
-
-            logging.debug("decaying..")
-            training_parameters = training_parameters.decay()
-            decays += 1
+                logging.debug("Converged" + ("" if initialized else " without initialization!"))
+            else:
+                decays += 1
+                logging.debug("Decaying.. %d", decays)
+                training_parameters = training_parameters.decay(initial=initialized)
         else:
+            logging.debug("Reset decay")
             decays = 0
 
     # Load which ever version was marked as the latest as the final trained lstm.
