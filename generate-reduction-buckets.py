@@ -29,7 +29,7 @@ from pytils.log import setup_logging, teardown, user_log
 def main(argv):
     ap = ArgumentParser(prog="generate-reduction-buckets")
     ap.add_argument("-v", "--verbose", default=False, action="store_true", help="Turn on verbose logging.")
-    ap.add_argument("--grouping", help="Comma separated list of keys ('part-layer') to group on.")
+    ap.add_argument("--grouping", nargs="*", default=None)
     ap.add_argument("data_dir")
     ap.add_argument("sequential_dir")
     ap.add_argument("states_dir")
@@ -49,8 +49,7 @@ def main(argv):
             part_learned_mse[key] = learned_mse
             part_fixed_mse[key] = fixed_mse
     else:
-        grouping = aargs.grouping.split(",")
-        learned_mse, fixed_mse = generate_buckets_grouping(lstm, aargs.states_dir, grouping, aargs.buckets_dir, aargs.target)
+        learned_mse, fixed_mse = generate_buckets_grouping(lstm, aargs.states_dir, aargs.grouping, aargs.buckets_dir, aargs.target)
         part_learned_mse = learned_mse
         part_fixed_mse = fixed_mse
 
