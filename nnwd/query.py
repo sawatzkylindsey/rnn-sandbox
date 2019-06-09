@@ -110,7 +110,7 @@ class QueryDatabase:
         cursor.execute("""select sequences.sequence, activations.sequence_index, %s
             from sequences inner join activations on sequences.id = activations.sequence_id
             where activations.axis_%d >= ? and activations.axis_%d <= ?""" % (self._select_point, axis, axis), (lower_bound, upper_bound))
-        return cursor.fetchall()[0]
+        return cursor.fetchall()
 
     def select_activations(self, sequences):
         cursor = self.db.cursor()

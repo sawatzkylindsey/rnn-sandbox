@@ -21,6 +21,7 @@ import string
 import sys
 import threading
 import time
+import uuid
 
 from ml import base as mlbase
 from ml import model
@@ -630,13 +631,29 @@ class QueryEngine:
     def __init__(self, neural_network, query_dir):
         self.neural_network = neural_network
         self.query_dir = query_dir
-        # Very weird, but if you don't set the query_dbs in a sub-thread then sqllite complains.
-        thread = threading.Thread(target=self._setup)
+        self.requests = queue.Queue()
+        self.responses = {}
+        thread = threading.Thread(target=self._process_sql)
         thread.daemon = True
         thread.start()
 
-    def _setup(self):
-        self.query_dbs = query.get_databases(self.query_dir, self.neural_network.lstm)
+    def _process_sql(self):
+        # Sql requests need to be run in the same thread as where the handle is created - so we do this using IPC.
+        query_dbs = query.get_databases(self.query_dir, self.neural_network.lstm)
+        logging.debug("Started sql IPC.")
+
+        while True:
+            item = self.requests.get()
+
+            if item is not None:
+                request_id, request = item
+                key, axis_target, tolerance, matched_sequences = request
+
+                if matched_sequences is None:
+                    axis, target = axis_target
+                    self.responses[request_id] = query_dbs[key].select_activations_range(axis, target - tolerance, target + tolerance)
+                else:
+                    self.responses[request_id] = query_dbs[key].select_activations(matched_sequences)
 
     def find_estimate(self, tolerance, predicates):
         matches = self.find_matches(tolerance, True, predicates)
@@ -772,11 +789,17 @@ class QueryEngine:
         return results
 
     def _candidates(self, key, axis_target, tolerance, matched_sequences):
-        if matched_sequences is None:
-            axis, target = axis_target
-            return self.query_dbs[key].select_activations_range(axis, target - tolerance, target + tolerance)
-        else:
-            return self.query_dbs[key].select_activations(matched_sequences)
+        # IPC to ensure sql stays in the thread it was created it.
+        request = (key, axis_target, tolerance, matched_sequences)
+        request_id = uuid.uuid4()
+        self.requests.put((request_id, request))
+
+        while request_id not in self.responses:
+            time.sleep(1)
+
+        response = self.responses[request_id]
+        del self.responses[request_id]
+        return response
 
     def _measure(self, candidate, target, tolerance):
         check.check_lte(check.check_gte(tolerance, 0), 1)
