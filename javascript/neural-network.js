@@ -931,11 +931,11 @@ function drawStateWidget(timestep, geometry, name, min, max, vector, colour, pre
 
                         var predicate_unit = predicate[active_unit];
 
-                        if (!(d.position in predicate_unit)) {
-                            predicate_unit[d.position] = d.value.toFixed(6);
+                        if (!(d.actual_position in predicate_unit)) {
+                            predicate_unit[d.actual_position] = d.value.toFixed(6);
                             d3.select(this).attr("stroke", dark_blue);
                         } else {
-                            delete predicate_unit[d.position];
+                            delete predicate_unit[d.actual_position];
                             d3.select(this).attr("stroke", light_grey);
                         }
 

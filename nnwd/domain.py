@@ -396,19 +396,20 @@ class NeuralNetwork:
         name_no_t = self.latex_name_no_t(part, layer)
         hidden_state = HiddenState(name, name_no_t, reduction[key], min_max, colour[key], self.prediction_distribution(prediction[key]))
         back_links = {}
-        reorganized_point = [[] for i in range(len(point))]
+        repositioned_point = [[] for i in range(len(point))]
+        positioning = {}
         i = 0
 
         for bucket, dimensions in self.bucket_mappings[key].items():
             for dimension in dimensions:
                 assert i not in back_links, "%d already in %s" % (i, back_links)
                 back_links[i] = bucket
-                reorganized_point[i] = point[dimension]
+                repositioned_point[i] = point[dimension]
+                positioning[i] = dimension
                 i += 1
 
         # This is the full point.
-        full_hidden_state = HiddenState(name, name_no_t, reorganized_point, min_max, None, None)
-
+        full_hidden_state = HiddenState(name, name_no_t, repositioned_point, min_max, None, None, positioning)
         return WeightDetail(hidden_state, full_hidden_state, back_links)
 
     def soft_filter(self, sequence):
