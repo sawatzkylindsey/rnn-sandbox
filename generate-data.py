@@ -60,55 +60,6 @@ def main(argv):
     return 0
 
 
-POS_MAP = {
-    "CC": "CC",
-    "CD": "CD",
-    "DT": "DT",
-    "EX": "EX",
-    "FW": "FW",
-    "IN": "IN",
-    "JJ": "JJ",
-    "JJR": "JJR",
-    "JJS": "JJS",
-    "LS": "LS",
-    "MD": "MD",
-    "NN": "NN",
-    "NNS": "NNS",
-    "NNP": "NNP",
-    "NNPS": "NNPS",
-    "PDT": "PDT",
-    "POS": "POS",
-    "PRP": "PRP",
-    "PRP$": "PRP$",
-    "RB": "RB",
-    "RBR": "RBR",
-    "RBS": "RBS",
-    "RP": "RP",
-    "SYM": "SYM",
-    "TO": "TO",
-    "UH": "UH",
-    "VB": "VB",
-    "VBD": "VBD",
-    "VBG": "VBG",
-    "VBN": "VBN",
-    "VBP": "VBP",
-    "VBZ": "VBZ",
-    "WDT": "WDT",
-    "WP": "WP",
-    "WP$": "WP$",
-    "WRB": "WRB",
-    ".": "PUNCT",
-    ",": "PUNCT",
-    "``": "PUNCT",
-    "''": "PUNCT",
-    ":": "PUNCT",
-    ";": "PUNCT",
-    "(": "PUNCT",
-    ")": "PUNCT",
-    "$": "PUNCT",
-    "!": "PUNCT",
-    "?": "PUNCT",
-}
 BAD_TAGS = {}
 
 
@@ -130,9 +81,9 @@ def stream_input_text(input_files, form):
                             for item in tagged:
                                 word, tag = item
 
-                                if tag in POS_MAP:
+                                if tag in lm.POS_MAP:
                                     word = word if tag != "CD" else nlp.NUMBER
-                                    pos = POS_MAP[tag]
+                                    pos = lm.POS_MAP[tag]
                                     sequence += [(word, pos)]
                                 elif tag not in BAD_TAGS:
                                     BAD_TAGS[tag] = None
@@ -150,9 +101,9 @@ def stream_input_text(input_files, form):
                             if len(pair) == 2:
                                 tag = pair[0]
 
-                                if tag in POS_MAP:
+                                if tag in lm.POS_MAP:
                                     word = pair[1].lower() if tag != "CD" else nlp.NUMBER
-                                    pos = POS_MAP[tag]
+                                    pos = lm.POS_MAP[tag]
                                     sequence += [(word, pos)]
                                 elif tag not in BAD_TAGS:
                                     BAD_TAGS[tag] = None
