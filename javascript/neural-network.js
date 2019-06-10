@@ -1626,6 +1626,12 @@ function drawView(view_name, view_class, viewCallback) {
         closeSequence(false);
         closeDetail();
         drawWeightsFromSequence(0);
+        for (var timestep = 0; timestep < main_sequence.length; timestep++) {
+            drawAutocomplete(timestep);
+            var autocomplete = $("#autocomplete-" + timestep);
+            autocomplete.find("input").val(main_sequence[timestep]);
+        }
+        drawAutocomplete(timestep);
         $("#main_input").prop("disabled", false);
     });
     viewCallback()
