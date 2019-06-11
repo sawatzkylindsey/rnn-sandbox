@@ -20,9 +20,12 @@ if ((state_height / MEMORY_CHIP_HEIGHT) != (state_width / MEMORY_CHIP_WIDTH)) {
 }
 var operand_height = (state_height * 2.0 / 5.0);
 var operator_height = (state_height - (operand_height * 2));
-var black = "#3f3f3f";
-var dark_grey = "#7e7e7e";
-var light_grey = "#bdbdbd";
+// http://colorbrewer2.org/#type=sequential&scheme=Greys&n=5
+var white_grey = "#f7f7f7";
+var light_grey = "#cccccc";
+var middle_grey = "#969696";
+var dark_grey = "#636363";
+var black = "#252525";
 var dark_red = "#e60000";
 var light_red = "#ff1919";
 var dark_blue = "#0000e6";
@@ -595,7 +598,7 @@ function drawTimestep(fake_timestep, data) {
     $(".timestep-" + data.timestep).remove();
 
     if (data.timestep == 0) {
-        drawSubTitle("Component View", "timestep-0 component");
+        drawSubTitle("Architecture View", "timestep-0 component");
     }
 
     /*for (var t = 0; t < main_sequence.length - 1; t++) {
@@ -628,7 +631,7 @@ function drawTimestep(fake_timestep, data) {
                 .attr("x2", x_offset + x - 0.05)
                 .attr("y2", y_offset + layer_height)
                 .attr("stroke-dasharray", "5,5")
-                .attr("stroke", "blue")
+                .attr("stroke", dark_blue)
                 .attr("stroke-width", 0.1);
         }
         for (var y = 0; y <= layer_height; y += (state_height / 2.0)) {
@@ -639,7 +642,7 @@ function drawTimestep(fake_timestep, data) {
                 .attr("x2", x_offset + total_width)
                 .attr("y2", y_offset + y - 0.05)
                 .attr("stroke-dasharray", "5,5")
-                .attr("stroke", "blue")
+                .attr("stroke", dark_blue)
                 .attr("stroke-width", 0.1);
         }
     }
@@ -795,7 +798,7 @@ function drawStateWidget(timestep, geometry, name, min, max, vector, colour, pre
                     }
 
                     $(".notation-" + componentName).parent()
-                        .css("border-color", "black");
+                        .css("border-color", black);
                 }
             })
             .on("mouseout", function(d) {
@@ -815,7 +818,7 @@ function drawStateWidget(timestep, geometry, name, min, max, vector, colour, pre
     }
 
     // Boundary box
-    svg.append("rect")
+    /*svg.append("rect")
         .attr("class", classes)
         .attr("x", geometry.x + (stroke_width / 2.0))
         .attr("y", geometry.y + (stroke_width / 2.0))
@@ -823,7 +826,7 @@ function drawStateWidget(timestep, geometry, name, min, max, vector, colour, pre
         .attr("height", geometry.height - stroke_width)
         .attr("stroke", light_grey)
         .attr("stroke-width", stroke_width)
-        .attr("fill", "none");
+        .attr("fill", "none");*/
     // Chip's colour & magnitude.
     svg.selectAll(".chip")
         .data(vector)
@@ -856,7 +859,7 @@ function drawStateWidget(timestep, geometry, name, min, max, vector, colour, pre
                 }
             })
             .attr("stroke", "none")
-            .attr("fill", dark_grey);
+            .attr("fill", light_grey);
     var active_unit = input_part + "," + input_layer;
     // Chip's scaling box.
     svg.selectAll(".chip")
@@ -882,7 +885,7 @@ function drawStateWidget(timestep, geometry, name, min, max, vector, colour, pre
                     return (macro_y.bandwidth() / 2) - 1;
                 }
             })
-            .attr("stroke", light_grey)
+            .attr("stroke", middle_grey)
             .attr("stroke-width", stroke_width)
             .attr("fill", "transparent")
             .style("pointer-events", "bounding-box")
@@ -948,7 +951,7 @@ function drawStateWidget(timestep, geometry, name, min, max, vector, colour, pre
                     }
                 }
             });
-    // Chip's direction line.
+    // Chip's direction/zero line.
     svg.selectAll(".chip")
         .data(vector)
         .enter()
@@ -996,7 +999,7 @@ function drawStateWidget(timestep, geometry, name, min, max, vector, colour, pre
 
                 return black;
             })
-            .attr("stroke-width", stroke_width);
+            .attr("stroke-width", stroke_width + 0.5);
 }
 
 function drawStateCell(geometry, min, max, vector, classes, chip_width, chip_height) {
@@ -1051,7 +1054,7 @@ function drawStateCell(geometry, min, max, vector, classes, chip_width, chip_hei
     var margin = (geometry.width / 6);
 
     // Boundary box
-    svg.append("rect")
+    /*svg.append("rect")
         .attr("class", classes)
         .attr("x", geometry.x + (stroke_width / 2.0))
         .attr("y", geometry.y + (stroke_width / 2.0))
@@ -1059,7 +1062,7 @@ function drawStateCell(geometry, min, max, vector, classes, chip_width, chip_hei
         .attr("height", geometry.height - stroke_width)
         .attr("stroke", light_grey)
         .attr("stroke-width", stroke_width)
-        .attr("fill", "none");
+        .attr("fill", "none");*/
     // Chip's colour & magnitude.
     svg.selectAll(".chip")
         .data(vector)
@@ -1080,7 +1083,7 @@ function drawStateCell(geometry, min, max, vector, classes, chip_width, chip_hei
             .attr("width", function (d) { return magnitude(1 + Math.abs(d.value)); })
             .attr("height", function (d) { return macro_y.bandwidth(); })
             .attr("stroke", "none")
-            .attr("fill", dark_grey);
+            .attr("fill", light_grey);
     // Chip's scaling box.
     svg.selectAll(".chip")
         .data(vector)
@@ -1091,11 +1094,11 @@ function drawStateCell(geometry, min, max, vector, classes, chip_width, chip_hei
             .attr("y", function (d) { return y(d.position); })
             .attr("width", macro_x.bandwidth())
             .attr("height", function (d) { return macro_y.bandwidth(); })
-            .attr("stroke", light_grey)
+            .attr("stroke", middle_grey)
             .attr("stroke-width", stroke_width)
             .attr("fill", "transparent")
             .style("pointer-events", "bounding-box");
-    // Chip's direction line.
+    // Chip's direction/zero line.
     svg.selectAll(".chip")
         .data(vector)
         .enter()
@@ -1128,7 +1131,7 @@ function drawStateCell(geometry, min, max, vector, classes, chip_width, chip_hei
 
                 return black;
             })
-            .attr("stroke-width", stroke_width);
+            .attr("stroke-width", stroke_width + 0.5);
 }
 
 function drawSoftmax(data, part) {
@@ -1176,7 +1179,7 @@ function drawPredictionWidget(timestep, geometry, name, min, max, predictions, c
                     d3.select(this)
                         .style("opacity", 1.0);
                     $(".notation-" + nameOf(name)).parent()
-                        .css("border-color", "black");
+                        .css("border-color", black);
                 }
             })
             .on("mouseout", function(d) {
@@ -1274,7 +1277,8 @@ function drawPredictionWidget(timestep, geometry, name, min, max, predictions, c
             .attr("y", function (d) {
                 return y(d.position) + (y.step() / 2) + (subtle ? 3 : 4);
             })
-            .style("font-size", subtle ? "9px" : "12px")
+            .attr("font-family", "sans-serif")
+            .style("font-size", subtle ? "9px" : "11px")
             .style("opacity", baseOpacity)
             .text(function (d) { return d.label; });
 }
@@ -1318,7 +1322,7 @@ function drawHline(timestep, x1, y1, x2, y2, x_midpoint) {
                 .attr("r", 2)
                 .attr("cx", line_data[i]["x"])
                 .attr("cy", line_data[i]["y"])
-                .style("fill", "blue");
+                .style("fill", dark_blue);
         }
     }
 
@@ -1378,7 +1382,7 @@ function drawVline(timestep, x1, y1, x2, y2, y_midpoint) {
                 .attr("r", 2)
                 .attr("cx", line_data[i]["x"])
                 .attr("cy", line_data[i]["y"])
-                .style("fill", "blue");
+                .style("fill", dark_blue);
         }
     }
 
@@ -1504,7 +1508,7 @@ function drawGate(timestep, x_offset, y_offset, size) {
         .attr("height", size-size/8)
         .attr("stroke", black)
         .attr("stroke-width", stroke_width)
-        .attr("fill", "#FFF");
+        .attr("fill", black);
 
     //left circle
     svg.append("circle")
@@ -1514,7 +1518,7 @@ function drawGate(timestep, x_offset, y_offset, size) {
         .attr("r", size/16)
         .attr("stroke", black)
         .attr("stroke-width", stroke_width)
-        .attr("fill", "#FFF");
+        .attr("fill", black);
 
     //right vertical bar
     svg.append("rect")
@@ -1525,7 +1529,7 @@ function drawGate(timestep, x_offset, y_offset, size) {
         .attr("height", size-size/8)
         .attr("stroke", black)
         .attr("stroke-width", stroke_width)
-        .attr("fill", "#FFF");
+        .attr("fill", black);
 
     //right circle
     svg.append("circle")
@@ -1535,7 +1539,7 @@ function drawGate(timestep, x_offset, y_offset, size) {
         .attr("r", size/16)
         .attr("stroke", black)
         .attr("stroke-width", stroke_width)
-        .attr("fill", "#FFF"); 
+        .attr("fill", black);
 
     //left door
     svg.append("line")
@@ -1670,7 +1674,7 @@ function drawDetail() {
             .attr("y1", detail_margin)
             .attr("x2", (total_width / 2) - 0.5)
             .attr("y2", total_height - detail_margin)
-            .attr("stroke", "blue")
+            .attr("stroke", dark_blue)
             .attr("stroke-width", 1);
         svg.append("line")
             .attr("class", "detail")
@@ -1678,7 +1682,7 @@ function drawDetail() {
             .attr("y1", detail_margin)
             .attr("x2", (total_width / 4) + (detail_margin / 2) - 0.5)
             .attr("y2", total_height - detail_margin)
-            .attr("stroke", "blue")
+            .attr("stroke", dark_blue)
             .attr("stroke-width", 1);
         svg.append("line")
             .attr("class", "detail")
@@ -1686,7 +1690,7 @@ function drawDetail() {
             .attr("y1", (total_height / 2) - 0.5)
             .attr("x2", total_width - detail_margin)
             .attr("y2", (total_height / 2) - 0.5)
-            .attr("stroke", "blue")
+            .attr("stroke", dark_blue)
             .attr("stroke-width", 1);
     }
 
@@ -1865,7 +1869,7 @@ function drawInsetPart(x_offset, y_offset, width, height, part, layer, data, pla
                 //}
 
                 $(".notation-" + componentNameX).parent()
-                    .css("border-color", "black");
+                    .css("border-color", black);
             }
         })
         .on("mouseout", function(d) {
@@ -1911,7 +1915,7 @@ function drawInsetPart(x_offset, y_offset, width, height, part, layer, data, pla
 
             if (active_components[componentName]) {
                 $(".notation-" + componentName).parent()
-                    .css("border-color", "black");
+                    .css("border-color", black);
             }
         })
         .on("mouseout", function(d) {
@@ -2341,7 +2345,7 @@ function drawSequenceWheel(main, sequence, timestep) {
             .attr("y", y_offset)
             .attr("width", width)
             .attr("height", height)
-            .attr("stroke", "blue")
+            .attr("stroke", dark_blue)
             .attr("stroke-width", 1)
             .style("fill", "none");
     }
@@ -2390,7 +2394,7 @@ function drawSequenceWheel(main, sequence, timestep) {
         .attr("y", y_offset)
         .attr("width", center_item_width + 5)
         .attr("height", height)
-        .attr("stroke", "black")
+        .attr("stroke", black)
         .attr("stroke-width", 3)
         .style("fill", "none");
     var space_width = textWidth("&nbsp;&nbsp;", 14) + 2;
@@ -2706,7 +2710,7 @@ function drawInputModal(callback, edit_sequence) {
         .attr("height", height)
         .attr("stroke", black)
         .attr("stroke-width", 2)
-        .attr("fill", "white");
+        .attr("fill", white_grey);
     drawClose(x_offset, y_offset, (state_width / 4), "modal", function () {
         $(".modal").remove();
     });
