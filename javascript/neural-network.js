@@ -1,4 +1,5 @@
 
+var nozoom = true;
 var MEMORY_CHIP_HEIGHT = 4;
 var MEMORY_CHIP_WIDTH = 2;
 var DETAIL_CHIP_WIDTH = 5;
@@ -745,6 +746,7 @@ function drawStateWidget(timestep, geometry, name, min, max, vector, colour, pre
         .range([0, macro_x.bandwidth()]);
 
     var margin = (geometry.width / 6);
+    var label_id = "labelid-" + Math.random().toString(36).substring(5);
 
     if (predictions != null) {
         var micro_width = geometry.width / 1.8;
@@ -755,7 +757,7 @@ function drawStateWidget(timestep, geometry, name, min, max, vector, colour, pre
             width: micro_width,
             height: micro_height,
         };
-        drawPredictionWidget(timestep, predictionGeometry, null, predictions.minimum, predictions.maximum, predictions.vector, classes, subtle_passthrough, name == null ? null : nameOf(name));
+        drawPredictionWidget(timestep, predictionGeometry, null, predictions.minimum, predictions.maximum, predictions.vector, classes, subtle_passthrough, name == null ? null : nameOf(name), label_id);
         micro_height = geometry.height / 1.5;
         // Draw colour prediction.
         svg.append("rect")
@@ -770,7 +772,7 @@ function drawStateWidget(timestep, geometry, name, min, max, vector, colour, pre
             .style("opacity", 1.0);
     }
 
-    if (timestep != null) {
+    if (timestep != null && !nozoom) {
         drawOpen(geometry.x + geometry.width + (margin * 2) - 0.5, geometry.y , margin - 0.5, classes, function () {
             main_timestep = timestep;
             input_part = part;
@@ -779,9 +781,11 @@ function drawStateWidget(timestep, geometry, name, min, max, vector, colour, pre
         });
     }
 
+
     // Name
     if (name != null) {
         svg.append("image")
+            .attr("id", label_id)
             .attr("class", classes)
             .attr("xlink:href", "latex/" + name + ".png")
             .attr("x", geometry.x + (geometry.width / 2) - 6)
@@ -1138,11 +1142,11 @@ function drawSoftmax(data, part) {
     var geometry = getGeometry(data.timestep, part, 1);
     var labelWeightVector = data[part];
     var classes = "timestep-" + data.timestep + " component";
-    drawPredictionWidget(data.timestep, geometry, labelWeightVector.name, labelWeightVector.minimum, labelWeightVector.maximum, labelWeightVector.vector, classes, false, null);
+    drawPredictionWidget(data.timestep, geometry, labelWeightVector.name, labelWeightVector.minimum, labelWeightVector.maximum, labelWeightVector.vector, classes, false, null, null);
 }
 
 var transparent_ids = {};
-function drawPredictionWidget(timestep, geometry, name, min, max, predictions, classes, subtle, backComponentName) {
+function drawPredictionWidget(timestep, geometry, name, min, max, predictions, classes, subtle, backComponentName, backLabelId) {
     var found_min = d3.min(predictions, function(d) { return d.value; });
     if (found_min < min) {
         throw "found value " + found_min + " exceeding min " + min;
@@ -1260,8 +1264,12 @@ function drawPredictionWidget(timestep, geometry, name, min, max, predictions, c
                     if (transparent_ids[id_class]) {
                         d3.selectAll("." + id_class)
                             .style("opacity", baseOpacity);
+                        d3.select("#" + backLabelId)
+                            .style("opacity", notationOff);
                     } else {
                         d3.selectAll("." + id_class)
+                            .style("opacity", 1.0);
+                        d3.select("#" + backLabelId)
                             .style("opacity", 1.0);
                     }
                 }
@@ -2236,9 +2244,9 @@ function drawWeightDetail(data, placement) {
         variance_maximum = new_variance_maximum;
 
         if (placement == "top") {
-            loadDetail("bottom");
+            loadDetail(false);
         } else if (placement == "bottom") {
-            loadDetail("top");
+            loadDetail(true);
         }
     }
 
