@@ -653,7 +653,7 @@ class NeuralNetwork:
             return "w^%d" % u
 
 
-class QueryEngine:
+class ActivationQuery:
     def __init__(self, neural_network, query_dir):
         self.neural_network = neural_network
         self.query_dir = query_dir
@@ -749,20 +749,20 @@ class QueryEngine:
 
                 if matched_sequences is None:
                     matched_sequences = found
-                    logging.debug("matched_sequences: %d" % len(matched_sequences))
+                    logging.debug("initially matched sequences: %d" % len(matched_sequences))
                 else:
                     matched_sequences.intersection_update(found)
-                    logging.debug("matched_sequences: %d" % len(matched_sequences))
+                    logging.debug("subsequently matched sequences: %d" % len(matched_sequences))
 
-        logging.debug("matched_activation sequences: %s" % str([key for key in matched_activations.keys()]))
-        logging.debug("matched_activation level_keys: %s" % str([subd.keys() for subd in matched_activations.values()]))
+        #logging.debug("matched_activation sequences: %s" % str([key for key in matched_activations.keys()]))
+        #logging.debug("matched_activation level_keys: %s" % str([subd.keys() for subd in matched_activations.values()]))
         matches = []
 
         for sequence, level_key_instances in matched_activations.items():
             results = self.find_match_points(required_level_keys, level_key_instances, 0, None, first_only)
 
-            if len(results) > 0:
-                logging.debug("matched sequence %d times: %s" % (len(results), " ".join(sequence)))
+            #if len(results) > 0:
+            #    logging.debug("matched sequence %d times: %s" % (len(results), " ".join(sequence)))
 
             for result in results:
                 matches += [(sequence, result)]

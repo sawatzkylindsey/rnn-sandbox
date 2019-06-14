@@ -97,7 +97,7 @@ class ServerHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
 
-def run_server(port, words, neural_network, query_engine):
+def run_server(port, words, neural_network, activation_query):
     class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
         pass
 
@@ -110,8 +110,8 @@ def run_server(port, words, neural_network, query_engine):
         "weights": handlers.Weights(neural_network),
         "weight-detail": handlers.WeightDetail(neural_network),
         "words": handlers.Words(words.labels()),
-        "sequence-matches": handlers.SequenceMatches(query_engine),
-        "sequence-matches-estimate": handlers.SequenceMatchesEstimate(query_engine),
+        "sequence-matches": handlers.SequenceMatches(activation_query),
+        "sequence-matches-estimate": handlers.SequenceMatchesEstimate(activation_query),
         "soft-filters": handlers.SoftFilters(neural_network),
     }
     user_log.info('Starting httpd %d...' % port)
@@ -136,12 +136,12 @@ def main(argv):
 
     words = data.get_words(aargs.data_dir)
     neural_network = domain.NeuralNetwork(aargs.data_dir, aargs.sequential_dir, aargs.buckets_dir, aargs.encoding_dir, aargs.use_fixed_buckets)
-    query_engine = None
+    activation_query = None
 
     if aargs.query_dir is not None:
-        query_engine = domain.QueryEngine(neural_network, aargs.query_dir)
+        activation_query = domain.ActivationQuery(neural_network, aargs.query_dir)
 
-    run_server(aargs.port, words, neural_network, query_engine)
+    run_server(aargs.port, words, neural_network, activation_query)
 
     try:
         neural_network._background_setup.join()
