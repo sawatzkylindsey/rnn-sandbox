@@ -26,6 +26,8 @@ from nnwd import domain
 from nnwd import errorhandler
 from nnwd import errors
 from nnwd import handlers
+from nnwd import rnn
+
 from pytils.log import setup_logging, teardown, user_log
 
 
@@ -97,7 +99,7 @@ class ServerHandler(BaseHTTPRequestHandler):
         self.end_headers()
 
 
-def run_server(port, words, neural_network, activation_query):
+def run_server(port, words, neural_network, query_engine, pattern_engine):
     class ThreadingHTTPServer(ThreadingMixIn, HTTPServer):
         pass
 
@@ -110,9 +112,10 @@ def run_server(port, words, neural_network, activation_query):
         "weights": handlers.Weights(neural_network),
         "weight-detail": handlers.WeightDetail(neural_network),
         "words": handlers.Words(words.labels()),
-        "sequence-matches": handlers.SequenceMatches(activation_query),
-        "sequence-matches-estimate": handlers.SequenceMatchesEstimate(activation_query),
+        "sequence-matches": handlers.SequenceMatches(query_engine),
+        "sequence-matches-estimate": handlers.SequenceMatchesEstimate(query_engine),
         "soft-filters": handlers.SoftFilters(neural_network),
+        "pattern-matches": handlers.PatternMatches(pattern_engine),
     }
     user_log.info('Starting httpd %d...' % port)
     httpd.serve_forever()
@@ -136,12 +139,24 @@ def main(argv):
 
     words = data.get_words(aargs.data_dir)
     neural_network = domain.NeuralNetwork(aargs.data_dir, aargs.sequential_dir, aargs.buckets_dir, aargs.encoding_dir, aargs.use_fixed_buckets)
-    activation_query = None
+
+    # Quick test for seeing which mechanism is fastest for hitting the lstm.
+    #logging.info("start")
+    #for i in range(3):
+    #    for test_sequence in data.stream_test(aargs.data_dir):
+    #        for j in range(len(test_sequence.x)):
+    #            neural_network.query_lstm([item[0] for item in test_sequence.x[:j + 1]], rnn.LSTM_INSTRUMENTS, False)
+    #logging.info("stop")
+    #sys.exit(1)
+
+    query_engine = None
+    pattern_engine = None
 
     if aargs.query_dir is not None:
-        activation_query = domain.ActivationQuery(neural_network, aargs.query_dir)
+        query_engine = domain.QueryEngine(neural_network, aargs.query_dir)
+        pattern_engine = domain.PatternEngine(neural_network)
 
-    run_server(aargs.port, words, neural_network, activation_query)
+    run_server(aargs.port, words, neural_network, query_engine, pattern_engine)
 
     try:
         neural_network._background_setup.join()

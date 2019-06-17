@@ -1,5 +1,6 @@
 
 import logging
+import pdb
 
 from pytils import check
 
@@ -178,12 +179,6 @@ class SoftFilters:
                     for layer in range(layers):
                         self.matrix_units[row][column][layer] = timestep_units[row][column][layer]
 
-    def as_json(self):
-        return {
-            "words": self.words,
-            "matrix_units": [[[None if layer is None else layer.as_json() for layer in column]for column in row] for row in self.matrix_units],
-        }
-
 
 def canonicalize_bounds(min_max, vector):
     if min_max[0] is None:
@@ -212,3 +207,54 @@ def canonicalize_bounds(min_max, vector):
 
     assert minimum < maximum, "the minimum (%s) must be less than the maximum (%s)" % (minimum, maximum)
     return minimum, maximum
+
+
+class Predicates:
+    def __init__(self, predicates=None, predicate_strs=None):
+        assert predicates is not None or predicate_strs is not None
+
+        if predicates is not None:
+            assert predicate_strs is None
+            self.predicates = predicates
+            mirror = Predicates(predicate_strs=self.as_strs())
+            assert self == mirror, "%s != %s" % (str(self), str(mirror))
+
+        if predicate_strs is not None:
+            assert predicates is None
+
+            def typify(feature):
+                axis, value = feature.split(":")
+                return int(axis), float(value)
+
+            self.predicates = []
+
+            for predicate_str in predicate_strs:
+                constraints = {}
+
+                for key_features in predicate_str.split(";"):
+                    key, features = key_features.split("|")
+                    constraints[key] = [typify(feature) for feature in features.split(",")]
+
+                self.predicates += [constraints]
+
+    def as_strs(self):
+        return [";".join(["%s|%s" % (key, ",".join(["%s:%s" % (axis, value) for axis, value in item])) for key, item in predicate.items()]) for predicate in self.predicates]
+
+    def as_json(self):
+        return {
+            "predicates": self.predicates,
+            "shortcut": "&predicate=".join(self.as_strs()),
+        }
+
+    def levels(self):
+        return [(level, predicate) for level, predicate in enumerate(self.predicates)]
+
+    def __eq__(self, other):
+        if other is None:
+            return False
+
+        return self.predicates == other.predicates
+
+    def __repr__(self):
+        return "Predicates{levels=%d, keys=%d}" % (len(self.predicates), sum([len(predicate) for predicate in self.predicates]))
+

@@ -1,5 +1,5 @@
 
-var nozoom = true;
+var allow_zoom = true;
 var MEMORY_CHIP_HEIGHT = 4;
 var MEMORY_CHIP_WIDTH = 2;
 var DETAIL_CHIP_WIDTH = 5;
@@ -278,7 +278,7 @@ function queryBuilderControls() {
                             params += "&" + hash_parts[index];
                         }
                     }
-                    d3.json("sequence-matches?" + query.map(p => "predicate=" + predicateString(p)).join("&") + params)
+                    d3.json("sequence-matches?" + query.map(p => "predicate=" + encodeURIComponent(predicateString(p))).join("&") + params)
                         .get(function (error, data) { drawSequences(data); });
                 });
             }
@@ -502,7 +502,7 @@ function updateSequenceMatchesEstimate() {
 
     d3.select("#sequence-match-expected").text("...");
     d3.select("#execute-box").attr("width", textWidth("execute", 14) + textWidth("...", 14) + 30)
-    var predicates_qp = query.map(p => "predicate=" + predicateString(p)).join("&");
+    var predicates_qp = query.map(p => "predicate=" + encodeURIComponent(predicateString(p))).join("&");
 
     if (predicates_qp.length > "predicate=".length * query.length) {
         var now = new Date();
@@ -772,7 +772,7 @@ function drawStateWidget(timestep, geometry, name, min, max, vector, colour, pre
             .style("opacity", 1.0);
     }
 
-    if (timestep != null && !nozoom) {
+    if (timestep != null && allow_zoom) {
         drawOpen(geometry.x + geometry.width + (margin * 2) - 0.5, geometry.y , margin - 0.5, classes, function () {
             main_timestep = timestep;
             input_part = part;
@@ -864,7 +864,7 @@ function drawStateWidget(timestep, geometry, name, min, max, vector, colour, pre
             })
             .attr("stroke", "none")
             .attr("fill", light_grey);
-    var active_unit = input_part + "," + input_layer;
+    var active_unit = input_part + "-" + input_layer;
     // Chip's scaling box.
     svg.selectAll(".chip")
         .data(vector)

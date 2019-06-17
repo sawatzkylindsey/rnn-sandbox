@@ -58,6 +58,7 @@ def create(data_dir, corpus_stream_fn):
     data.set_pos(data_dir, pos_tags)
     data.set_description(data_dir, data.Description(data.LM))
     logging.debug("total pairs (t, v, t): %d, %d, %d" % (sum([len(xy) for xy in train_xys]), sum([len(xy) for xy in validation_xys]), sum([len(xy) for xy in test_xys])))
+    logging.debug("unique words: %d" % len(words))
     return train_xys, validation_xys, test_xys
 
 

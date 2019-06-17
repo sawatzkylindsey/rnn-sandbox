@@ -30,7 +30,7 @@ from nnwd import data
 from nnwd import geometry
 from nnwd import latex
 from nnwd import lm
-from nnwd.models import Timestep, WeightExplain, WeightDetail, HiddenState, LabelDistribution, SequenceRollup, SequenceMatch, Estimate, SoftFilters
+from nnwd.models import Timestep, WeightExplain, WeightDetail, HiddenState, LabelDistribution, SequenceRollup, SequenceMatch, Estimate, SoftFilters, Predicates
 from nnwd import parameters
 from nnwd import pickler
 from nnwd import query
@@ -212,7 +212,7 @@ class NeuralNetwork:
 
         self.as_input = _as_input
 
-    #@functools.lru_cache()
+    @functools.lru_cache()
     def stepwise(self, sequence):
         if len(sequence) == 0:
             return rnn.Stepwise(self.lstm, "root", handle_unknown=True)
@@ -222,8 +222,10 @@ class NeuralNetwork:
     def query_lstm(self, sequence, instruments):
         word = sequence[-1]
         resolved_word = self.words.decode(self.words.encode(word, True))
-        result, instruments = self.lstm.evaluate_sequence(sequence, handle_unknown=True, instrument_names=instruments)
-        return resolved_word, result, instruments
+        stepwise_lstm = self.stepwise(tuple(sequence[:-1]))
+        assert stepwise_lstm.name == ",".join(["root"] + sequence[:-1]), "%s != %s" % (stepwise_lstm.name, ",".join(["root"] + sequence))
+        result, instrument_values = stepwise_lstm.query(word, instrument_names=instruments)
+        return resolved_word, result, instrument_values
 
     def _dummy(self):
         weights = []
@@ -386,11 +388,11 @@ class NeuralNetwork:
             return "rgb(%d, %d, %d)" % tuple([round(i) for i in fit])
 
     def weights(self, sequence):
-        last_word, result, instruments = self.query_lstm(sequence, rnn.LSTM_INSTRUMENTS)
+        last_word, result, instrument_values = self.query_lstm(sequence, rnn.LSTM_INSTRUMENTS)
         points = {}
 
         for part, layer in self.lstm.part_layers():
-            points[self.lstm.encode_key(part, layer)] = instruments[part][layer]
+            points[self.lstm.encode_key(part, layer)] = instrument_values[part][layer]
 
             if self.lstm.is_embedding(part, layer):
                 embedding_key = self.lstm.encode_key(part, layer)
@@ -405,8 +407,8 @@ class NeuralNetwork:
         return Timestep(embedding, units, softmax, len(sequence) - 1, last_word, result.prediction)
 
     def weight_detail(self, sequence, part, layer):
-        last_word, result, instruments = self.query_lstm(sequence, rnn.LSTM_INSTRUMENTS)
-        point = instruments[part][layer]
+        last_word, result, instrument_values = self.query_lstm(sequence, rnn.LSTM_INSTRUMENTS)
+        point = instrument_values[part][layer]
 
         if part.endswith("_gates"):
             min_max = (0, 1)
@@ -438,15 +440,15 @@ class NeuralNetwork:
         return WeightDetail(hidden_state, full_hidden_state, back_links)
 
     def soft_filter(self, sequence):
-        last_word, result, instruments = self.query_lstm(sequence, ["ws"])
+        last_word, result, instrument_values = self.query_lstm(sequence, ["ws"])
         part = "w"
         ws = []
 
-        for timestep in range(len(instruments["ws"])):
+        for timestep in range(len(instrument_values["ws"])):
             units = []
 
-            for layer in range(len(instruments["ws"][timestep])):
-                point = instruments["ws"][timestep][layer]
+            for layer in range(len(instrument_values["ws"][timestep])):
+                point = instrument_values["ws"][timestep][layer]
                 # TODO
                 point_reduction = reduction.reduce(self.bucket_mappings["cells-0"], point)
                 name = self.latex_name(timestep, part, layer)
@@ -653,7 +655,80 @@ class NeuralNetwork:
             return "w^%d" % u
 
 
-class ActivationQuery:
+class PatternEngine:
+    def __init__(self, neural_network):
+        self.neural_network = neural_network
+
+    def match(self, annotated_sequences, patterns):
+        # input
+        # annotated_sequences: list of sequences, where each sequence is a tuple of the word and monotonically increasing pattern index
+        #       [
+        #           ([1, 2], [ the, little, prince ]),
+        #           ...
+        #       ]
+        # patterns: list of pattern
+        #       [ [cell-0, forget-1], ... ]
+        #
+        # output
+        # predicates: list of dicts, keyed by rnn part keys to lists of (axis, value) features
+        #       [ {cell-0: [ (0, 0.5), (22, -0.02), ... ] }, ... ]
+        targets = [{key: [] for key in pattern} for pattern in patterns]
+        pattern_instruments = [set([self.neural_network.lstm.decode_key(key)[0] for key in pattern]) for pattern in patterns]
+
+        for annotated_sequence in annotated_sequences:
+            annotations, sequence = annotated_sequence
+            assert len(annotations) == len(patterns)
+
+            for index, annotation in enumerate(annotations):
+                last_word, result, instrument_values = self.neural_network.query_lstm(sequence[:annotation + 1], pattern_instruments[index])
+
+                for key in patterns[index]:
+                    part, layer = self.neural_network.lstm.decode_key(key)
+                    targets[index][key] += [instrument_values[part][layer]]
+
+        predicates = []
+
+        for index, dataset in enumerate(targets):
+            predicate = {}
+
+            for key, points in dataset.items():
+                features = self._intersecting_features(points)
+
+                if len(features) > 0:
+                    predicate[key] = features
+
+            predicates += [predicate]
+
+        return Predicates(predicates)
+
+    def _intersecting_features(self, dataset, tolerance=0.01):
+        features = []
+
+        for axis in range(len(dataset[0])):
+            minimum = None
+            maximum = None
+            match = True
+
+            for point in dataset:
+                if minimum is None or point[axis] < minimum:
+                    minimum = point[axis]
+
+                if maximum is None or point[axis] > maximum:
+                    maximum = point[axis]
+
+                if minimum is not None and maximum is not None:
+                    if maximum - minimum > tolerance:
+                        match = False
+                        break
+
+            if match:
+                value = minimum + ((maximum - minimum) / 2.0)
+                features += [(axis, value)]
+
+        return features
+
+
+class QueryEngine:
     def __init__(self, neural_network, query_dir):
         self.neural_network = neural_network
         self.query_dir = query_dir
@@ -690,12 +765,13 @@ class ActivationQuery:
         matches = self.find_matches(tolerance, False, predicates)
         rollups = {}
 
-        for sequence, results in matches:
+        for sequence, path in matches:
             matched_words = []
             elides = []
             last_index = None
 
-            for index, word, distance in results:
+            for index in path:
+                word = sequence[index]
                 matched_words += [word]
 
                 if last_index is None:
@@ -719,100 +795,81 @@ class ActivationQuery:
         return SequenceRollup([SequenceMatch(key[0], key[1], value) for key, value in sorted(rollups.items(), key=lambda item: item[1], reverse=True)])
 
     def find_matches(self, tolerance, first_only, predicates):
-        required_level_keys = []
-        matched_activations = {}
+        check.check_instance(predicates, Predicates)
+        # predicates: list of dicts, keyed by rnn part keys to lists of (axis, value) features
+        #             [ {(cell, 0): [ (0, 0.5), (22, -0.02), ... ] }, ... ]
+        matched_activations = None
         matched_sequences = None
 
-        for level, predicate in enumerate(predicates):
-            for part_layer, features in predicate.items():
-                key = self.neural_network.lstm.encode_key(*part_layer)
-                level_keys = (level, key)
-                required_level_keys += [level_keys]
-                found = set()
+        for level, predicate in predicates.levels():
+            matches = None
 
-                for sequence, index, *point in self._candidates(key, next(iter(features)), tolerance, matched_sequences):
+            for key, features in predicate.items():
+                found_sequences = set()
+                found_indices = {}
+                first_feature = next(iter(features))
+
+                for sequence, index, *point in self._candidates(key, first_feature, tolerance, matched_sequences):
                     point = tuple(point)
                     candidate_point = [point[axis] for axis, target in features]
                     target_point = [target for axis, target in features]
                     within, distance = self._measure(candidate_point, target_point, tolerance)
 
                     if within:
-                        found.add(sequence)
+                        found_sequences.add(sequence)
 
-                        if sequence not in matched_activations:
-                            matched_activations[sequence] = {}
+                        if sequence not in found_indices:
+                            found_indices[sequence] = set()
 
-                        if level_keys not in matched_activations[sequence]:
-                            matched_activations[sequence][level_keys] = []
-
-                        matched_activations[sequence][level_keys] += [(sequence, index, point, distance)]
+                        found_indices[sequence].add(index)
 
                 if matched_sequences is None:
-                    matched_sequences = found
+                    matched_sequences = found_sequences
                     logging.debug("initially matched sequences: %d" % len(matched_sequences))
                 else:
-                    matched_sequences.intersection_update(found)
+                    matched_sequences.intersection_update(found_sequences)
                     logging.debug("subsequently matched sequences: %d" % len(matched_sequences))
 
-        #logging.debug("matched_activation sequences: %s" % str([key for key in matched_activations.keys()]))
-        #logging.debug("matched_activation level_keys: %s" % str([subd.keys() for subd in matched_activations.values()]))
+                if matches is None:
+                    matches = found_indices
+                else:
+                    next_matches = {}
+
+                    for sequence in matches.keys():
+                        if sequence in found_indices:
+                            next_matches[sequence] = matches[sequence].intersection(found_indices[sequence])
+
+                    matches = next_matches
+
+            if matched_activations is None:
+                matched_activations = {}
+
+                for sequence, indices in matches.items():
+                    matched_activations[sequence] = [indices]
+            else:
+                removes = set()
+
+                for sequence in matched_activations.keys():
+                    if sequence in matches:
+                        matched_activations[sequence] += [matches[sequence]]
+                    else:
+                        removes.add(sequence)
+
+                for remove in removes:
+                    del matched_activations[remove]
+
+                    if remove in matched_sequences:
+                        matched_sequences.remove(remove)
+
         matches = []
 
-        for sequence, level_key_instances in matched_activations.items():
-            results = self.find_match_points(required_level_keys, level_key_instances, 0, None, first_only)
+        for sequence, requirements in matched_activations.items():
+            paths = monotonic_paths(requirements, len(sequence), first_only)
 
-            #if len(results) > 0:
-            #    logging.debug("matched sequence %d times: %s" % (len(results), " ".join(sequence)))
-
-            for result in results:
-                matches += [(sequence, result)]
+            for path in paths:
+                matches += [(sequence, path)]
 
         return matches
-
-    def find_match_points(self, required_level_keys, level_key_instances, requirement_index, match_index, first_only):
-        current_level_key = required_level_keys[requirement_index]
-
-        # This case doesn't even have instances across all the constraining level_keys (level, key) - definitely can't be satisified.
-        if len(level_key_instances) < len(required_level_keys):
-            return []
-
-        if requirement_index > 0:
-            previous_level = required_level_keys[requirement_index - 1][0]
-            assert previous_level <= current_level_key[0]
-
-            if previous_level == current_level_key[0]:
-                monotonically_increasing = lambda index: index == match_index
-            else:
-                monotonically_increasing = lambda index: index > match_index
-        else:
-            monotonically_increasing = lambda index: True
-
-        results = []
-
-        for instance in level_key_instances[current_level_key]:
-            sequence, index, point, distance = instance
-
-            if match_index is None or monotonically_increasing(index):
-                word = sequence[index]
-
-                # If we're at the final constraint.
-                if requirement_index + 1 == len(required_level_keys):
-                    # Found
-                    results += [[(index, word, distance)]]
-
-                    if first_only:
-                        break
-                else:
-                    sub_results = self.find_match_points(required_level_keys, level_key_instances, requirement_index + 1, index, first_only)
-
-                    for r in sub_results:
-                        # Note, we don't need to worry about only adding to results once if first_only, because by definition len(sub_results) must only be 0 or 1.
-                        results += [[(index, word, distance)] + r]
-
-                    if first_only and len(sub_results) > 0:
-                        break
-
-        return results
 
     def _candidates(self, key, axis_target, tolerance, matched_sequences):
         # IPC to ensure sql stays in the thread it was created it.
@@ -832,4 +889,44 @@ class ActivationQuery:
         deltas = geometry.deltas(candidate, target)
         distance = geometry.hypotenuse(deltas)
         return all([part < tolerance for part in deltas]), distance
+
+
+def monotonic_paths(requirements, length, first_only):
+    d = {}
+
+    # initialization
+    for i in range(-1, length):
+        d[(i, -1)] = set([()])
+
+    # recurrence
+    for r in range(len(requirements)):
+        found = None
+
+        for i in range(length):
+            if found is not None:
+                d[(i, r)] = found
+            else:
+                if i > 0:
+                    previous = [m for m in d[(i - 1, r)]]
+                else:
+                    previous = []
+
+                candidates = [s for s in requirements[r] if s <= i]
+
+                if len(candidates) > 0:
+                    q = max(candidates)
+                    if q > 0:
+                        additions = [m + (q,) for m in d[q - 1, r - 1]]
+                    else:
+                        additions = []
+                else:
+                    additions = []
+
+                d[(i, r)] = set(previous + additions)
+
+                if first_only and len(d[(i, r)]) > len(previous):
+                    found = d[(i, r)]
+
+    # termination
+    return d[(length - 1, len(requirements) - 1)]
 

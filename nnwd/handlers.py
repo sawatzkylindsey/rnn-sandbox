@@ -3,8 +3,9 @@ import json
 import logging
 import pdb
 import threading
+import uuid
 
-from nnwd.models import Estimate
+from nnwd.models import Estimate, Predicates
 from pytils import check
 from pytils.log import user_log
 
@@ -72,25 +73,7 @@ class SequenceQuery:
         else:
             tolerance = 0.1
 
-        predicates = []
-
-        for predicate_str in predicate_strs:
-            parts = {}
-
-            for unit_targets in predicate_str.split(";"):
-                unit, targets = unit_targets.split("|")
-                part, layer = unit.split(",")
-                features = set()
-
-                for target in targets.split(","):
-                    axis, value = target.split(":")
-                    features.add((int(axis), float(value)))
-
-                parts[(part, int(layer))] = features
-
-            predicates += [parts]
-
-        return tolerance, predicates
+        return tolerance, Predicates(predicate_strs=predicate_strs)
 
 
 class SequenceMatchesEstimate(SequenceQuery):
@@ -114,6 +97,33 @@ class SequenceMatches(SequenceQuery):
     def get(self, data):
         tolerance, predicates = self.parse(data)
         return self.query_engine.find(tolerance, predicates)
+
+
+class PatternMatches:
+    COMMA_STANDIN = uuid.uuid4()
+
+    def __init__(self, pattern_engine):
+        self.pattern_engine = pattern_engine
+
+    def get(self, data):
+        annotated_sequences = []
+
+        for a_s in data["annotated_sequence"]:
+            a, s = a_s.split("|")
+            annotation = [int(index) for index in a.split(",")]
+            # Bit hacky, but should be fine.
+            sequence = [("," if word == PatternMatches.COMMA_STANDIN else word) for word in s.replace(",,,", ",%s," % PatternMatches.COMMA_STANDIN).split(",")]
+            annotated_sequences += [(annotation, sequence)]
+
+        patterns = []
+
+        for p in data["pattern"]:
+            pattern = p.split(",")
+            patterns += [pattern]
+
+        logging.debug("annotated_sequences: %s" % annotated_sequences)
+        logging.debug("patterns: %s" % patterns)
+        return self.pattern_engine.match(annotated_sequences, patterns)
 
 
 class SoftFilters:
