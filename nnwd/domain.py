@@ -750,11 +750,15 @@ class QueryEngine:
                 request_id, request = item
                 key, axis_target, tolerance, matched_sequences = request
 
-                if matched_sequences is None:
-                    axis, target = axis_target
-                    self.responses[request_id] = query_dbs[key].select_activations_range(axis, target - tolerance, target + tolerance)
-                else:
-                    self.responses[request_id] = query_dbs[key].select_activations(matched_sequences)
+                try:
+                    if matched_sequences is None:
+                        axis, target = axis_target
+                        self.responses[request_id] = query_dbs[key].select_activations_range(axis, target - tolerance, target + tolerance)
+                    else:
+                        self.responses[request_id] = query_dbs[key].select_activations(matched_sequences)
+                except sqlite3.DatabaseError as e:
+                    # No idea why this is happening.. just drop and move on.
+                    self.responses[request_id] = None
 
     def find_estimate(self, tolerance, predicates):
         matches = self.find_matches(tolerance, True, predicates)
@@ -882,6 +886,10 @@ class QueryEngine:
 
         response = self.responses[request_id]
         del self.responses[request_id]
+
+        if response is None:
+            raise RuntimeError("error communicating with sqlite db - try again")
+
         return response
 
     def _measure(self, candidate, target, tolerance):
