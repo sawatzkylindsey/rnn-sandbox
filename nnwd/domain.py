@@ -659,7 +659,7 @@ class PatternEngine:
     def __init__(self, neural_network):
         self.neural_network = neural_network
 
-    def match(self, annotated_sequences, patterns):
+    def match(self, tolerance, skip_empties, annotated_sequences, patterns):
         # input
         # annotated_sequences: list of sequences, where each sequence is a tuple of the word and monotonically increasing pattern index
         #       [
@@ -692,7 +692,7 @@ class PatternEngine:
             predicate = {}
 
             for key, points in dataset.items():
-                features = self._intersecting_features(points)
+                features = self._intersecting_features(tolerance, skip_empties, points)
 
                 if len(features) > 0:
                     predicate[key] = features
@@ -701,7 +701,8 @@ class PatternEngine:
 
         return Predicates(predicates)
 
-    def _intersecting_features(self, dataset, tolerance=0.01):
+    def _intersecting_features(self, tolerance, skip_empties, dataset):
+        tolerance_2 = tolerance * 2
         features = []
 
         for axis in range(len(dataset[0])):
@@ -717,13 +718,15 @@ class PatternEngine:
                     maximum = point[axis]
 
                 if minimum is not None and maximum is not None:
-                    if maximum - minimum > tolerance:
+                    if maximum - minimum > tolerance_2:
                         match = False
                         break
 
             if match:
                 value = minimum + ((maximum - minimum) / 2.0)
-                features += [(axis, value)]
+
+                if not skip_empties or not math.isclose(value, 0, abs_tol=1e-03):
+                    features += [(axis, value)]
 
         return features
 

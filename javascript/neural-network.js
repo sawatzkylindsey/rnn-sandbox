@@ -32,6 +32,7 @@ var light_red = "#ff1919";
 var dark_blue = "#0000e6";
 var hash_parts = window.location.hash.substring(1).split(",");
 var debug = hash_parts.indexOf("debug") >= 0;
+var debug_axis = hash_parts.indexOf("debug-axis") >= 0;
 var svg = null;
 var main_sequence = [];
 var main_timestep = null;
@@ -955,6 +956,24 @@ function drawStateWidget(timestep, geometry, name, min, max, vector, colour, pre
                     }
                 }
             });
+
+    // Chip's axis label.
+    if (predictions == null && placement != "bottom" && debug_axis) {
+        svg.selectAll(".axis")
+            .data(vector)
+            .enter()
+                .append("text")
+                .attr("class", classes)
+                .attr("x", function (d) { return x(d.position) - textWidth("" + d.actual_position, 11) - 3; })
+                .attr("y", function (d) {
+                    return y(d.position) + (macro_y.bandwidth() / 2) + 5;
+                })
+                .attr("font-family", "sans-serif")
+                .attr("fill", dark_blue)
+                .style("font-size", "11px")
+                .text(function (d) { return "" + d.actual_position; });
+    }
+
     // Chip's direction/zero line.
     svg.selectAll(".chip")
         .data(vector)

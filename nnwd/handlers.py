@@ -61,6 +61,9 @@ class WeightExplain:
         return self.neural_network.weight_explain(sequence, name, column)
 
 
+DEFAULT_TOLERANCE = 0.1
+
+
 class SequenceQuery:
     def __init__(self, query_engine):
         self.query_engine = query_engine
@@ -71,7 +74,7 @@ class SequenceQuery:
         if "tolerance" in data:
             tolerance = float(data["tolerance"][0])
         else:
-            tolerance = 0.1
+            tolerance = DEFAULT_TOLERANCE
 
         return tolerance, Predicates(predicate_strs=predicate_strs)
 
@@ -106,6 +109,16 @@ class PatternMatches:
         self.pattern_engine = pattern_engine
 
     def get(self, data):
+        if "tolerance" in data:
+            tolerance = float(data["tolerance"][0])
+        else:
+            tolerance = DEFAULT_TOLERANCE
+
+        if "skip_empties" in data:
+            skip_empties = bool(data["skip_empties"][0])
+        else:
+            skip_empties = True
+
         annotated_sequences = []
 
         for a_s in data["annotated_sequence"]:
@@ -123,7 +136,7 @@ class PatternMatches:
 
         logging.debug("annotated_sequences: %s" % annotated_sequences)
         logging.debug("patterns: %s" % patterns)
-        return self.pattern_engine.match(annotated_sequences, patterns)
+        return self.pattern_engine.match(tolerance, skip_empties, annotated_sequences, patterns)
 
 
 class SoftFilters:

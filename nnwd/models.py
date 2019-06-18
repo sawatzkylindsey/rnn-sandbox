@@ -231,9 +231,10 @@ class Predicates:
             for predicate_str in predicate_strs:
                 constraints = {}
 
-                for key_features in predicate_str.split(";"):
-                    key, features = key_features.split("|")
-                    constraints[key] = [typify(feature) for feature in features.split(",")]
+                if len(predicate_str) > 0:
+                    for key_features in predicate_str.split(";"):
+                        key, features = key_features.split("|")
+                        constraints[key] = [typify(feature) for feature in features.split(",")]
 
                 self.predicates += [constraints]
 
@@ -242,8 +243,7 @@ class Predicates:
 
     def as_json(self):
         return {
-            "predicates": self.predicates,
-            "shortcut": "&predicate=".join(self.as_strs()),
+            "shortcut": "?predicate=" + "&predicate=".join(self.as_strs()),
         }
 
     def levels(self):
