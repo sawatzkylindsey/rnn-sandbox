@@ -749,6 +749,11 @@ class QueryEngine:
         while True:
             item = self.requests.get()
 
+            while not self.requests.empty():
+                request_id, request = item
+                self.responses[request_id] = "shortcircuit"
+                item = self.requests.get()
+
             if item is not None:
                 request_id, request = item
                 key, axis_target, tolerance, matched_sequences = request
@@ -772,32 +777,34 @@ class QueryEngine:
         matches = self.find_matches(tolerance, False, predicates)
         rollups = {}
 
-        for sequence, path in matches:
-            matched_words = []
-            elides = []
-            last_index = None
+        with open("find-matches.txt", "w") as fh:
+            for sequence, path in matches:
+                fh.write("%s|%s\n" % (",".join(sequence), ",".join([str(i) for i in path])))
+                matched_words = []
+                elides = []
+                last_index = None
 
-            for index in path:
-                word = sequence[index]
-                matched_words += [word]
+                for index in path:
+                    word = sequence[index]
+                    matched_words += [word]
 
-                if last_index is None:
-                    elides += [index != 0]
-                elif last_index + 1 == index:
-                    elides += [False]
-                else:
-                    elides += [True]
+                    if last_index is None:
+                        elides += [index != 0]
+                    elif last_index + 1 == index:
+                        elides += [False]
+                    else:
+                        elides += [True]
 
-                last_index = index
+                    last_index = index
 
-            elides += [last_index + 1 != len(sequence)]
-            matched_words = tuple(matched_words)
-            elides = tuple(elides)
+                elides += [last_index + 1 != len(sequence)]
+                matched_words = tuple(matched_words)
+                elides = tuple(elides)
 
-            if (matched_words, elides) not in rollups:
-                rollups[(matched_words, elides)] = 0
+                if (matched_words, elides) not in rollups:
+                    rollups[(matched_words, elides)] = 0
 
-            rollups[(matched_words, elides)] += 1
+                rollups[(matched_words, elides)] += 1
 
         return SequenceRollup([SequenceMatch(key[0], key[1], value) for key, value in sorted(rollups.items(), key=lambda item: item[1], reverse=True)])
 
@@ -892,6 +899,8 @@ class QueryEngine:
 
         if response is None:
             raise RuntimeError("error communicating with sqlite db - try again")
+        elif response == "shortcircuit":
+            return []
 
         return response
 
