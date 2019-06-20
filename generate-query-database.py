@@ -33,12 +33,12 @@ from pytils.log import setup_logging, teardown, user_log
 
 BATCH_SIZE = 100
 
-
 @teardown
 def main(argv):
     ap = ArgumentParser(prog="generate-query-database")
     ap.add_argument("-v", "--verbose", default=False, action="store_true", help="Turn on verbose logging.")
     ap.add_argument("--key-offsets", nargs="*", default=None)
+    ap.add_argument("--db-kind", choices=["sqlite", "postgres"])
     ap.add_argument("data_dir")
     ap.add_argument("sequential_dir")
     ap.add_argument("activation_dir")
@@ -53,7 +53,7 @@ def main(argv):
     for parameter in (lstm.keys() if aargs.key_offsets is None else aargs.key_offsets):
         key = parameter if aargs.key_offsets is None else parameter.split("#")[0]
         offset = 0 if aargs.key_offsets is None else int(parameter.split("#")[1])
-        thread = threading.Thread(target=generate_db, args=[lstm, aargs.activation_dir, key, aargs.query_dir, 0])
+        thread = threading.Thread(target=generate_db, args=[lstm, aargs.activation_dir, key, aargs.query_dir, aargs.db_kind, offset])
         # Non-daemon threads will keep the program running until they finish (as per documentation).
         thread.daemon = False
         thread.start()
@@ -65,9 +65,9 @@ def main(argv):
     return 0
 
 
-def generate_db(lstm, activation_dir, key, query_dir, offset):
+def generate_db(lstm, activation_dir, key, query_dir, db_kind, offset):
     logging.debug("Processing activation data for query database %s @%d." % (key, offset))
-    query_db = query.database_for(query_dir, lstm, key)
+    query_db = query.database_for(query_dir, db_kind, lstm, key)
     sequence_ids = {}
     batch = []
 
@@ -90,7 +90,6 @@ def generate_db(lstm, activation_dir, key, query_dir, offset):
             else:
                 sequence_id = sequence_ids[sequence]
 
-            assert isinstance(sequence_id, int), sequence_id
             data = (sequence_id, sequence_index) + point
             batch += [data]
 

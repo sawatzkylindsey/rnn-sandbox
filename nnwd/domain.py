@@ -732,9 +732,10 @@ class PatternEngine:
 
 
 class QueryEngine:
-    def __init__(self, neural_network, query_dir):
+    def __init__(self, neural_network, query_dir, db_kind):
         self.neural_network = neural_network
         self.query_dir = query_dir
+        self.db_kind = db_kind
         self.requests = queue.Queue()
         self.responses = {}
         thread = threading.Thread(target=self._process_sql)
@@ -743,7 +744,7 @@ class QueryEngine:
 
     def _process_sql(self):
         # Sql requests need to be run in the same thread as where the handle is created - so we do this using IPC.
-        query_dbs = query.get_databases(self.query_dir, self.neural_network.lstm)
+        query_dbs = query.get_databases(self.query_dir, self.db_kind, self.neural_network.lstm)
         logging.debug("Started sql IPC.")
 
         while True:
@@ -766,6 +767,7 @@ class QueryEngine:
                         self.responses[request_id] = query_dbs[key].select_activations(matched_sequences)
                 except sqlite3.DatabaseError as e:
                     # No idea why this is happening.. just drop and move on.
+                    logging.debug("sqlite3 error: %s" % str(e))
                     self.responses[request_id] = None
 
     def find_estimate(self, tolerance, predicates):

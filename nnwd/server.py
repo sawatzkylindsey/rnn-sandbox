@@ -127,6 +127,7 @@ def main(argv):
     ap.add_argument("-v", "--verbose", default=False, action="store_true", help="Turn on verbose logging.")
     ap.add_argument("-p", "--port", default=8888, type=int)
     ap.add_argument("--query-dir", default=None)
+    ap.add_argument("--db-kind", choices=["postgres", "sqlite"])
     ap.add_argument("--use-fixed-buckets", default=False, action="store_true")
     ap.add_argument("data_dir")
     ap.add_argument("sequential_dir")
@@ -153,7 +154,7 @@ def main(argv):
     pattern_engine = None
 
     if aargs.query_dir is not None:
-        query_engine = domain.QueryEngine(neural_network, aargs.query_dir)
+        query_engine = domain.QueryEngine(neural_network, aargs.query_dir, aargs.db_kind)
         pattern_engine = domain.PatternEngine(neural_network)
 
     run_server(aargs.port, words, neural_network, query_engine, pattern_engine)
