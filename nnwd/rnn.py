@@ -321,7 +321,6 @@ class Lstm:
         while not finished:
             epoch += 1
             epoch_loss = 0
-            epoch_score = 0
             # Start at a different offset for every epoch to help avoid overfitting.
             offset = random.randint(0, min(training_parameters.batch(), len(self.training_xys)) - 1)
             count = 0
@@ -354,26 +353,40 @@ class Lstm:
                         #print(dd)
                     epoch_loss += loss
 
-                    if training_parameters.score():
-                        feed = self.get_testing_feed(batch)
-                        time_distributions = self.session.run(self.output_distributions, feed_dict=feed)
-                        epoch_score += self.score(batch, feed, time_distributions, False, case_slot_length)
-
             assert count == len(xy_sequences), "%d != %d" % (count, len(xy_sequences))
             epoch_loss /= count
             epoch_perplexity = math.exp(epoch_loss)
-            epoch_score /= count
             losses.append(epoch_loss)
             finished, reason = training_parameters.finished(epoch, losses)
 
             if not finished and epoch % epochs_tenth == 0 and training_parameters.debug():
                 if training_parameters.score():
-                    logging.debug(epoch_template.format(epoch, epoch_loss, epoch_perplexity, epoch_score))
+                    score = 0.0
+                    offset = 0
+
+                    while offset < len(xy_sequences):
+                        batch = xy_sequences[offset:offset + 32]
+                        offset += 32
+                        feed = self.get_testing_feed(batch)
+                        time_distributions = self.session.run(self.output_distributions, feed_dict=feed)
+                        score += self.score(batch, feed, time_distributions, False, case_slot_length)
+
+                    logging.debug(epoch_template.format(epoch, epoch_loss, epoch_perplexity, score / len(xy_sequences)))
                 else:
                     logging.debug(epoch_template.format(epoch, epoch_loss, epoch_perplexity))
 
         if training_parameters.score():
-            logging.debug(epoch_template.format(epoch, epoch_loss, epoch_perplexity, epoch_score))
+            score = 0.0
+            offset = 0
+
+            while offset < len(xy_sequences):
+                batch = xy_sequences[offset:offset + 32]
+                offset += 32
+                feed = self.get_testing_feed(batch)
+                time_distributions = self.session.run(self.output_distributions, feed_dict=feed)
+                score += self.score(batch, feed, time_distributions, False, case_slot_length)
+
+            logging.debug(epoch_template.format(epoch, epoch_loss, epoch_perplexity, score / len(xy_sequences)))
         else:
             logging.debug(epoch_template.format(epoch, epoch_loss, epoch_perplexity))
 
