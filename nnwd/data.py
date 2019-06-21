@@ -49,7 +49,7 @@ def set_words(data_dir, words):
 
 
 def get_outputs(data_dir):
-    outputs = set([outputs for output in pickler.load(os.path.join(data_dir, OUTPUTS))])
+    outputs = set([output for output in pickler.load(os.path.join(data_dir, OUTPUTS))])
     return mlbase.Labels(outputs)
 
 

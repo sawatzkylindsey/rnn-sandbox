@@ -359,9 +359,10 @@ class Lstm:
                         time_distributions = self.session.run(self.output_distributions, feed_dict=feed)
                         epoch_score += self.score(batch, feed, time_distributions, False, case_slot_length)
 
+            assert count == len(xy_sequences), "%d != %d" % (count, len(xy_sequences))
             epoch_loss /= count
             epoch_perplexity = math.exp(epoch_loss)
-            epoch_score /= len(xy_sequences)
+            epoch_score /= count
             losses.append(epoch_loss)
             finished, reason = training_parameters.finished(epoch, losses)
 
@@ -379,11 +380,12 @@ class Lstm:
         #logging.debug("Training finished due to %s (%s)." % (reason, losses))
         return epoch_loss, -epoch_perplexity
 
-    def test(self, xy_sequences, debug=False):
+    def test(self, xy_sequences, debug=False, score=False):
         assert len(xy_sequences) > 0
         training_parameters = mlbase.TrainingParameters() \
             .dropout_rate(0)
         total_loss = 0.0
+        total_score = 0.0
         case_slot_length = len(str(len(xy_sequences)))
         offset = 0
 
@@ -394,8 +396,11 @@ class Lstm:
             time_distributions, loss = self.session.run([self.output_distributions, self.cost], feed_dict=feed)
             total_loss += loss
 
-            if debug:
-                self.score(batch, feed, time_distributions, debug, case_slot_length)
+            if score:
+                total_score += self.score(batch, feed, time_distributions, debug, case_slot_length)
+
+        if score:
+            logging.debug("total score for %d instances: %f" % (len(xy_sequences), total_score / len(xy_sequences)))
 
         return -math.exp(total_loss / len(xy_sequences))
 
@@ -674,7 +679,7 @@ class LstmSa(Lstm):
         self.input_gathers_p = self.placeholder("input_gathers_p", [self.batch_dimension, 2], tf.int32)
         self.output_p = self.placeholder("output_p", [self.batch_dimension], tf.int32)
         expected_outputs = tf.gather_nd(self.unrolled_outputs, self.input_gathers_p)
-        return tf.reduce_sum(tf.nn.softmax_cross_entropy_with_logits_v2(logits=expected_outputs, labels=tf.one_hot(self.output_p, len(self.output_labels))))
+        return tf.reduce_sum(tf.nn.sparse_softmax_cross_entropy_with_logits(logits=expected_outputs, labels=self.output_p))
 
     def get_training_feed(self, batch, training_parameters):
         data_x, data_y = mlbase.as_time_major(batch, False)

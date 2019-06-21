@@ -58,16 +58,17 @@ def generate_rnn(data_dir, hyper_parameters, ablations, batch, arc_epochs, initi
     validation_xys = [xy for xy in data.stream_validation(data_dir)]
     test_xys = [xy for xy in data.stream_test(data_dir)]
     logging.debug("data sets (train, validation, test): %d, %d, %d" % (len(train_xys), len(validation_xys), len(test_xys)))
-    converging_train(rnn, batch, arc_epochs, initial_decays, convergence_decays, sequential_dir, train_xys, validation_xys, test_xys)
+    show_score = data.get_description(data_dir).task == data.SA
+    converging_train(rnn, batch, arc_epochs, initial_decays, convergence_decays, sequential_dir, train_xys, validation_xys, test_xys, show_score)
     del train_xys
     return rnn
 
 
-def converging_train(rnn, batch, arc_epochs, initial_decays, convergence_decays, sequential_dir, train_xys, validation_xys, test_xys):
+def converging_train(rnn, batch, arc_epochs, initial_decays, convergence_decays, sequential_dir, train_xys, validation_xys, test_xys, show_score):
     assert initial_decays > convergence_decays, "%d <= %d" % (initial_decays, convergence_decays)
-    best_score_train = rnn.test(train_xys)
-    best_score_validation = rnn.test(validation_xys)
-    score_test = rnn.test(test_xys)
+    best_score_train = rnn.test(train_xys, score=show_score)
+    best_score_validation = rnn.test(validation_xys, score=show_score)
+    score_test = rnn.test(test_xys, score=show_score)
     logging.debug("Baseline train/validation/test scores (random initialized weights): %.4f / %.4f / %.4f" % (best_score_train, best_score_validation, score_test))
     training_parameters = mlbase.TrainingParameters() \
         .batch(batch) \
@@ -107,7 +108,7 @@ def converging_train(rnn, batch, arc_epochs, initial_decays, convergence_decays,
                 best_score_validation = score_validation
             else:
                 # The validation score didn't improve.  Lets see where the test score is at.
-                score_test = rnn.test(test_xys)
+                score_test = rnn.test(test_xys, score=show_score)
                 logging.debug("test score: %.4f" % score_test)
         else:
             # Neither improved.
@@ -129,9 +130,9 @@ def converging_train(rnn, batch, arc_epochs, initial_decays, convergence_decays,
     # Load which ever version was marked as the latest as the final trained lstm.
     sequential.load_parameters(rnn, sequential_dir)
     logging.debug("Calculating final scores.")
-    score_train = rnn.test(train_xys, False)
-    score_validation = rnn.test(validation_xys, False)
-    score_test = rnn.test(test_xys, True)
+    score_train = rnn.test(train_xys, False, score=show_score)
+    score_validation = rnn.test(validation_xys, False, score=show_score)
+    score_test = rnn.test(test_xys, True, score=show_score)
     logging.debug("(tr, va, te): (%.4f, %.4f, %.4f)" % (score_train, score_validation, score_test))
 
 

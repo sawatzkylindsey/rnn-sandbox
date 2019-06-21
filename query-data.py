@@ -29,7 +29,7 @@ def main(argv):
     ap.add_argument("-v", "--verbose", default=False, action="store_true", help="Turn on verbose logging.")
     ap.add_argument("--limit", type=int, default=10)
     ap.add_argument("data_dir")
-    ap.add_argument("kind")
+    ap.add_argument("kind", choices=["train", "test"])
     ap.add_argument("includes", nargs="*", default=None)
     aargs = ap.parse_args(argv)
     setup_logging(".%s.log" % os.path.splitext(os.path.basename(__file__))[0], aargs.verbose, False, True, True)
