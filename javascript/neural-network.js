@@ -1,4 +1,5 @@
 
+var epsilon = 1e-15;
 var allow_zoom = true;
 var MEMORY_CHIP_HEIGHT = 4;
 var MEMORY_CHIP_WIDTH = 2;
@@ -619,7 +620,9 @@ function drawTimestep(fake_timestep, data) {
 
 
     var x_offset = (x_margin * 2) + input_width;
+    //x_offset = (x_margin * 2) + input_width + (data.timestep * state_width * 1.25);
     var y_offset = y_margin + (data.timestep * layer_height);
+    //y_offset = y_margin + (1 * layer_height);
     var operand_height = (state_height * 2.0 / 5.0);
     var operator_height = (state_height - (operand_height * 2));
 
@@ -649,6 +652,18 @@ function drawTimestep(fake_timestep, data) {
         }
     }
 
+    /*
+    var hiddenState = data.units["cells"][0];
+    var geometry = {
+        x: x_offset,
+        y: y_offset,
+        width: state_width,
+        height: state_height,
+    };
+    var classes = "timestep-" + data.timestep + " component ";
+    drawStateWidget(data.timestep, geometry, null, hiddenState.minimum, hiddenState.maximum, hiddenState.vector, hiddenState.colour, null, true, classes,
+        MEMORY_CHIP_WIDTH, MEMORY_CHIP_HEIGHT, null, null, null, null, null);
+    */
     // Draw embedding
     drawHiddenState(data, "embedding", 0);
 
@@ -664,8 +679,6 @@ function drawTimestep(fake_timestep, data) {
     }
 
     // Draw softmax
-    /*drawHline(timestep, x_offset + (data.units.length * w * 17), y_offset + (h * 2 / 2),
-        x_offset + (data.units.length * w * 17) + (w * 3 / 2), y_offset + (h * 2 / 2));*/
     drawSoftmax(data, "softmax");
 }
 
@@ -738,13 +751,14 @@ function drawStateWidget(timestep, geometry, name, min, max, vector, colour, pre
         return macro_x(Math.floor(position / chip_height));
     }
 
-    var magnitude = d3.scaleLinear()
-        .domain([1, 1 + Math.max(Math.abs(min), Math.abs(max))])
-    //var magnitude = d3.scaleLog()
-    //    // In d3 v3 we can't set 0 in the domain, so push everything up by 1.
-    //    // Make sure to do this when applying the scale as well!
-    //    .domain([1, 1 + Math.max(Math.abs(min), Math.abs(max))])
-        .range([0, macro_x.bandwidth()]);
+    var absolute_max = Math.max(Math.abs(min), Math.abs(max));
+    // Mapping down to the log line segment from [1, 10], which is where the 9 comes from.
+    var scale = absolute_max / 9.0;
+    function magnitude(value) {
+        // Uses the [1, 10] segment on the log line to map down to [0, 1].
+        //     vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
+        return Math.log10((Math.abs(value) / scale) + 1.0) * macro_x.bandwidth();
+    }
 
     var margin = (geometry.width / 6);
     var label_id = "labelid-" + Math.random().toString(36).substring(5);
@@ -845,7 +859,7 @@ function drawStateWidget(timestep, geometry, name, min, max, vector, colour, pre
                 if (d.value >= 0) {
                     return base_x;
                 } else {
-                    return base_x + (macro_x.bandwidth() - magnitude(1 + Math.abs(d.value)));
+                    return base_x + (macro_x.bandwidth() - magnitude(d.value));
                 }
             })
             .attr("y", function (d) {
@@ -855,7 +869,7 @@ function drawStateWidget(timestep, geometry, name, min, max, vector, colour, pre
                     return y(d.position) + (macro_y.bandwidth() / 2) + 0.5;
                 }
             })
-            .attr("width", function (d) { return magnitude(1 + Math.abs(d.value)); })
+            .attr("width", function (d) { return magnitude(d.value); })
             .attr("height", function (d) {
                 if (placement == null) {
                     return macro_y.bandwidth();
@@ -919,7 +933,7 @@ function drawStateWidget(timestep, geometry, name, min, max, vector, colour, pre
                         d3.selectAll(".linker-" + (linker == null ? d.position : linker[d.position]) + linker_suffix)
                             .transition()
                             .duration(50)
-                            .attr("stroke", light_grey)
+                            .attr("stroke", dark_grey)
                             .attr("stroke-width", stroke_width);
                     }
                 }
@@ -1066,13 +1080,14 @@ function drawStateCell(geometry, min, max, vector, classes, chip_width, chip_hei
         return macro_x(Math.floor(position / chip_height));
     }
 
-    var magnitude = d3.scaleLinear()
-        .domain([1, 1 + Math.max(Math.abs(min), Math.abs(max))])
-    //var magnitude = d3.scaleLog()
-    //    // In d3 v3 we can't set 0 in the domain, so push everything up by 1.
-    //    // Make sure to do this when applying the scale as well!
-    //    .domain([1, 1 + Math.max(Math.abs(min), Math.abs(max))])
-        .range([0, macro_x.bandwidth()]);
+    var absolute_max = Math.max(Math.abs(min), Math.abs(max));
+    // Mapping down to the log line segment from [1, 10], which is where the 9 comes from.
+    var scale = absolute_max / 9.0;
+    function magnitude(value) {
+        // Uses the [1, 10] segment on the log line to map down to [0, 1].
+        //     vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
+        return Math.log10((Math.abs(value) / scale) + 1.0) * macro_x.bandwidth();
+    }
 
     var margin = (geometry.width / 6);
 
@@ -1099,11 +1114,11 @@ function drawStateCell(geometry, min, max, vector, classes, chip_width, chip_hei
                 if (d.value >= 0) {
                     return base_x;
                 } else {
-                    return base_x + (macro_x.bandwidth() - magnitude(1 + Math.abs(d.value)));
+                    return base_x + (macro_x.bandwidth() - magnitude(d.value));
                 }
             })
             .attr("y", function (d) { return y(d.position); })
-            .attr("width", function (d) { return magnitude(1 + Math.abs(d.value)); })
+            .attr("width", function (d) { return magnitude(d.value); })
             .attr("height", function (d) { return macro_y.bandwidth(); })
             .attr("stroke", "none")
             .attr("fill", light_grey);
@@ -2934,6 +2949,7 @@ function drawSequence(sequence_match, x_offset, y_offset, width, height) {
 }
 
 function drawAlignment(data) {
+    console.log(data);
     var x_offset = (x_margin * 2) + input_width + (state_width / 2);
     var y_offset = y_margin + (state_height * 3 / 4);
     var max_x = 0;

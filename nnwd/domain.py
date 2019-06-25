@@ -211,6 +211,10 @@ class NeuralNetwork:
             return (key, tuple(point) + (embedding_padding if self.lstm.is_embedding(key) else hidden_padding))
 
         self.as_input = _as_input
+        self.details_mins = {}
+        self.details_maxs = {}
+        self.weights_mins = {}
+        self.weights_maxs = {}
 
     @functools.lru_cache()
     def stepwise(self, sequence):
@@ -225,6 +229,21 @@ class NeuralNetwork:
         stepwise_lstm = self.stepwise(tuple(sequence[:-1]))
         assert stepwise_lstm.name == ",".join(["root"] + sequence[:-1]), "%s != %s" % (stepwise_lstm.name, ",".join(["root"] + sequence))
         result, instrument_values = stepwise_lstm.query(word, instrument_names=instruments)
+
+        for kind, units in instrument_values.items():
+            if kind != "ws":
+                for unit, vector in enumerate(units):
+                    key = self.lstm.encode_key(kind, unit)
+                    minimum = min(vector)
+
+                    if key not in self.details_mins or minimum < self.details_mins[key]:
+                        self.details_mins[key] = minimum
+
+                    maximum = max(vector)
+
+                    if key not in self.details_maxs or maximum > self.details_maxs[key]:
+                        self.details_maxs[key] = maximum
+
         return resolved_word, result, instrument_values
 
     def _dummy(self):
@@ -272,7 +291,7 @@ class NeuralNetwork:
 
             #    mapping[colour_point] += [word]
 
-            #print(adjutant.dict_as_str(mapping))
+            #logging.debug(adjutant.dict_as_str(mapping))
 
         #choice = input("choice (05, 10, 20, 30, 50): ")
         return colour_embeddings[50]
@@ -294,7 +313,20 @@ class NeuralNetwork:
         return reductions, colours, predictions
 
     def dimensionality_reduce(self, points):
-        return {key: reduction.reduce(self.bucket_mappings[key], point) for key, point in points.items()}
+        out = {key: reduction.reduce(self.bucket_mappings[key], point) for key, point in points.items()}
+
+        for key, vector in out.items():
+            minimum = min(vector)
+
+            if key not in self.weights_mins or minimum < self.weights_mins[key]:
+                self.weights_mins[key] = minimum
+
+            maximum = max(vector)
+
+            if key not in self.weights_maxs or maximum > self.weights_maxs[key]:
+                self.weights_maxs[key] = maximum
+
+        return out
 
     def predict_distributions(self, word, points):
         annotation = None
@@ -400,7 +432,8 @@ class NeuralNetwork:
         point_reductions, point_colours, point_predictions = self.compute_point_abstractions(last_word, points)
         embedding_name = self.latex_name(len(sequence) - 1, "embedding")
         embedding_name_no_t = self.latex_name_no_t("embedding")
-        embedding = HiddenState(embedding_name, embedding_name_no_t, point_reductions[embedding_key], colour=point_colours[embedding_key], predictions=self.prediction_distribution(point_predictions[embedding_key]))
+        min_max = (self.weights_mins[embedding_key], self.weights_maxs[embedding_key])
+        embedding = HiddenState(embedding_name, embedding_name_no_t, point_reductions[embedding_key], min_max, point_colours[embedding_key], self.prediction_distribution(point_predictions[embedding_key]))
         units = self.make_lstm_units(len(sequence) - 1, point_reductions, point_colours, point_predictions)
         softmax_name = self.latex_name(len(sequence) - 1, "softmax")
         softmax = LabelDistribution(softmax_name, result.distribution, self.sort_key, parameters.OUTPUT_TOP_K, lambda output: self.rgb(self.output_colour(output)))
@@ -409,18 +442,13 @@ class NeuralNetwork:
     def weight_detail(self, sequence, part, layer):
         last_word, result, instrument_values = self.query_lstm(sequence, rnn.LSTM_INSTRUMENTS)
         point = instrument_values[part][layer]
-
-        if part.endswith("_gates"):
-            min_max = (0, 1)
-        else:
-            min_max = (None, None)
-
         # This is the regular process by which a hidden_state is served out with its various reductions/abstractions.
         key = self.lstm.encode_key(part, layer)
         keyed_point = {key: point}
         reduction, colour, prediction = self.compute_point_abstractions(last_word, keyed_point)
         name = self.latex_name(len(sequence) - 1, part, layer)
         name_no_t = self.latex_name_no_t(part, layer)
+        min_max = (self.details_mins[key], self.details_maxs[key])
         hidden_state = HiddenState(name, name_no_t, reduction[key], min_max, colour[key], self.prediction_distribution(prediction[key]))
         back_links = {}
         repositioned_point = [[] for i in range(len(point))]
@@ -478,14 +506,10 @@ class NeuralNetwork:
             units[part] = {}
 
             for layer in range(self.lstm.hyper_parameters.layers):
-                if part.endswith("_gates"):
-                    min_max = (0, 1)
-                else:
-                    min_max = (None, None)
-
                 key = self.lstm.encode_key(part, layer)
                 name = self.latex_name(timestep, part, layer)
                 name_no_t = self.latex_name_no_t(part, layer)
+                min_max = (self.weights_mins[key], self.weights_maxs[key])
                 hidden_state = HiddenState(name, name_no_t, point_reductions[key], min_max, point_colours[key], self.prediction_distribution(point_predictions[key]))
                 units[part][layer] = hidden_state
 
@@ -779,7 +803,7 @@ class QueryEngine:
         matches = self.find_matches(tolerance, False, predicates)
         rollups = {}
 
-        with open("find-matches.txt", "w") as fh:
+        with open("found-matches.txt", "w") as fh:
             for sequence, path in matches:
                 fh.write("%s|%s\n" % (",".join(sequence), ",".join([str(i) for i in path])))
                 matched_words = []

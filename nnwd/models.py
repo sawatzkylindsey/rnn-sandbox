@@ -179,6 +179,12 @@ class SoftFilters:
                     for layer in range(layers):
                         self.matrix_units[row][column][layer] = timestep_units[row][column][layer]
 
+    def as_json(self):
+        return {
+            "words": self.words,
+            "matrix_units": [[[None if layer is None else layer.as_json() for layer in column]for column in row] for row in self.matrix_units],
+        }
+
 
 def canonicalize_bounds(min_max, vector):
     if min_max[0] is None:
