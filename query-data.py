@@ -28,7 +28,7 @@ def main(argv):
     ap = ArgumentParser(prog="query-data")
     ap.add_argument("-v", "--verbose", default=False, action="store_true", help="Turn on verbose logging.")
     ap.add_argument("--limit", type=int, default=10)
-    ap.add_argument("--match", choices=["include", "sequence"])
+    ap.add_argument("--match", choices=["include", "sequence"], default="include")
     ap.add_argument("data_dir")
     ap.add_argument("kind", choices=["train", "test"])
     ap.add_argument("words", nargs="*", default=None)
@@ -43,11 +43,13 @@ def main(argv):
 
         if matches(sequence, aargs.words, aargs.match):
             count += 1
-            user_log.info(" ".join(sequence))
+            user_log.info("Instance: %s" % " ".join(sequence))
 
         if count >= aargs.limit:
+            user_log.info("Truncating..")
             break
 
+    user_log.info("Found %d instances." % count)
     return 0
 
 
