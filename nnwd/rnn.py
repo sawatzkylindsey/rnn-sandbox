@@ -276,7 +276,9 @@ class Lstm:
         #optimizer = tf.train.GradientDescentOptimizer(self.learning_rate_p[0])
         #self.updates = optimizer.apply_gradients(zip(gradients_clipped, trainable_variables))
 
-        self.session = tf.Session()
+        config = tf.ConfigProto()
+        config.gpu_options.allow_growth = True
+        self.session = tf.Session(config=config)
         self.session.run(tf.global_variables_initializer())
 
     def placeholder(self, name, shape, dtype=tf.float32):

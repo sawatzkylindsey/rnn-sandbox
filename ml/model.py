@@ -317,7 +317,9 @@ class Ffnn(TfModel):
         gradients_clipped = [(tf.clip_by_norm(g, self.clip_norm_p[0]), var) for g, var in gradients if g is not None]
         self.updates = optimizer.apply_gradients(gradients_clipped)
 
-        self.session = tf.Session()
+        config = tf.ConfigProto()
+        config.gpu_options.allow_growth = True
+        self.session = tf.Session(config=config)
         self.session.run(tf.global_variables_initializer())
 
     def dropout(self, tensor):
@@ -444,7 +446,9 @@ class SeparateFfnn(TfModel):
         gradients_clipped = [(tf.clip_by_norm(g, self.clip_norm_p[0]), var) for g, var in gradients if g is not None]
         self.updates = optimizer.apply_gradients(gradients_clipped)
 
-        self.session = tf.Session()
+        config = tf.ConfigProto()
+        config.gpu_options.allow_growth = True
+        self.session = tf.Session(config=config)
         self.session.run(tf.global_variables_initializer())
 
     def dropout(self, tensor):
