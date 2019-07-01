@@ -683,7 +683,7 @@ class PatternEngine:
     def __init__(self, neural_network):
         self.neural_network = neural_network
 
-    def match(self, tolerance, skip_empties, annotated_sequences, patterns):
+    def match(self, tolerance, use_skip_empties, use_consistent_features, annotated_sequences, patterns):
         # input
         # annotated_sequences: list of sequences, where each sequence is a tuple of the word and monotonically increasing pattern index
         #       [
@@ -711,23 +711,46 @@ class PatternEngine:
                     targets[index][key] += [instrument_values[part][layer]]
 
         predicates = []
+        consistent_features = {}
 
         for index, dataset in enumerate(targets):
             predicate = {}
 
             for key, points in dataset.items():
-                features = self._intersecting_features(tolerance, skip_empties, points)
+                features = self._intersecting_features(tolerance, use_skip_empties, points)
 
                 if len(features) > 0:
                     predicate[key] = features
+                    axis = set([axis for axis in features.keys()])
+
+                    if key not in consistent_features:
+                        consistent_features[key] = axis
+                    else:
+                        consistent_features[key].intersection_update(axis)
 
             predicates += [predicate]
 
+        if use_consistent_features:
+            updates = []
+
+            for predicate in predicates:
+                update = {}
+
+                for key, features in predicate.items():
+                    if len(consistent_features[key]) > 0:
+                        update_features = {axis: features[axis] for axis in consistent_features[key]}
+                        update[key] = update_features
+
+                if len(update) > 0:
+                    updates += [update]
+
+            predicates = updates
+
         return Predicates(predicates)
 
-    def _intersecting_features(self, tolerance, skip_empties, dataset):
+    def _intersecting_features(self, tolerance, use_skip_empties, dataset):
         tolerance_2 = tolerance * 2
-        features = []
+        features = {}
 
         for axis in range(len(dataset[0])):
             minimum = None
@@ -749,8 +772,8 @@ class PatternEngine:
             if match:
                 value = minimum + ((maximum - minimum) / 2.0)
 
-                if not skip_empties or not math.isclose(value, 0, abs_tol=1e-03):
-                    features += [(axis, value)]
+                if not use_skip_empties or not math.isclose(value, 0, abs_tol=1e-03):
+                    features[axis] = value
 
         return features
 

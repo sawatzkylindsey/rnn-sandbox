@@ -1,4 +1,5 @@
 
+from distutils.util import strtobool
 import json
 import logging
 import pdb
@@ -115,9 +116,14 @@ class PatternMatches:
             tolerance = DEFAULT_TOLERANCE
 
         if "skip_empties" in data:
-            skip_empties = bool(data["skip_empties"][0])
+            skip_empties = bool(strtobool(data["skip_empties"][0]))
         else:
             skip_empties = True
+
+        if "consistent_features" in data:
+            consistent_features = bool(strtobool(data["consistent_features"][0]))
+        else:
+            consistent_features = True
 
         annotated_sequences = []
 
@@ -136,7 +142,7 @@ class PatternMatches:
 
         logging.debug("annotated_sequences: %s" % annotated_sequences)
         logging.debug("patterns: %s" % patterns)
-        return self.pattern_engine.match(tolerance, skip_empties, annotated_sequences, patterns)
+        return self.pattern_engine.match(tolerance, skip_empties, consistent_features, annotated_sequences, patterns)
 
 
 class SoftFilters:

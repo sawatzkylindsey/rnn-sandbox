@@ -240,12 +240,12 @@ class Predicates:
                 if len(predicate_str) > 0:
                     for key_features in predicate_str.split(";"):
                         key, features = key_features.split("|")
-                        constraints[key] = [typify(feature) for feature in features.split(",")]
+                        constraints[key] = {item[0]: item[1] for item in [typify(feature) for feature in features.split(",")]}
 
                 self.predicates += [constraints]
 
     def as_strs(self):
-        return [";".join(["%s|%s" % (key, ",".join(["%s:%s" % (axis, value) for axis, value in item])) for key, item in predicate.items()]) for predicate in self.predicates]
+        return [";".join(["%s|%s" % (key, ",".join(["%s:%s" % (axis, value) for axis, value in sorted(item.items())])) for key, item in predicate.items()]) for predicate in self.predicates]
 
     def as_json(self):
         return {
