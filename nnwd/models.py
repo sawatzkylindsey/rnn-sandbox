@@ -245,7 +245,7 @@ class Predicates:
                 self.predicates += [constraints]
 
     def as_strs(self):
-        return [";".join(["%s|%s" % (key, ",".join(["%s:%s" % (axis, value) for axis, value in sorted(item.items())])) for key, item in predicate.items()]) for predicate in self.predicates]
+        return [";".join(["%s|%s" % (key, ",".join(["%d:%s" % (axis, value) for axis, value in sorted(item.items())])) for key, item in predicate.items()]) for predicate in self.predicates]
 
     def as_json(self):
         return {

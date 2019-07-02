@@ -104,7 +104,7 @@ class SequenceMatches(SequenceQuery):
 
 
 class PatternMatches:
-    COMMA_STANDIN = uuid.uuid4()
+    COMMA_STANDIN = str(uuid.uuid4())
 
     def __init__(self, pattern_engine):
         self.pattern_engine = pattern_engine
