@@ -972,22 +972,24 @@ def monotonic_paths(requirements, length, first_only):
 
     # recurrence
     for r in range(len(requirements)):
+        d[(-1, r)] = set()
         found = None
 
         for i in range(length):
             if found is not None:
                 d[(i, r)] = found
             else:
-                if i > 0:
-                    previous = [m for m in d[(i - 1, r)]]
-                else:
-                    previous = []
+                previous = [m for m in d[(i - 1, r)]]
+                #if i > 0:
+                #    previous = [m for m in d[(i - 1, r)] if len(m) > 0]
+                #else:
+                #    previous = []
 
                 candidates = [s for s in requirements[r] if s <= i]
 
                 if len(candidates) > 0:
                     q = max(candidates)
-                    additions = [m + (q,) for m in d[q - 1, r - 1]]
+                    additions = [m + (q,) for m in d[(q - 1, r - 1)]]
                 else:
                     additions = []
 
