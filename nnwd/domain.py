@@ -870,12 +870,12 @@ class QueryEngine:
             for key, features in predicate.items():
                 found_sequences = set()
                 found_indices = {}
-                first_feature = next(iter(features))
+                first_feature = next(iter(features.items()))
 
                 for sequence, index, *point in self._candidates(key, first_feature, tolerance, matched_sequences):
                     point = tuple(point)
-                    candidate_point = [point[axis] for axis, target in features]
-                    target_point = [target for axis, target in features]
+                    candidate_point = [point[axis] for axis, target in features.items()]
+                    target_point = [target for axis, target in features.items()]
                     within, distance = self._measure(candidate_point, target_point, tolerance)
 
                     if within:
