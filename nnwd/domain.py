@@ -828,7 +828,7 @@ class QueryEngine:
 
         with open("found-matches.txt", "w") as fh:
             for sequence, path in matches:
-                fh.write("%s|%s\n" % (",".join(sequence), ",".join([str(i) for i in path])))
+                fh.write("%s|%s\n" % (" ".join(sequence), ",".join([str(i) for i in path])))
                 matched_words = []
                 elides = []
                 last_index = None
@@ -927,7 +927,9 @@ class QueryEngine:
         matches = []
 
         for sequence, requirements in matched_activations.items():
+            #logging.debug("searching for paths through: %s\n  %s" % (" ".join(sequence), requirements))
             paths = monotonic_paths(requirements, len(sequence), first_only)
+            #logging.debug("found %d paths" % (len(paths)))
 
             for path in paths:
                 matches += [(sequence, path)]
@@ -984,10 +986,7 @@ def monotonic_paths(requirements, length, first_only):
 
                 if len(candidates) > 0:
                     q = max(candidates)
-                    if q > 0:
-                        additions = [m + (q,) for m in d[q - 1, r - 1]]
-                    else:
-                        additions = []
+                    additions = [m + (q,) for m in d[q - 1, r - 1]]
                 else:
                     additions = []
 
