@@ -255,6 +255,9 @@ class Predicates:
     def levels(self):
         return [(level, predicate) for level, predicate in enumerate(self.predicates)]
 
+    def __len__(self):
+        return len(self.predicates)
+
     def __eq__(self, other):
         if other is None:
             return False

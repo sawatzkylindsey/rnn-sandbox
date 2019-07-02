@@ -806,15 +806,18 @@ class QueryEngine:
                 request_id, request = item
                 key, axis_target, tolerance, matched_sequences = request
 
-                try:
-                    if matched_sequences is None:
-                        axis, target = axis_target
-                        self.responses[request_id] = query_dbs[key].select_activations_range(axis, target - tolerance, target + tolerance)
-                    else:
-                        self.responses[request_id] = query_dbs[key].select_activations(matched_sequences)
-                except sqlite3.DatabaseError as e:
-                    # No idea why this is happening.. just drop and move on.
-                    logging.debug("sqlite3 error: %s" % str(e))
+                if key in query_dbs:
+                    try:
+                        if matched_sequences is None:
+                            axis, target = axis_target
+                            self.responses[request_id] = query_dbs[key].select_activations_range(axis, target - tolerance, target + tolerance)
+                        else:
+                            self.responses[request_id] = query_dbs[key].select_activations(matched_sequences)
+                    except sqlite3.DatabaseError as e:
+                        # No idea why this is happening.. just drop and move on.
+                        logging.debug("sqlite3 error: %s" % str(e))
+                        self.responses[request_id] = None
+                else:
                     self.responses[request_id] = None
 
     def find_estimate(self, tolerance, predicates):
@@ -995,7 +998,7 @@ def monotonic_paths(requirements, length, first_only):
 
                 d[(i, r)] = set(previous + additions)
 
-                if first_only and len(d[(i, r)]) > len(previous):
+                if first_only and len(additions) > 0:
                     found = d[(i, r)]
 
     # termination
