@@ -867,7 +867,8 @@ class QueryEngine:
         for level, predicate in predicates.levels():
             matches = None
 
-            for key, features in predicate.items():
+            # Hit the _candidates query in order, to leverage the cached hit as much as possible.
+            for key, features in sorted(predicate.items()):
                 found_sequences = set()
                 found_indices = {}
                 first_feature = next(iter(features.items()))
