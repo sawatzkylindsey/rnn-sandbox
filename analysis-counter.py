@@ -54,6 +54,7 @@ def main(argv):
 def categorize_rates(lstm, xys, dimensions):
     total = 0
     non_monotonic = 0
+    non_monotonic_counts = {}
     starts = {
         "global": {dimension: 0 for dimension in dimensions},
         "monotonic": {dimension: 0 for dimension in dimensions},
@@ -107,7 +108,13 @@ def categorize_rates(lstm, xys, dimensions):
                 logging.debug("non-monotonic @%d (%s): %s -> %s" % (index, sequence[index], " ".join(sequence), " ".join([str(c) for c in cells])))
                 non_monotonic += 1
 
+                if sequence[index] not in non_monotonic_counts:
+                    non_monotonic_counts[sequence[index]] = 0
+
+                non_monotonic_counts[sequence[index]] += 1
+
     user_log.info("Found %d of %d sentences to match non-monotonic criteria." % (non_monotonic, total))
+    user_log.info("Non-monotonic keyword frequencies: %s" % (adjutant.dict_as_str(non_monotonic_counts, sort_by_key=False, reverse=True)))
     user_log.info("Global lowest (by #1): %s" % (adjutant.dict_as_str(global_lowest1)))
     user_log.info("Global lowest (by #2): %s" % (adjutant.dict_as_str(global_lowest2)))
     averages = {}
