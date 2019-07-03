@@ -18,6 +18,7 @@ from nnwd import pickler
 from nnwd import rnn
 from nnwd import sequential
 
+from pytils import adjutant
 from pytils.log import setup_logging, teardown, user_log
 
 
@@ -34,35 +35,100 @@ def main(argv):
     logging.debug(aargs)
 
     lstm = sequential.load_model(aargs.data_dir, aargs.sequential_dir)
-    findings = find_non_counters(lstm, data.stream_data(aargs.data_dir, aargs.kind), aargs.dimensions)
+    averages = categorize_rates(lstm, data.stream_data(aargs.data_dir, aargs.kind), aargs.dimensions)
+    rows = [("", "0", "1")]
+
+    for stat, dimension_points in averages.items():
+        for dimension, points in dimension_points.items():
+            rows += [("%s-%s" % (stat, dimension), *points)]
+
+    with open("counter-statistics.csv", "w") as fh:
+        writer = csv_writer(fh)
+
+        for row in rows:
+            writer.writerow(row)
+
     return 0
 
 
-def find_non_counters(lstm, xys, dimensions):
+def categorize_rates(lstm, xys, dimensions):
     total = 0
-    findings = []
+    non_monotonic = 0
+    starts = {
+        "global": {dimension: 0 for dimension in dimensions},
+        "monotonic": {dimension: 0 for dimension in dimensions},
+        "non-monotonic": {dimension: 0 for dimension in dimensions},
+    }
+    ends = {
+        "global": {dimension: 0 for dimension in dimensions},
+        "monotonic": {dimension: 0 for dimension in dimensions},
+        "non-monotonic": {dimension: 0 for dimension in dimensions},
+    }
+    global_lowest1 = {dimension: None for dimension in dimensions}
+    global_lowest2 = {dimension: (None, None) for dimension in dimensions}
 
     for j, xy in enumerate(xys):
         sequence = [item[0] for item in xy.x]
         total += 1
         stepwise_rnn = lstm.stepwise(handle_unknown=True)
-        changes = []
+        cells = []
         previous = None
+        index = None
 
         for i, word_pos in enumerate(xy.x):
             result, instruments = stepwise_rnn.step(word_pos[0], ["cells"])
             state = instruments["cells"][0]
             activations = [state[dimension] for dimension in dimensions]
-            changes += [activations]
+            cells += [activations]
 
             if previous is not None and any([current < (previous[k] * 0.75) for k, current in enumerate(activations)]):
-                findings += [(sequence, i)]
-                logging.debug("non-counter @%d: %s -> %s" % (i, " ".join(sequence), " ".join([str(c) for c in changes])))
-                break
+                index = i
 
             previous = activations
 
-    user_log.info("Found %d of %d sentences to match non-counter criteria." % (len(findings), total))
+        for k, dimension in enumerate(dimensions):
+            ck = [c[k] for c in cells]
+
+            if global_lowest1[dimension] is None or lower1(global_lowest1[dimension], ck):
+                global_lowest1[dimension] = ck
+
+            if global_lowest2[dimension][0] is None or global_lowest2[dimension][0] < (sum(ck) / len(ck)):
+                global_lowest2[dimension] = (sum(ck) / len(ck), ck)
+
+            starts["global"][dimension] += cells[0][k]
+            ends["global"][dimension] += cells[-1][k]
+
+            if index is None:
+                starts["monotonic"][dimension] += cells[0][k]
+                ends["monotonic"][dimension] += cells[-1][k]
+            else:
+                starts["non-monotonic"][dimension] += cells[0][k]
+                ends["non-monotonic"][dimension] += cells[-1][k]
+                logging.debug("non-monotonic @%d (%s): %s -> %s" % (index, sequence[index], " ".join(sequence), " ".join([str(c) for c in cells])))
+                non_monotonic += 1
+
+    user_log.info("Found %d of %d sentences to match non-monotonic criteria." % (non_monotonic, total))
+    user_log.info("Global lowest (by #1): %s" % (adjutant.dict_as_str(global_lowest1)))
+    user_log.info("Global lowest (by #2): %s" % (adjutant.dict_as_str(global_lowest2)))
+    averages = {}
+
+    for stat in starts.keys():
+        averages[stat] = {dimension: (starts[stat][dimension] / total, ends[stat][dimension] / total) for dimension in dimensions}
+
+    return averages
+
+
+def lower1(a, b):
+    count = 0
+
+    for i, v in enumerate(a):
+        if i >= len(b):
+            break
+
+        if b[i] < v:
+            count += 1
+
+    return count == len(a)
 
 
 if __name__ == "__main__":
