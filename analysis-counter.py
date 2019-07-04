@@ -69,6 +69,7 @@ def categorize_rates(lstm, xys, dimensions):
     global_lowest2 = {dimension: (None, None) for dimension in dimensions}
     global_lowest3 = {dimension: (None, None) for dimension in dimensions}
     largest_drop = {dimension: (None, None) for dimension in dimensions}
+    minimum_growth = {dimension: (None, None) for dimension in dimensions}
 
     for j, xy in enumerate(xys):
         sequence = [item[0] for item in xy.x]
@@ -105,6 +106,10 @@ def categorize_rates(lstm, xys, dimensions):
                 if largest_drop[dimension][0] is None or (ck[i + 1] - ck[i]) < largest_drop[dimension][0]:
                     largest_drop[dimension] = (ck[i + 1] - ck[i], ck)
 
+            if len(ck) > 1:
+                if minimum_growth[dimension][0] is None or (ck[-1] - ck[0]) < minimum_growth[dimension][0]:
+                    minimum_growth[dimension] = (ck[-1] - ck[0], ck)
+
             starts["global"][dimension] += cells[0][k]
             ends["global"][dimension] += cells[-1][k]
 
@@ -132,6 +137,7 @@ def categorize_rates(lstm, xys, dimensions):
         user_log.info("Global lowest @%d (by average): %s" % (dimension, global_lowest2[dimension]))
         user_log.info("Global lowest @%d (by single minimum): %s" % (dimension, global_lowest3[dimension]))
         user_log.info("Global lowest @%d (by largest drop): %s" % (dimension, largest_drop[dimension]))
+        user_log.info("Global lowest @%d (by minimum growth): %s" % (dimension, minimum_growth[dimension]))
 
     averages = {
         "global": {dimension: (starts["global"][dimension] / total, ends["global"][dimension] / total) for dimension in dimensions},
