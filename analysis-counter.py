@@ -68,6 +68,7 @@ def categorize_rates(lstm, xys, dimensions):
     global_lowest1 = {dimension: None for dimension in dimensions}
     global_lowest2 = {dimension: (None, None) for dimension in dimensions}
     global_lowest3 = {dimension: (None, None) for dimension in dimensions}
+    largest_drop = {dimension: (None, None) for dimension in dimensions}
 
     for j, xy in enumerate(xys):
         sequence = [item[0] for item in xy.x]
@@ -100,6 +101,10 @@ def categorize_rates(lstm, xys, dimensions):
             if global_lowest3[dimension][0] is None or min(ck) < global_lowest3[dimension][0]:
                 global_lowest3[dimension] = (min(ck), ck)
 
+            for i in range(len(ck) - 1):
+                if largest_drop[dimension][0] is None or (ck[i + 1] - ck[i]) < largest_drop[dimension][0]:
+                    largest_drop[dimension] = (ck[i + 1] - ck[i], ck)
+
             starts["global"][dimension] += cells[0][k]
             ends["global"][dimension] += cells[-1][k]
 
@@ -126,13 +131,14 @@ def categorize_rates(lstm, xys, dimensions):
         user_log.info("Global lowest @%d (by progression): %s" % (dimension, global_lowest1[dimension]))
         user_log.info("Global lowest @%d (by average): %s" % (dimension, global_lowest2[dimension]))
         user_log.info("Global lowest @%d (by single minimum): %s" % (dimension, global_lowest3[dimension]))
+        user_log.info("Global lowest @%d (by largest drop): %s" % (dimension, largest_drop[dimension]))
 
     averages = {
         "global": {dimension: (starts["global"][dimension] / total, ends["global"][dimension] / total) for dimension in dimensions},
         "monotonic": {dimension: (starts["monotonic"][dimension] / (total - non_monotonic), ends["global"][dimension] / (total - non_monotonic)) for dimension in dimensions},
         "non-monotonic": {dimension: (starts["non-monotonic"][dimension] / non_monotonic, ends["global"][dimension] / non_monotonic) for dimension in dimensions},
     }
-
+    logging.debug(adjutant.dict_as_str(averages))
     return averages
 
 
