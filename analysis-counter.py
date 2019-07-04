@@ -105,22 +105,25 @@ def categorize_rates(lstm, xys, dimensions):
             else:
                 starts["non-monotonic"][dimension] += cells[0][k]
                 ends["non-monotonic"][dimension] += cells[-1][k]
-                logging.debug("non-monotonic @%d (%s): %s -> %s" % (index, sequence[index], " ".join(sequence), " ".join([str(c) for c in cells])))
-                non_monotonic += 1
 
-                if sequence[index] not in non_monotonic_counts:
-                    non_monotonic_counts[sequence[index]] = 0
+        if index is not None:
+            logging.debug("non-monotonic @%d (%s): %s -> %s" % (index, sequence[index], " ".join(sequence), " ".join([str(c) for c in cells])))
+            non_monotonic += 1
 
-                non_monotonic_counts[sequence[index]] += 1
+            if sequence[index] not in non_monotonic_counts:
+                non_monotonic_counts[sequence[index]] = 0
+
+            non_monotonic_counts[sequence[index]] += 1
 
     user_log.info("Found %d of %d sentences to match non-monotonic criteria." % (non_monotonic, total))
     user_log.info("Non-monotonic keyword frequencies: %s" % (adjutant.dict_as_str(non_monotonic_counts, sort_by_key=False, reverse=True)))
     user_log.info("Global lowest (by #1): %s" % (adjutant.dict_as_str(global_lowest1)))
     user_log.info("Global lowest (by #2): %s" % (adjutant.dict_as_str(global_lowest2)))
-    averages = {}
-
-    for stat in starts.keys():
-        averages[stat] = {dimension: (starts[stat][dimension] / total, ends[stat][dimension] / total) for dimension in dimensions}
+    averages = {
+        "global": {dimension: (starts["global"][dimension] / total, ends["global"][dimension] / total) for dimension in dimensions},
+        "monotonic": {dimension: (starts["monotonic"][dimension] / (total - non_monotonic), ends["global"][dimension] / (total - non_monotonic)) for dimension in dimensions},
+        "non-monotonic": {dimension: (starts["non-monotonic"][dimension] / non_monotonic, ends["global"][dimension] / non_monotonic) for dimension in dimensions},
+    }
 
     return averages
 
