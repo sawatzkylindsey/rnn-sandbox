@@ -67,6 +67,7 @@ def categorize_rates(lstm, xys, dimensions):
     }
     global_lowest1 = {dimension: None for dimension in dimensions}
     global_lowest2 = {dimension: (None, None) for dimension in dimensions}
+    global_lowest3 = {dimension: (None, None) for dimension in dimensions}
 
     for j, xy in enumerate(xys):
         sequence = [item[0] for item in xy.x]
@@ -90,11 +91,14 @@ def categorize_rates(lstm, xys, dimensions):
         for k, dimension in enumerate(dimensions):
             ck = [c[k] for c in cells]
 
-            if global_lowest1[dimension] is None or lower1(global_lowest1[dimension], ck):
+            if global_lowest1[dimension] is None or lower1(ck, global_lowest1[dimension]):
                 global_lowest1[dimension] = ck
 
-            if global_lowest2[dimension][0] is None or global_lowest2[dimension][0] < (sum(ck) / len(ck)):
+            if global_lowest2[dimension][0] is None or (sum(ck) / len(ck)) < global_lowest2[dimension][0]:
                 global_lowest2[dimension] = (sum(ck) / len(ck), ck)
+
+            if global_lowest3[dimension][0] is None or min(ck) < global_lowest3[dimension][0]:
+                global_lowest3[dimension] = (min(ck), ck)
 
             starts["global"][dimension] += cells[0][k]
             ends["global"][dimension] += cells[-1][k]
@@ -117,8 +121,12 @@ def categorize_rates(lstm, xys, dimensions):
 
     user_log.info("Found %d of %d sentences to match non-monotonic criteria." % (non_monotonic, total))
     user_log.info("Non-monotonic keyword frequencies: %s" % (adjutant.dict_as_str(non_monotonic_counts, sort_by_key=False, reverse=True)))
-    user_log.info("Global lowest (by #1): %s" % (adjutant.dict_as_str(global_lowest1)))
-    user_log.info("Global lowest (by #2): %s" % (adjutant.dict_as_str(global_lowest2)))
+
+    for dimension in dimensions:
+        user_log.info("Global lowest @%d (by progression): %s" % (dimension, global_lowest1[dimension]))
+        user_log.info("Global lowest @%d (by average): %s" % (dimension, global_lowest2[dimension]))
+        user_log.info("Global lowest @%d (by single minimum): %s" % (dimension, global_lowest3[dimension]))
+
     averages = {
         "global": {dimension: (starts["global"][dimension] / total, ends["global"][dimension] / total) for dimension in dimensions},
         "monotonic": {dimension: (starts["monotonic"][dimension] / (total - non_monotonic), ends["global"][dimension] / (total - non_monotonic)) for dimension in dimensions},
@@ -131,14 +139,14 @@ def categorize_rates(lstm, xys, dimensions):
 def lower1(a, b):
     count = 0
 
-    for i, v in enumerate(a):
-        if i >= len(b):
+    for i, v in enumerate(b):
+        if i >= len(a):
             break
 
-        if b[i] < v:
+        if a[i] < v:
             count += 1
 
-    return count == len(a)
+    return count == len(b)
 
 
 if __name__ == "__main__":
