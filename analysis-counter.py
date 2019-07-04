@@ -26,6 +26,7 @@ from pytils.log import setup_logging, teardown, user_log
 def main(argv):
     ap = ArgumentParser(prog="generate-hidden-states")
     ap.add_argument("-v", "--verbose", default=False, action="store_true", help="Turn on verbose logging.")
+    ap.add_argument("--report", default=False, action="store_true")
     ap.add_argument("data_dir")
     ap.add_argument("sequential_dir")
     ap.add_argument("kind", choices=["train", "validation", "test"])
@@ -35,7 +36,7 @@ def main(argv):
     logging.debug(aargs)
 
     lstm = sequential.load_model(aargs.data_dir, aargs.sequential_dir)
-    averages = categorize_rates(lstm, data.stream_data(aargs.data_dir, aargs.kind), aargs.dimensions)
+    averages = categorize_rates(lstm, data.stream_data(aargs.data_dir, aargs.kind), aargs.dimensions, aargs.report)
     rows = [("", "0", "1")]
 
     for stat, dimension_points in averages.items():
@@ -51,7 +52,7 @@ def main(argv):
     return 0
 
 
-def categorize_rates(lstm, xys, dimensions):
+def categorize_rates(lstm, xys, dimensions, report):
     total = 0
     non_monotonic = 0
     non_monotonic_counts = {}
@@ -72,6 +73,9 @@ def categorize_rates(lstm, xys, dimensions):
     minimum_growth = {dimension: (None, None) for dimension in dimensions}
 
     for j, xy in enumerate(xys):
+        if j % 1000 == 0:
+            logging.debug("At the %d-Kth instance." % (int(j / 1000)))
+
         sequence = [item[0] for item in xy.x]
         total += 1
         stepwise_rnn = lstm.stepwise(handle_unknown=True)
@@ -121,7 +125,9 @@ def categorize_rates(lstm, xys, dimensions):
                 ends["non-monotonic"][dimension] += cells[-1][k]
 
         if index is not None:
-            logging.debug("non-monotonic @%d (%s): %s -> %s" % (index, sequence[index], " ".join(sequence), " ".join([str(c) for c in cells])))
+            if report:
+                logging.debug("non-monotonic @%d (%s): %s -> %s" % (index, sequence[index], " ".join(sequence), " ".join([str(c) for c in cells])))
+
             non_monotonic += 1
 
             if sequence[index] not in non_monotonic_counts:
