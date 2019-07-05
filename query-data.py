@@ -27,7 +27,7 @@ from pytils.log import setup_logging, teardown, user_log
 def main(argv):
     ap = ArgumentParser(prog="query-data")
     ap.add_argument("-v", "--verbose", default=False, action="store_true", help="Turn on verbose logging.")
-    ap.add_argument("--limit", type=int, default=10)
+    ap.add_argument("--limit", type=int, default=10, "Truncate the results at maximum LIMIT.  Negative indicates to find all (unlimited).")
     ap.add_argument("--match", choices=["include", "sequence", "relative"], default="include")
     ap.add_argument("data_dir")
     ap.add_argument("kind", choices=["train", "test"])
@@ -51,7 +51,7 @@ def main(argv):
             count += 1
             logging.debug("Instance: %s" % " ".join(sequence))
 
-        if count >= aargs.limit:
+        if aargs.limit > 0 and count >= aargs.limit:
             logging.debug("Truncating..")
             truncated = True
             break
