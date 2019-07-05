@@ -66,11 +66,11 @@ def categorize_rates(lstm, xys, dimensions, report):
         "monotonic": {dimension: 0 for dimension in dimensions},
         "non-monotonic": {dimension: 0 for dimension in dimensions},
     }
-    global_lowest1 = {dimension: None for dimension in dimensions}
-    global_lowest2 = {dimension: (None, None) for dimension in dimensions}
-    global_lowest3 = {dimension: (None, None) for dimension in dimensions}
-    largest_drop = {dimension: (None, None) for dimension in dimensions}
-    minimum_growth = {dimension: (None, None) for dimension in dimensions}
+    global_lowest1 = {dimension: (None, None, None) for dimension in dimensions}
+    global_lowest2 = {dimension: (None, None, None) for dimension in dimensions}
+    global_lowest3 = {dimension: (None, None, None) for dimension in dimensions}
+    largest_drop = {dimension: (None, None, None) for dimension in dimensions}
+    minimum_growth = {dimension: (None, None, None) for dimension in dimensions}
 
     for j, xy in enumerate(xys):
         if j % 1000 == 0:
@@ -97,22 +97,22 @@ def categorize_rates(lstm, xys, dimensions, report):
         for k, dimension in enumerate(dimensions):
             ck = [c[k] for c in cells]
 
-            if global_lowest1[dimension] is None or lower1(ck, global_lowest1[dimension]):
-                global_lowest1[dimension] = ck
+            if global_lowest1[dimension][0] is None or lower1(ck, global_lowest1[dimension][1]):
+                global_lowest1[dimension] = ("moot", ck, sequence)
 
             if global_lowest2[dimension][0] is None or (sum(ck) / len(ck)) < global_lowest2[dimension][0]:
-                global_lowest2[dimension] = (sum(ck) / len(ck), ck)
+                global_lowest2[dimension] = (sum(ck) / len(ck), ck, sequence)
 
             if global_lowest3[dimension][0] is None or min(ck) < global_lowest3[dimension][0]:
-                global_lowest3[dimension] = (min(ck), ck)
+                global_lowest3[dimension] = (min(ck), ck, sequence)
 
             for i in range(len(ck) - 1):
                 if largest_drop[dimension][0] is None or (ck[i + 1] - ck[i]) < largest_drop[dimension][0]:
-                    largest_drop[dimension] = (ck[i + 1] - ck[i], ck)
+                    largest_drop[dimension] = (ck[i + 1] - ck[i], ck, sequence)
 
             if len(ck) > 1:
                 if minimum_growth[dimension][0] is None or (ck[-1] - ck[0]) < minimum_growth[dimension][0]:
-                    minimum_growth[dimension] = (ck[-1] - ck[0], ck)
+                    minimum_growth[dimension] = (ck[-1] - ck[0], ck, sequence)
 
             starts["global"][dimension] += cells[0][k]
             ends["global"][dimension] += cells[-1][k]
@@ -147,8 +147,8 @@ def categorize_rates(lstm, xys, dimensions, report):
 
     averages = {
         "global": {dimension: (starts["global"][dimension] / total, ends["global"][dimension] / total) for dimension in dimensions},
-        "monotonic": {dimension: (starts["monotonic"][dimension] / (total - non_monotonic), ends["global"][dimension] / (total - non_monotonic)) for dimension in dimensions},
-        "non-monotonic": {dimension: (starts["non-monotonic"][dimension] / non_monotonic, ends["global"][dimension] / non_monotonic) for dimension in dimensions},
+        "monotonic": {dimension: (starts["monotonic"][dimension] / (total - non_monotonic), ends["monotonic"][dimension] / (total - non_monotonic)) for dimension in dimensions},
+        "non-monotonic": {dimension: (starts["non-monotonic"][dimension] / non_monotonic, ends["non-monotonic"][dimension] / non_monotonic) for dimension in dimensions},
     }
     logging.debug(adjutant.dict_as_str(averages))
     return averages
