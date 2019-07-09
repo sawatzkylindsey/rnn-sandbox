@@ -680,8 +680,8 @@ class NeuralNetwork:
 
 
 class PatternEngine:
-    def __init__(self, neural_network):
-        self.neural_network = neural_network
+    def __init__(self, lstm):
+        self.lstm = lstm
 
     def match(self, tolerance, use_skip_empties, use_consistent_features, annotated_sequences, patterns):
         # input
@@ -697,17 +697,17 @@ class PatternEngine:
         # predicates: list of dicts, keyed by rnn part keys to lists of (axis, value) features
         #       [ {cell-0: [ (0, 0.5), (22, -0.02), ... ] }, ... ]
         targets = [{key: [] for key in pattern} for pattern in patterns]
-        pattern_instruments = [set([self.neural_network.lstm.decode_key(key)[0] for key in pattern]) for pattern in patterns]
+        pattern_instruments = [set([self.lstm.decode_key(key)[0] for key in pattern]) for pattern in patterns]
 
         for annotated_sequence in annotated_sequences:
             annotations, sequence = annotated_sequence
             assert len(annotations) == len(patterns)
 
             for index, annotation in enumerate(annotations):
-                last_word, result, instrument_values = self.neural_network.query_lstm(sequence[:annotation + 1], pattern_instruments[index])
+                last_word, result, instrument_values = self.query_lstm(sequence[:annotation + 1], pattern_instruments[index])
 
                 for key in patterns[index]:
-                    part, layer = self.neural_network.lstm.decode_key(key)
+                    part, layer = self.lstm.decode_key(key)
                     targets[index][key] += [instrument_values[part][layer]]
 
         predicates = []
@@ -779,8 +779,8 @@ class PatternEngine:
 
 
 class QueryEngine:
-    def __init__(self, neural_network, query_dir, db_kind):
-        self.neural_network = neural_network
+    def __init__(self, lstm, query_dir, db_kind):
+        self.lstm = lstm
         self.query_dir = query_dir
         self.db_kind = db_kind
         self.requests = queue.Queue()
@@ -791,7 +791,7 @@ class QueryEngine:
 
     def _process_sql(self):
         # Sql requests need to be run in the same thread as where the handle is created - so we do this using IPC.
-        query_dbs = query.get_databases(self.query_dir, self.db_kind, self.neural_network.lstm)
+        query_dbs = query.get_databases(self.query_dir, self.db_kind, self.lstm)
         logging.debug("Started sql IPC.")
 
         while True:
@@ -804,13 +804,15 @@ class QueryEngine:
 
             if item is not None:
                 request_id, request = item
-                key, axis_target, tolerance, matched_sequences = request
+                key, axis_targetoperator, tolerance, matched_sequences = request
 
                 if key in query_dbs:
                     try:
                         if matched_sequences is None:
-                            axis, target = axis_target
-                            self.responses[request_id] = query_dbs[key].select_activations_range(axis, target - tolerance, target + tolerance)
+                            axis, target_operator = axis_targetoperator
+                            target, operator = target_operator
+                            logging.debug("First query: %d (%f, %f) %s" % (axis, target - tolerance, target + tolerance, operator))
+                            self.responses[request_id] = query_dbs[key].select_activations_range(axis, target - tolerance, target + tolerance, operator)
                         else:
                             self.responses[request_id] = query_dbs[key].select_activations(matched_sequences)
                     except sqlite3.DatabaseError as e:
@@ -878,9 +880,17 @@ class QueryEngine:
 
                 for sequence, index, *point in self._candidates(key, first_feature, tolerance, matched_sequences):
                     point = tuple(point)
-                    candidate_point = [point[axis] for axis, target in features.items()]
-                    target_point = [target for axis, target in features.items()]
-                    within, distance = self._measure(candidate_point, target_point, tolerance)
+                    candidate_point = []
+                    target_point = []
+                    operator_point = []
+
+                    for axis, target_operator in features.items():
+                        target, operator = target_operator
+                        candidate_point += [point[axis]]
+                        target_point += [target]
+                        operator_point += [operator]
+
+                    within = self._within(candidate_point, target_point, operator_point, tolerance)
 
                     if within:
                         found_sequences.add(sequence)
@@ -940,9 +950,9 @@ class QueryEngine:
 
         return matches
 
-    def _candidates(self, key, axis_target, tolerance, matched_sequences):
+    def _candidates(self, key, axis_targetoperator, tolerance, matched_sequences):
         # IPC to ensure sql stays in the thread it was created it.
-        request = (key, axis_target, tolerance, matched_sequences)
+        request = (key, axis_targetoperator, tolerance, matched_sequences)
         request_id = uuid.uuid4()
         self.requests.put((request_id, request))
 
@@ -959,11 +969,23 @@ class QueryEngine:
 
         return response
 
-    def _measure(self, candidate, target, tolerance):
+    def _within(self, candidate, target, operator, tolerance):
         check.check_lte(check.check_gte(tolerance, 0), 1)
-        deltas = geometry.deltas(candidate, target)
-        distance = geometry.hypotenuse(deltas)
-        return all([part < tolerance for part in deltas]), distance
+
+        for i in range(len(candidate)):
+            if operator[i] is None or operator[i] == "eq":
+                if not (abs(candidate[i] - target[i]) < tolerance):
+                    return False
+            elif operator[i] == "lt":
+                if not (candidate[i] < (target[i] + tolerance)):
+                    return False
+            elif operator[i] == "gt":
+                if not (candidate[i] > (target[i] - tolerance)):
+                    return False
+            else:
+                raise ValueError("unknown operator: %s" % operator[i])
+
+        return True
 
 
 def monotonic_paths(requirements, length, first_only):

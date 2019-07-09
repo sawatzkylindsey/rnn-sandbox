@@ -229,8 +229,20 @@ class Predicates:
             assert predicates is None
 
             def typify(feature):
-                axis, value = feature.split(":")
-                return int(axis), float(value)
+                try:
+                    axis, value = feature.split(":")
+                    operator = None
+                except ValueError as e:
+                    if "too many values to unpac" in str(e):
+                        axis, value, operator = feature.split(":")
+                        operator = operator.lower()
+
+                        if operator == "none":
+                            operator = None
+                    else:
+                        raise e
+
+                return int(axis), float(value), operator
 
             self.predicates = []
 
@@ -240,12 +252,12 @@ class Predicates:
                 if len(predicate_str) > 0:
                     for key_features in predicate_str.split(";"):
                         key, features = key_features.split("|")
-                        constraints[key] = {item[0]: item[1] for item in [typify(feature) for feature in features.split(",")]}
+                        constraints[key] = {item[0]: (item[1], item[2]) for item in [typify(feature) for feature in features.split(",")]}
 
                 self.predicates += [constraints]
 
     def as_strs(self):
-        return [";".join(["%s|%s" % (key, ",".join(["%d:%s" % (axis, value) for axis, value in sorted(item.items())])) for key, item in predicate.items()]) for predicate in self.predicates]
+        return [";".join(["%s|%s" % (key, ",".join(["%d:%s:%s" % (axis, *value_operator) for axis, value_operator in sorted(item.items())])) for key, item in predicate.items()]) for predicate in self.predicates]
 
     def as_json(self):
         return {

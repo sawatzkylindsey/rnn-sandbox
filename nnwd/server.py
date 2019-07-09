@@ -154,8 +154,8 @@ def main(argv):
     pattern_engine = None
 
     if aargs.query_dir is not None:
-        query_engine = domain.QueryEngine(neural_network, aargs.query_dir, aargs.db_kind)
-        pattern_engine = domain.PatternEngine(neural_network)
+        query_engine = domain.QueryEngine(neural_network.lstm, aargs.query_dir, aargs.db_kind)
+        pattern_engine = domain.PatternEngine(neural_network.lstm)
 
     run_server(aargs.port, words, neural_network, query_engine, pattern_engine)
 

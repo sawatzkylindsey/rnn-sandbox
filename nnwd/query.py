@@ -153,12 +153,25 @@ class QueryDatabase:
         self.db.commit()
 
     @functools.lru_cache()
-    def select_activations_range(self, axis, lower_bound, upper_bound):
+    def select_activations_range(self, axis, lower_bound, upper_bound, operator):
         activations_suffix = "" if self.db_kind == SQLITE else self.table_suffix + " as activations"
         cursor = self.db.cursor()
-        cursor.execute(self.wrap("""select sequences.sequence, activations.sequence_index, %s
-            from sequences inner join activations%s on sequences.id = activations.sequence_id
-            where activations.axis_%d >= ? and activations.axis_%d <= ?""" % (self._select_point, activations_suffix, axis, axis)), (lower_bound, upper_bound))
+
+        if operator is None or operator == "eq":
+            cursor.execute(self.wrap("""select sequences.sequence, activations.sequence_index, %s
+                from sequences inner join activations%s on sequences.id = activations.sequence_id
+                where activations.axis_%d > ? and activations.axis_%d < ?""" % (self._select_point, activations_suffix, axis, axis)), (lower_bound, upper_bound))
+        elif operator == "lt":
+            cursor.execute(self.wrap("""select sequences.sequence, activations.sequence_index, %s
+                from sequences inner join activations%s on sequences.id = activations.sequence_id
+                where activations.axis_%d < ?""" % (self._select_point, activations_suffix, axis)), (upper_bound,))
+        elif operator == "gt":
+            cursor.execute(self.wrap("""select sequences.sequence, activations.sequence_index, %s
+                from sequences inner join activations%s on sequences.id = activations.sequence_id
+                where activations.axis_%d > ?""" % (self._select_point, activations_suffix, axis)), (lower_bound,))
+        else:
+            raise ValueError("invalid operator: %s" % operator)
+
         # Roll out the stream here so the result may be cached.
         return [r for r in streaming_convert(cursor.fetchall(), self._converter())]
 
