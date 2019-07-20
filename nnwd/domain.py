@@ -233,16 +233,16 @@ class NeuralNetwork:
         for kind, units in instrument_values.items():
             if kind != "ws":
                 for unit, vector in enumerate(units):
-                    key = self.lstm.encode_key(kind, unit)
+                    coalesced_key = key_actual(self.lstm.encode_key(kind, unit))
                     minimum = min(vector)
 
-                    if key not in self.details_mins or minimum < self.details_mins[key]:
-                        self.details_mins[key] = minimum
+                    if coalesced_key not in self.details_mins or minimum < self.details_mins[coalesced_key]:
+                        self.details_mins[coalesced_key] = minimum
 
                     maximum = max(vector)
 
-                    if key not in self.details_maxs or maximum > self.details_maxs[key]:
-                        self.details_maxs[key] = maximum
+                    if coalesced_key not in self.details_maxs or maximum > self.details_maxs[coalesced_key]:
+                        self.details_maxs[coalesced_key] = maximum
 
         return resolved_word, result, instrument_values
 
@@ -313,18 +313,19 @@ class NeuralNetwork:
         return reductions, colours, predictions
 
     def dimensionality_reduce(self, points):
-        out = {key: reduction.reduce(self.bucket_mappings[key], point) for key, point in points.items()}
+        out = {key: reduction.reduce(self.bucket_mappings[key_actual(key)], point) for key, point in points.items()}
 
         for key, vector in out.items():
+            coalesced_key = key_actual(key)
             minimum = min(vector)
 
-            if key not in self.weights_mins or minimum < self.weights_mins[key]:
-                self.weights_mins[key] = minimum
+            if coalesced_key not in self.weights_mins or minimum < self.weights_mins[coalesced_key]:
+                self.weights_mins[coalesced_key] = minimum
 
             maximum = max(vector)
 
-            if key not in self.weights_maxs or maximum > self.weights_maxs[key]:
-                self.weights_maxs[key] = maximum
+            if coalesced_key not in self.weights_maxs or maximum > self.weights_maxs[coalesced_key]:
+                self.weights_maxs[coalesced_key] = maximum
 
         return out
 
@@ -455,7 +456,7 @@ class NeuralNetwork:
         positioning = {}
         i = 0
 
-        for bucket, dimensions in self.bucket_mappings[key].items():
+        for bucket, dimensions in self.bucket_mappings[key_actual(key)].items():
             for dimension in dimensions:
                 assert i not in back_links, "%d already in %s" % (i, back_links)
                 back_links[i] = bucket
@@ -507,9 +508,10 @@ class NeuralNetwork:
 
             for layer in range(self.lstm.hyper_parameters.layers):
                 key = self.lstm.encode_key(part, layer)
+                coalesced_key = key_actual(key)
                 name = self.latex_name(timestep, part, layer)
                 name_no_t = self.latex_name_no_t(part, layer)
-                min_max = (self.weights_mins[key], self.weights_maxs[key])
+                min_max = (self.weights_mins[coalesced_key], self.weights_maxs[coalesced_key])
                 hidden_state = HiddenState(name, name_no_t, point_reductions[key], min_max, point_colours[key], self.prediction_distribution(point_predictions[key]))
                 units[part][layer] = hidden_state
 
@@ -1025,4 +1027,13 @@ def monotonic_paths(requirements, length, first_only):
 
     # termination
     return d[(length - 1, len(requirements) - 1)]
+
+
+def key_actual(k):
+    if k == "cell_previouses-0":
+        return "cells-0"
+    elif k == "cell_previouses-1":
+        return "cells-1"
+    else:
+        return k
 
