@@ -36,7 +36,7 @@ def generate_png(function):
                     else:
                         expression = r"$$%s^{%s}$$" % (base, exponent)
 
-                sympy.preview(expression, viewer="file", filename=file_path)
+                sympy.preview(expression, viewer="file", filename=file_path, dvioptions=["-Ttight", "-D300", "-z3"])
 
         return result
 

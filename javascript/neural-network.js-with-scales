@@ -1,6 +1,6 @@
 
-var epsilon = 1e-15;
-var allow_zoom = false;
+var epsilon = 0.1;
+var allow_zoom = true;
 var MEMORY_CHIP_HEIGHT = 4;
 var MEMORY_CHIP_WIDTH = 2;
 var DETAIL_CHIP_WIDTH = 5;
@@ -8,18 +8,18 @@ var total_width = null;
 var total_height = null;
 var detail_margin = 10;
 var matrix_margin = 15;
-var layer_height = 200;
+var layer_height = 225;
 var input_width = 100;
 var x_margin = 20;
 var y_margin = 25;
 var HEIGHT = 20;
 var circle_radius = 8;
-var state_width = 30;
+var state_width = 50;
 var state_height = layer_height / 3.0;
-state_height = 50;
-/*if ((state_height / MEMORY_CHIP_HEIGHT) != (state_width / MEMORY_CHIP_WIDTH)) {
+state_height = 100;
+if ((state_height / MEMORY_CHIP_HEIGHT) != (state_width / MEMORY_CHIP_WIDTH)) {
     throw "chips aren't square (" + (state_width / MEMORY_CHIP_WIDTH) + ", " + (state_height / MEMORY_CHIP_HEIGHT) + ")";
-}*/
+}
 var operand_height = (state_height * 2.0 / 5.0);
 var operator_height = (state_height - (operand_height * 2));
 // http://colorbrewer2.org/#type=sequential&scheme=Greys&n=5
@@ -709,7 +709,7 @@ function drawHiddenState(data, part, layer) {
         }
     }
 }
-
+var magg;
 function drawStateWidget(timestep, geometry, name, min, max, vector, colour, predictions, subtle_passthrough, classes, chip_width, chip_height, part, layer, linker, linker_suffix, placement) {
     if (min >= max) {
         throw "min " + min + " cannot exceed max " + max;
@@ -752,6 +752,22 @@ function drawStateWidget(timestep, geometry, name, min, max, vector, colour, pre
     }
 
     var absolute_max = Math.max(Math.abs(min), Math.abs(max));
+    // LOG
+    console.log(absolute_max);
+    var tau_min = Math.log10(epsilon);
+    var tau_max = Math.log10(epsilon + absolute_max);
+    console.log(tau_min);
+    console.log(tau_max);
+    //function magnitude(value) {
+    //    return ((macro_x.bandwidth() * Math.log10(epsilon + Math.abs(value))) / (tau_max - tau_min)) - ((macro_x.bandwidth() * tau_min) / (tau_max - tau_min));
+    //}
+
+    // LIN
+    //function magnitude(value) {
+    //    return ((macro_x.bandwidth() * Math.abs(value)) / (absolute_max));
+    //}
+
+    // SPECIAL
     // Mapping down to the log line segment from [1, 10], which is where the 9 comes from.
     var scale = absolute_max / 9.0;
     function magnitude(value) {
@@ -759,29 +775,33 @@ function drawStateWidget(timestep, geometry, name, min, max, vector, colour, pre
         //     vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
         return Math.log10((Math.abs(value) / scale) + 1.0) * macro_x.bandwidth();
     }
+    //console.log(macro_x.bandwidth());
+    //var magnitude = d3.scaleLog()
+    //    .domain([epsilon, epsilon + Math.max(Math.abs(min), Math.abs(max))])
+    //    .range([0, macro_x.bandwidth()]);
 
     var margin = (geometry.width / 6);
     var label_id = "labelid-" + Math.random().toString(36).substring(5);
 
     if (predictions != null) {
         var micro_width = geometry.width / 1.8;
-        var micro_height = geometry.height / 1.5;
+        var micro_height = geometry.height / 1.8;
         var predictionGeometry = {
-            x: geometry.x + micro_width,
+            x: geometry.x + geometry.width + micro_width,
             y: geometry.y + ((geometry.height - micro_height) / 2.0),
             width: micro_width,
             height: micro_height,
         };
-        drawPredictionWidget(timestep, predictionGeometry, null, predictions.minimum, predictions.maximum, predictions.vector, classes, false, name == null ? null : nameOf(name), label_id);
+        drawPredictionWidget(timestep, predictionGeometry, null, predictions.minimum, predictions.maximum, predictions.vector, classes, subtle_passthrough, name == null ? null : nameOf(name), label_id);
         micro_height = geometry.height / 1.5;
         // Draw colour prediction.
         svg.append("rect")
             .attr("class", classes)
-            .attr("x", geometry.x +  margin - (stroke_width / 2) - 2)
-            .attr("y", geometry.y)// + ((geometry.height - micro_height) / 2.0))
+            .attr("x", geometry.x + geometry.width + margin - (stroke_width / 2) - 1)
+            .attr("y", geometry.y + ((geometry.height - micro_height) / 2.0))
             .attr("width", (geometry.width / 2.5))
-            .attr("height", geometry.height)
-            .attr("stroke", black)
+            .attr("height", micro_height)
+            .attr("stroke", "none")
             .attr("stroke-width", stroke_width)
             .attr("fill", colour == null ? "none" : colour)
             .style("opacity", 1.0);
@@ -799,6 +819,9 @@ function drawStateWidget(timestep, geometry, name, min, max, vector, colour, pre
 
     // Name
     if (name != null) {
+        if (name == "e_1") {
+            magg = magnitude;
+        }
         svg.append("image")
             .attr("id", label_id)
             .attr("class", classes)
@@ -806,8 +829,6 @@ function drawStateWidget(timestep, geometry, name, min, max, vector, colour, pre
             .attr("x", geometry.x + (geometry.width / 2) - 6)
             .attr("y", geometry.y + geometry.height + 2 + (name.startsWith("e_") ? 5 : 0))
             .style("opacity", notationOff)
-            .style("width", "15px")
-            .style("height", "21px")
             .on("mouseover", function(d) {
                 if (active_components[nameOf(name)]) {
                     d3.select(this)
@@ -849,7 +870,6 @@ function drawStateWidget(timestep, geometry, name, min, max, vector, colour, pre
         .attr("stroke-width", stroke_width)
         .attr("fill", "none");*/
     // Chip's colour & magnitude.
-    /*
     svg.selectAll(".chip")
         .data(vector)
         .enter()
@@ -1040,7 +1060,6 @@ function drawStateWidget(timestep, geometry, name, min, max, vector, colour, pre
                 return black;
             })
             .attr("stroke-width", stroke_width + 0.5);
-    */
 }
 
 function drawStateCell(geometry, min, max, vector, classes, chip_width, chip_height) {
@@ -1205,7 +1224,7 @@ function drawPredictionWidget(timestep, geometry, name, min, max, predictions, c
         .domain([min, max])
         .range([geometry.x + (stroke_width / 2.0), geometry.x + geometry.width - (stroke_width / 2.0)]);
 
-    var baseOpacity = 1.0;//subtle ? 0.2 : 1.0;
+    var baseOpacity = subtle ? 0.2 : 1.0;
     var id_class = "softmax-" + Math.random().toString(36).substring(5);
 
     // Name
@@ -1216,8 +1235,6 @@ function drawPredictionWidget(timestep, geometry, name, min, max, predictions, c
             .attr("x", geometry.x + (geometry.width / 2) - (textWidth(name, 12) / 2))
             .attr("y", geometry.y + geometry.height + 10)
             .style("opacity", notationOff)
-            .style("width", "15px")
-            .style("height", "21px")
             .on("mouseover", function(d) {
                 if (active_components[nameOf(name)]) {
                     d3.select(this)
@@ -1328,16 +1345,7 @@ function drawPredictionWidget(timestep, geometry, name, min, max, predictions, c
             .attr("font-family", "sans-serif")
             .style("font-size", subtle ? "9px" : "11px")
             .style("opacity", baseOpacity)
-            .text(function (d) {
-                if (d.label == "<unknown>") {
-                    return "UNK";
-                } else if (d.label == "<number>") {
-                    return "NUM";
-                //} else if (d.label.length > 7) {
-                //    return d.label.substr(0, 6) + "..";
-                }
-                return d.label;
-            });
+            .text(function (d) { return d.label; });
 }
 
 function drawHline(timestep, x1, y1, x2, y2) {
@@ -1914,8 +1922,6 @@ function drawInsetPart(x_offset, y_offset, width, height, part, layer, data, pla
         .attr("x", x_offset + (width / 2) - 6 + (data.name_no_t.startsWith("e") ? + 2 : 0))
         .attr("y", y_offset + height + 3 + (data.name_no_t.startsWith("e") ? 4 : 0))
         .style("opacity", notationOff)
-        .style("width", "15px")
-        .style("height", "21px")
         //.style("opacity", input_part == part && input_layer == layer ? 1 : notationOff)
         .on("mouseover", function(d) {
             if (active_components[nameOf(data.name_no_t)]) {

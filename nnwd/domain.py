@@ -353,8 +353,8 @@ class NeuralNetwork:
 
         for key, point in points.items():
             #colours[key] = self._fit_averaging(predictions[key])
-            #colours[key] = self._fit_top_k(predictions[key])
-            colours[key] = self._fit_top_2_special(predictions[key])
+            colours[key] = self._fit_top_k(predictions[key])
+            #colours[key] = self._fit_top_2_special(predictions[key])
 
         return colours
 
@@ -382,6 +382,10 @@ class NeuralNetwork:
 
             colour_probabilities[colour] += probability
 
+        colour, probability = max(colour_probabilities.items(), key=lambda item: item[1])
+        total = sum(colour_probabilities.values())
+        fit = geometry.fit_proportion((colour, [255, 255, 255]), (total - probability, probability))
+        return "rgb(%d, %d, %d)" % tuple([round(i) for i in fit])
         maximum_distance = None
 
         for pair in itertools.combinations([colour for colour in colour_probabilities.keys()], 2):

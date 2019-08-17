@@ -28,13 +28,14 @@ def main(argv):
     ap.add_argument("data_dir")
     ap.add_argument("sequential_dir")
     ap.add_argument("activations_dir")
+    ap.add_argument("kind", choices=["train", "validation", "test"])
     aargs = ap.parse_args(argv)
     setup_logging(".%s.log" % os.path.splitext(os.path.basename(__file__))[0], aargs.verbose, False, True, True)
     logging.debug(aargs)
 
     lstm = sequential.load_model(aargs.data_dir, aargs.sequential_dir)
     description = data.get_description(aargs.data_dir)
-    elicit_activation_states(lstm, data.stream_train(aargs.data_dir), aargs.activations_dir)
+    elicit_activation_states(lstm, data.stream_data(aargs.data_dir, aargs.kind), aargs.activations_dir)
 
     return 0
 
