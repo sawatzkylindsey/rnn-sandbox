@@ -16,9 +16,10 @@ class Tests(TestCase):
     def test_finished_epochs(self):
         tp = base.TrainingParameters()
         losses = tp.losses()
-        self.assertEqual(tp.finished(base.TrainingParameters.DEFAULT_EPOCHS, losses), (True, "maximum epochs"), losses)
-        self.assertEqual(tp.finished(base.TrainingParameters.DEFAULT_EPOCHS, losses), (True, "maximum epochs"), losses)
-        self.assertEqual(tp.finished(base.TrainingParameters.DEFAULT_EPOCHS - 1, losses), (False, None), losses)
+        self.assertEqual(tp.finished(base.TrainingParameters.EPOCHS_DEFAULT + 1, losses), (True, "maximum epochs"), losses)
+        self.assertEqual(tp.finished(base.TrainingParameters.EPOCHS_DEFAULT + 0, losses), (True, "maximum epochs"), losses)
+        self.assertEqual(tp.finished(base.TrainingParameters.EPOCHS_DEFAULT - 1, losses), (True, "maximum epochs"), losses)
+        self.assertEqual(tp.finished(base.TrainingParameters.EPOCHS_DEFAULT - 2, losses), (False, None), losses)
 
     def test_finished_absolute(self):
         tp = base.TrainingParameters()

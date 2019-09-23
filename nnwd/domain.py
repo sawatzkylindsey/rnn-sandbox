@@ -995,27 +995,23 @@ class QueryEngine:
 
 
 def monotonic_paths(requirements, length, first_only):
+    EMPTY_SET = set()
+    EMPTY_TUPLE = ()
     d = {}
 
     # initialization
     for i in range(-1, length):
-        d[(i, -1)] = set([()])
+        d[(i, -1)] = set([EMPTY_TUPLE])
 
     # recurrence
     for r in range(len(requirements)):
-        d[(-1, r)] = set()
+        d[(-1, r)] = EMPTY_SET
         found = None
 
         for i in range(length):
             if found is not None:
                 d[(i, r)] = found
             else:
-                previous = [m for m in d[(i - 1, r)]]
-                #if i > 0:
-                #    previous = [m for m in d[(i - 1, r)] if len(m) > 0]
-                #else:
-                #    previous = []
-
                 candidates = [s for s in requirements[r] if s <= i]
 
                 if len(candidates) > 0:
@@ -1024,6 +1020,7 @@ def monotonic_paths(requirements, length, first_only):
                 else:
                     additions = []
 
+                previous = [m for m in d[(i - 1, r)]]
                 d[(i, r)] = set(previous + additions)
 
                 if first_only and len(additions) > 0:
