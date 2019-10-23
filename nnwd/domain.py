@@ -177,7 +177,8 @@ class NeuralNetwork:
             self.colour_mapping = sa_colour_mapping()
             self.sort_key = lambda key_value: sa.sentiment_sort_key(key_value[1])
 
-        self.top_k = max(1, int(len(self.outputs) * parameters.SEM_TOP_K_PERCENT))
+        #self.top_k = max(1, int(len(self.outputs) * parameters.SEM_TOP_K_PERCENT))
+        self.top_k = parameters.PSE_TOP_K
 
         if use_fixed_buckets:
             self.bucket_mappings = reduction.get_fixed_buckets(self.buckets_dir)

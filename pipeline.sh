@@ -29,23 +29,15 @@ python generate-hidden-states.py -v "${NAME}-data" "${NAME}-sequential" "${NAME}
 python generate-hidden-states.py -v "${NAME}-data" "${NAME}-sequential" "${NAME}-states" test -s .5
 echo -e "Finished hidden states: ${NAME}-states\n"
 
-echo -e "python generate-reduction-buckets.py -v ${NAME}-data ${NAME}-sequential ${NAME}-states ${NAME}-buckets-individual-8 8"
-python generate-reduction-buckets.py -v "${NAME}-data" "${NAME}-sequential" "${NAME}-states" "${NAME}-buckets" 8
-echo -e "Finished reduction buckets: ${NAME}-buckets\n"
+# TODO
+# Required for dev-server - should be removed
+python generate-reduction-buckets.py -v "${NAME}-data" "${NAME}-sequential" "${NAME}-states" "${NAME}-buckets" 1
 
 echo -e "python generate-semantic-model.py -v ${NAME}-data ${NAME}-sequential ${NAME}-states ${NAME}-encoding"
 python generate-semantic-model.py -v "${NAME}-data" "${NAME}-sequential" "${NAME}-states" "${NAME}-encoding"
 echo -e "Finished semantic model: ${NAME}-encoding\n"
 
-echo -e "python generate-activation-states.py -v ${NAME}-data ${NAME}-sequential ${NAME}-activations"
-python generate-activation-states.py -v "${NAME}-data" "${NAME}-sequential" "${NAME}-activations"
-echo -e "Finished activation states: ${NAME}-activations\n"
-
-echo -e "python generate-query-database.py -v ${NAME}-data ${NAME}-sequential ${NAME}-activations ${NAME}-query"
-python generate-query-database.py -v "${NAME}-data" "${NAME}-sequential" "${NAME}-activations" "${NAME}-query"
-echo -e "Finished query database: ${NAME}-query\n"
-
-echo -e "python dev-server.py -v ${NAME}-data ${NAME}-sequential ${NAME}-buckets ${NAME}-encoding ${NAME}-query"
+echo -e "python dev-server.py -v ${NAME}-data ${NAME}-sequential ${NAME}-buckets ${NAME}-encoding"
 echo -e "Use ctrl + c to quit.."
-python dev-server.py -v "${NAME}-data" "${NAME}-sequential" "${NAME}-buckets" "${NAME}-encoding" --query-dir "${NAME}-query"
+python dev-server.py -v "${NAME}-data" "${NAME}-sequential" "${NAME}-buckets" "${NAME}-encoding"
 

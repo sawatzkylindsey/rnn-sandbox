@@ -1,11 +1,20 @@
-### Neural Network Weight Debugger (nn-wd) Visualization Tool
-Tool to debug neural networks, specifically as their weights flow through the computational graph.
+### Rnn Sandbox
+A sandbox RNN-Visualization environment for my research.
+This branch shows our IEEE VIS 2019 submission (https://arxiv.org/abs/1908.00588):
 
-#### Sketch
-<img src="sketch.jpg"/>
+> Visualizing RNN States with Predictive Semantic Encodings
 
-### Development
-Requirements:
+> Lindsey Sawatzky, Steven Bergner, Fred Popowich
+
+> Simon Fraser University
+
+### 1-Command Usage
+
+    # After setting up the requirements, run the following command
+    ./pipeline.sh <NATURAL_LANGUAGE_TEXT_FILE> <OUTPUT_PREFIX>
+    # View the server at http://localhost:8888/index.html
+
+### Requirements
 
     # Python 3
     python3 -m venv p3
@@ -23,6 +32,11 @@ Requirements:
     curl -LO https://github.com/sawatzkylindsey/pytils/archive/master.zip
     cd pytils-master/
     make install
+
+### Development
+Setup Data:
+
+    ...
 
 Running:
 
