@@ -8,6 +8,8 @@ This branch shows our IEEE VIS 2019 submission (https://arxiv.org/abs/1908.00588
 
 > Simon Fraser University
 
+Supplemental Material: https://osf.io/2x6hd
+
 ### 1-Command Usage
 
     # After setting up the requirements, run the following command
